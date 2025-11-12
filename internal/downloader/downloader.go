@@ -56,19 +56,14 @@ func (d *Downloader) singleDownload(ctx context.Context, rawurl, outPath string,
 		"AppleWebKit/537.36 (KHTML, like Gecko) "+
 		"Chrome/120.0.0.0 Safari/537.36") // We set a browser like header to avoid being blocked by some websites
 
-	resp, err := d.Client.Do(req)
+	resp, err := d.Client.Do(req) //Exectes the HTTP request
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //Closes the response body when the function returns
 
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("bad status code: %d", resp.StatusCode)
-	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-		if resp.StatusCode != 200 {
-			return fmt.Errorf("bad status code: %d", resp.StatusCode)
-		}
+    return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	filename := filepath.Base(outPath)
