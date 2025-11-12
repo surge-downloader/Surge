@@ -79,10 +79,10 @@ func (d *Downloader) singleDownload(ctx context.Context, rawurl, outPath string,
 	}
 
 	outDir := filepath.Dir(outPath)
-	tmpFile, err := os.CreateTemp(outDir, filename+".part.*")
+	tmpFile, err := os.CreateTemp(outDir, filename+".part.*") //Tries to create a temporary file 
 	if err != nil {
 		return err
-	}
+	}// Returns error if it fails to create temp file
 	tmpPath := tmpFile.Name()
 
 	defer func() {
@@ -91,7 +91,7 @@ func (d *Downloader) singleDownload(ctx context.Context, rawurl, outPath string,
 		if err != nil {
 			os.Remove(tmpPath)
 		}
-	}()
+	}() //Waits until the function returns and closes the temp file and removes it if there was an error
 
 	var total int64 = -1
 	if cl := resp.Header.Get("Content-Length"); cl != "" {
@@ -164,20 +164,24 @@ func (d *Downloader) singleDownload(ctx context.Context, rawurl, outPath string,
 		destPath = filepath.Join(outPath, filename)
 	}
 
-	if renameErr := os.Rename(tmpPath, destPath); renameErr != nil {
-		// fallback: copy if rename fails across filesystems
-		in, rerr := os.Open(tmpPath)
-		if rerr == nil {
-			out, werr := os.Create(destPath)
-			if werr == nil {
-				_, _ = io.Copy(out, in)
-				out.Close()
-			}
-			in.Close()
-		}
-		os.Remove(tmpPath)
-		return fmt.Errorf("rename failed: %v", renameErr)
-	}
+	if renameErr := os.Rename(tmpPath, destPath); renameErr != nil { //If renaming fails, we do a manual copy
+    if in, rerr := os.Open(tmpPath); rerr == nil { // Opens temp file for reading
+        defer in.Close() //Waits until function returns to close temp file
+        if out, werr := os.Create(destPath); werr == nil { //Creates destination file
+            defer out.Close() //Waits until function returns to close destination file	
+            if _, cerr := io.Copy(out, in); cerr != nil { //Tries to copy from temp to destination
+                return cerr // return the real copy error
+            }
+        } else {
+            return werr // handle file creation error
+        }
+    } else {
+        return rerr // handle file open error
+    }
+    os.Remove(tmpPath) //only remove after successful copy
+    return fmt.Errorf("rename failed: %v", renameErr) //If everything fails we say renaming the file failed
+}
+
 
 	elapsed := time.Since(start)
 	speed := float64(written) / 1024.0 / elapsed.Seconds() // KiB/s
