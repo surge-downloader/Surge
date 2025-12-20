@@ -24,6 +24,11 @@ var bufPool = sync.Pool{
 	},
 }
 
+const (
+	maxTaskRetries = 3
+	retryBaseDelay = 200 * time.Millisecond
+)
+
 // ConcurrentDownloader handles multi-connection downloads
 type ConcurrentDownloader struct {
 	ProgressChan chan<- tea.Msg // Channel for events (start/complete/error)
@@ -391,18 +396,33 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, rawurl string
 			d.State.ActiveWorkers.Add(1)
 		}
 
-		// Download this task
-		err := d.downloadTask(ctx, rawurl, file, task, buf, verbose, client)
+		var lastErr error
+		for attempt := 0; attempt < maxTaskRetries; attempt++ {
+			if attempt > 0 {
+				time.Sleep(time.Duration(1<<attempt) * retryBaseDelay) //Exponential backoff incase of failure
+			}
+			lastErr = d.downloadTask(ctx, rawurl, file, task, buf, verbose, client)
+			if lastErr == nil {
+				break
+			}
+
+			if ctx.Err() != nil {
+				if d.State != nil {
+					d.State.ActiveWorkers.Add(-1)
+				}
+				return ctx.Err()
+			}
+		}
 
 		// Update active workers
 		if d.State != nil {
 			d.State.ActiveWorkers.Add(-1)
 		}
 
-		if err != nil {
-			// On error, push task back for retry (could add retry limit)
+		if lastErr != nil {
+			// Log failed task but continue with next task
 			queue.Push(task)
-			return fmt.Errorf("worker %d failed: %w", id, err)
+			utils.Debug("task at offset %d failed after %d retries: %v", task.Offset, maxTaskRetries, lastErr)
 		}
 	}
 }
