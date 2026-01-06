@@ -23,7 +23,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			path = "."
 		}
 
-		nextID := len(m.downloads) + 1
+		nextID := m.NextDownloadID
+		m.NextDownloadID++
 		newDownload := NewDownloadModel(nextID, msg.URL, "Queued", 0)
 		m.downloads = append(m.downloads, newDownload)
 
@@ -264,7 +265,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = DashboardState
 
 				// Create download with state and reporter
-				nextID := len(m.downloads) + 1 // FIXME: proper UUIDs? This could lead to unexpected problems!!!
+				nextID := m.NextDownloadID
+				m.NextDownloadID++
 				newDownload := NewDownloadModel(nextID, url, "Queued", 0)
 				m.downloads = append(m.downloads, newDownload)
 

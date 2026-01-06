@@ -12,3 +12,4 @@
 - ./surge directory is currently local should be global in prod
 - We should design each page with much better colors and intuition
 - Check everything works with the extension properly
+- TUI gets completely stuck on a large number of downloads

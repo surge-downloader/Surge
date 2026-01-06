@@ -50,13 +50,14 @@ type DownloadModel struct {
 }
 
 type RootModel struct {
-	downloads    []*DownloadModel
-	width        int
-	height       int
-	state        UIState
-	inputs       []textinput.Model
-	focusedInput int
-	progressChan chan tea.Msg // Channel for events only (start/complete/error)
+	downloads      []*DownloadModel
+	NextDownloadID int // Monotonic counter for unique download IDs
+	width          int
+	height         int
+	state          UIState
+	inputs         []textinput.Model
+	focusedInput   int
+	progressChan   chan tea.Msg // Channel for events only (start/complete/error)
 
 	// Navigation
 	cursor int
@@ -124,12 +125,13 @@ func InitialRootModel() RootModel {
 	}
 
 	return RootModel{
-		downloads:    downloads,
-		inputs:       []textinput.Model{urlInput, pathInput, filenameInput},
-		state:        DashboardState,
-		progressChan: progressChan,
-		Pool:         downloader.NewWorkerPool(progressChan),
-		PWD:          pwd,
+		downloads:      downloads,
+		NextDownloadID: len(downloads) + 1, // Start after loaded downloads
+		inputs:         []textinput.Model{urlInput, pathInput, filenameInput},
+		state:          DashboardState,
+		progressChan:   progressChan,
+		Pool:           downloader.NewWorkerPool(progressChan),
+		PWD:            pwd,
 	}
 }
 
