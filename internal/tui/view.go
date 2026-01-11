@@ -103,7 +103,7 @@ func (m RootModel) View() string {
 	rightWidth := availableWidth - leftWidth - 2 // -2 for spacing
 
 	// --- LEFT COLUMN HEIGHTS ---
-	headerHeight := 9
+	headerHeight := 11
 	listHeight := availableHeight - headerHeight
 	if listHeight < 10 {
 		listHeight = 10
@@ -154,25 +154,37 @@ func (m RootModel) View() string {
 	headerBox := lipgloss.JoinHorizontal(lipgloss.Top, logoBox, logBox)
 
 	// --- SECTION 2: SPEED GRAPH (Top Right) ---
-	// Calculate dimensions - compact axis for cleaner look
-	axisWidth := 6
-	// Account for borders and margin
-	// Account for borders (2) + axis margin (1) + right padding (2)
-	graphContentWidth := rightWidth - axisWidth - 5
-	if graphContentWidth < 10 {
-		graphContentWidth = 10
+	// Use 60 data points for 30 seconds of history (2 samples per second / 0.5s interval)
+	const graphHistoryPoints = 60
+
+	// Stats box takes ~20 chars width, graph takes the rest
+	statsBoxWidth := 20
+	graphContentWidth := rightWidth - statsBoxWidth - 6 // borders + spacing
+	if graphContentWidth < 20 {
+		graphContentWidth = 20
 	}
 
-	// Determine Max Speed for the Axis
+	// Get the last 60 data points for the graph
+	var graphData []float64
+	if len(m.SpeedHistory) > graphHistoryPoints {
+		graphData = m.SpeedHistory[len(m.SpeedHistory)-graphHistoryPoints:]
+	} else {
+		graphData = m.SpeedHistory
+	}
+
+	// Determine Max Speed for scaling
 	maxSpeed := 1.0 // Prevent divide by zero
-	for _, v := range m.SpeedHistory {
+	topSpeed := 0.0
+	for _, v := range graphData {
 		if v > maxSpeed {
 			maxSpeed = v
 		}
+		if v > topSpeed {
+			topSpeed = v
+		}
 	}
-	// Add headroom and round to nearest 5 for cleaner labels
+	// Add headroom
 	maxSpeed = maxSpeed * 1.1
-	// Round up to nearest 5 (or nearest 1 if below 5)
 	if maxSpeed >= 5 {
 		maxSpeed = float64(int((maxSpeed+4.99)/5) * 5)
 	} else if maxSpeed >= 1 {
@@ -180,34 +192,39 @@ func (m RootModel) View() string {
 	}
 
 	// Calculate Available Height for the Graph
-	// graphHeight - Borders (2) - Title/Spacer lines (2)
-	// Title/Speed takes 1 line, Spacer takes 1 line.
-	graphContentHeight := graphHeight - 4
+	// graphHeight - Borders (2) - title area (1)
+	graphContentHeight := graphHeight - 3
 	if graphContentHeight < 1 {
 		graphContentHeight = 1
 	}
 
-	// Render the Graph (Multi-line)
-	graphVisual := renderMultiLineGraph(m.SpeedHistory, graphContentWidth, graphContentHeight, maxSpeed, ColorNeonPink)
+	// Get current speed and calculate total downloaded
+	currentSpeed := 0.0
+	if len(m.SpeedHistory) > 0 {
+		currentSpeed = m.SpeedHistory[len(m.SpeedHistory)-1]
+	}
 
-	// Create the Axis (Left side) - compact labels
+	// Calculate total downloaded across all downloads
+	var totalDownloaded int64
+	for _, d := range m.downloads {
+		totalDownloaded += d.Downloaded
+	}
+
+	// Render the Graph (no stats overlay - stats go in separate box)
+	axisWidth := 6
+	graphVisual := renderMultiLineGraph(graphData, graphContentWidth-axisWidth-1, graphContentHeight, maxSpeed, ColorNeonPink, nil)
+
+	// Create Y-axis (right side of graph)
 	axisStyle := lipgloss.NewStyle().Width(axisWidth).Foreground(ColorGray).Align(lipgloss.Right)
-
-	// Create Axis Labels - whole numbers for cleaner look
 	labelTop := axisStyle.Render(fmt.Sprintf("%.0f", maxSpeed))
 	labelMid := axisStyle.Render(fmt.Sprintf("%.1f", maxSpeed/2))
 	labelBot := axisStyle.Render("0")
 
-	// Build the axis column to match graphContentHeight exactly
 	var axisColumn string
-
 	if graphContentHeight >= 5 {
-		// If we have enough space, show Top, Middle, Bottom
-		// Distribute spaces evenly
-		spacesTotal := graphContentHeight - 3 // 3 labels
+		spacesTotal := graphContentHeight - 3
 		spaceTop := spacesTotal / 2
 		spaceBot := spacesTotal - spaceTop
-
 		axisColumn = lipgloss.JoinVertical(lipgloss.Right,
 			labelTop,
 			strings.Repeat("\n", spaceTop),
@@ -216,7 +233,6 @@ func (m RootModel) View() string {
 			labelBot,
 		)
 	} else {
-		// Compact mode: just Top and Bottom
 		spaces := graphContentHeight - 2
 		if spaces < 0 {
 			spaces = 0
@@ -228,34 +244,35 @@ func (m RootModel) View() string {
 		)
 	}
 
-	// Combine Axis and Graph
-	fullGraphRow := lipgloss.JoinHorizontal(lipgloss.Top,
+	// Combine graph + axis (axis on right)
+	graphWithAxis := lipgloss.JoinHorizontal(lipgloss.Top,
+		graphVisual,
 		axisColumn,
-		lipgloss.NewStyle().MarginLeft(1).Render(graphVisual),
 	)
 
-	// Get current speed for the title/overlay
-	currentSpeed := 0.0
-	if len(m.SpeedHistory) > 0 {
-		currentSpeed = m.SpeedHistory[len(m.SpeedHistory)-1]
-	}
-	currentSpeedStr := fmt.Sprintf("Current: %.2f MB/s", currentSpeed)
+	// Create stats box content
+	speedMbps := currentSpeed * 8
+	topMbps := topSpeed * 8
 
-	// Final Assembly for the box
-	// Title right-aligned with full width, content left-aligned so Y-axis sticks to left border
-	titleStyle := lipgloss.NewStyle().
-		Width(rightWidth - 4).
-		Align(lipgloss.Right).
-		Foreground(ColorNeonPink).
-		Bold(true)
+	valueStyle := lipgloss.NewStyle().Foreground(ColorNeonCyan).Bold(true)
+	labelStyleStats := lipgloss.NewStyle().Foreground(ColorLightGray)
+	dimStyle := lipgloss.NewStyle().Foreground(ColorGray)
 
-	speedContent := lipgloss.JoinVertical(lipgloss.Left,
-		titleStyle.Render(currentSpeedStr),
-		"", // Spacer line
-		fullGraphRow,
+	statsContent := lipgloss.JoinVertical(lipgloss.Left,
+		fmt.Sprintf("%s %s", valueStyle.Render("▼"), valueStyle.Render(fmt.Sprintf("%.2f MB/s", currentSpeed))),
+		dimStyle.Render(fmt.Sprintf("  (%.0f Mbps)", speedMbps)),
+		"",
+		fmt.Sprintf("%s %s", labelStyleStats.Render("▼ Top:"), valueStyle.Render(fmt.Sprintf("%.2f MB/s", topSpeed))),
+		dimStyle.Render(fmt.Sprintf("  (%.0f Mbps)", topMbps)),
+		"",
+		fmt.Sprintf("%s %s", labelStyleStats.Render("▼ Total:"), valueStyle.Render(formatBytes(totalDownloaded))),
 	)
 
-	graphBox := renderBtopBox("Network Activity", speedContent, rightWidth, graphHeight, ColorNeonCyan, false)
+	// Render graph and stats boxes side by side
+	graphInnerBox := renderBtopBox("Network Activity", graphWithAxis, rightWidth-statsBoxWidth-1, graphHeight, ColorNeonCyan, false)
+	statsInnerBox := renderBtopBox("Stats", statsContent, statsBoxWidth, graphHeight, ColorNeonCyan, false)
+
+	graphBox := lipgloss.JoinHorizontal(lipgloss.Top, graphInnerBox, statsInnerBox)
 
 	// --- SECTION 3: DOWNLOAD LIST (Bottom Left) ---
 	// Tab Bar

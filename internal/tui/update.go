@@ -133,10 +133,28 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, d.reporter.PollCmd())
 				}
 
-				// Update global speed history (Rolling buffer)
-				if len(m.SpeedHistory) > 0 {
-					totalSpeed := m.calcTotalSpeed()
-					m.SpeedHistory = append(m.SpeedHistory[1:], totalSpeed)
+				// Add current speed to buffer for rolling average
+				totalSpeed := m.calcTotalSpeed()
+				m.speedBuffer = append(m.speedBuffer, totalSpeed)
+				// Keep only last 10 samples (10 polls × 150ms = 1.5s window)
+				if len(m.speedBuffer) > 10 {
+					m.speedBuffer = m.speedBuffer[1:]
+				}
+
+				// Update global speed history every 500ms with rolling average
+				if time.Since(m.lastSpeedHistoryUpdate) >= 500*time.Millisecond {
+					// Calculate average of buffer
+					var avgSpeed float64
+					if len(m.speedBuffer) > 0 {
+						for _, s := range m.speedBuffer {
+							avgSpeed += s
+						}
+						avgSpeed /= float64(len(m.speedBuffer))
+					}
+					if len(m.SpeedHistory) > 0 {
+						m.SpeedHistory = append(m.SpeedHistory[1:], avgSpeed)
+					}
+					m.lastSpeedHistoryUpdate = time.Now()
 				}
 
 				// Update list to show current progress
