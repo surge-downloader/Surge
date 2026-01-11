@@ -70,10 +70,10 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 			{Key: "user_agent", Label: "User Agent", Description: "Custom User-Agent string for HTTP requests. Leave empty for default.", Type: "string"},
 		},
 		"Chunks": {
-			{Key: "min_chunk_size", Label: "Min Chunk Size", Description: "Minimum download chunk size in bytes (e.g., 2097152 = 2MB).", Type: "int64"},
-			{Key: "max_chunk_size", Label: "Max Chunk Size", Description: "Maximum download chunk size in bytes (e.g., 16777216 = 16MB).", Type: "int64"},
-			{Key: "target_chunk_size", Label: "Target Chunk Size", Description: "Preferred chunk size when splitting downloads.", Type: "int64"},
-			{Key: "worker_buffer_size", Label: "Worker Buffer Size", Description: "I/O buffer size per worker in bytes.", Type: "int"},
+			{Key: "min_chunk_size", Label: "Min Chunk Size", Description: "Minimum download chunk size in MB (e.g., 2).", Type: "int64"},
+			{Key: "max_chunk_size", Label: "Max Chunk Size", Description: "Maximum download chunk size in MB (e.g., 16).", Type: "int64"},
+			{Key: "target_chunk_size", Label: "Target Chunk Size", Description: "Preferred chunk size in MB when splitting downloads.", Type: "int64"},
+			{Key: "worker_buffer_size", Label: "Worker Buffer Size", Description: "I/O buffer size per worker in KB (e.g., 512).", Type: "int"},
 		},
 		"Performance": {
 			{Key: "max_task_retries", Label: "Max Task Retries", Description: "Number of times to retry a failed chunk before giving up.", Type: "int"},

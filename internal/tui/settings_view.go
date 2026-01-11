@@ -234,20 +234,22 @@ func (m *RootModel) setConnectionsSetting(key, value, typ string) error {
 func (m *RootModel) setChunksSetting(key, value, typ string) error {
 	switch key {
 	case "min_chunk_size":
-		if v, err := strconv.ParseInt(value, 10, 64); err == nil {
-			m.Settings.Chunks.MinChunkSize = v
+		// Parse as MB and convert to bytes
+		if v, err := strconv.ParseFloat(value, 64); err == nil {
+			m.Settings.Chunks.MinChunkSize = int64(v * 1024 * 1024)
 		}
 	case "max_chunk_size":
-		if v, err := strconv.ParseInt(value, 10, 64); err == nil {
-			m.Settings.Chunks.MaxChunkSize = v
+		if v, err := strconv.ParseFloat(value, 64); err == nil {
+			m.Settings.Chunks.MaxChunkSize = int64(v * 1024 * 1024)
 		}
 	case "target_chunk_size":
-		if v, err := strconv.ParseInt(value, 10, 64); err == nil {
-			m.Settings.Chunks.TargetChunkSize = v
+		if v, err := strconv.ParseFloat(value, 64); err == nil {
+			m.Settings.Chunks.TargetChunkSize = int64(v * 1024 * 1024)
 		}
 	case "worker_buffer_size":
-		if v, err := strconv.Atoi(value); err == nil {
-			m.Settings.Chunks.WorkerBufferSize = v
+		// Keep buffer in KB
+		if v, err := strconv.ParseFloat(value, 64); err == nil {
+			m.Settings.Chunks.WorkerBufferSize = int(v * 1024)
 		}
 	}
 	return nil
@@ -333,7 +335,9 @@ func formatSettingValue(value interface{}, typ string) string {
 		}
 	case "int64":
 		if v, ok := value.(int64); ok {
-			return formatBytes(v)
+			// Display as MB for chunk sizes
+			mb := float64(v) / (1024 * 1024)
+			return fmt.Sprintf("%.1f MB", mb)
 		}
 	case "float64":
 		if v, ok := value.(float64); ok {
