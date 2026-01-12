@@ -306,14 +306,20 @@ func (d *ConcurrentDownloader) newConcurrentClient(numConns int) *http.Client {
 	}
 }
 
+// IncompleteSuffix is appended to files while downloading
+const IncompleteSuffix = ".surge"
+
 // Download downloads a file using multiple concurrent connections
 // Uses pre-probed metadata (file size already known)
 func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath string, fileSize int64, verbose bool) error {
 	utils.Debug("ConcurrentDownloader.Download: %s -> %s (size: %d)", rawurl, destPath, fileSize)
 
-	// Store URL and path for pause/resume
+	// Store URL and path for pause/resume (final path without .surge)
 	d.URL = rawurl
 	d.DestPath = destPath
+
+	// Working file has .surge suffix until download completes
+	workingPath := destPath + IncompleteSuffix
 
 	// Create cancellable context for pause support
 	downloadCtx, cancel := context.WithCancel(ctx)
@@ -336,8 +342,8 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 			utils.ConvertBytesToHumanReadable(chunkSize))
 	}
 
-	// Create and preallocate output file (use OpenFile to allow resume)
-	outFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_RDWR, 0644)
+	// Create and preallocate output file with .surge suffix
+	outFile, err := os.OpenFile(workingPath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
@@ -508,6 +514,14 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 	// Final sync
 	if err := outFile.Sync(); err != nil {
 		return fmt.Errorf("failed to sync file: %w", err)
+	}
+
+	// Close file before renaming
+	outFile.Close()
+
+	// Rename from .surge to final destination
+	if err := os.Rename(workingPath, destPath); err != nil {
+		return fmt.Errorf("failed to rename completed file: %w", err)
 	}
 
 	// Delete state file on successful completion
