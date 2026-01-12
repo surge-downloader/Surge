@@ -192,8 +192,18 @@ func TUIDownload(ctx context.Context, cfg DownloadConfig) error {
 		destPath = filepath.Join(cfg.OutputPath, probe.Filename)
 	}
 
-	// Generate unique filename if file already exists
-	destPath = uniqueFilePath(destPath)
+	// Check if this is a resume (saved state exists with matching DestPath)
+	savedState, _ := LoadState(cfg.URL)
+	isResume := savedState != nil && len(savedState.Tasks) > 0 && savedState.DestPath != ""
+
+	if isResume {
+		// Resume: use saved destination path directly (don't generate new unique name)
+		destPath = savedState.DestPath
+		utils.Debug("Resuming download, using saved destPath: %s", destPath)
+	} else {
+		// Fresh download: generate unique filename if file already exists
+		destPath = uniqueFilePath(destPath)
+	}
 	finalFilename := filepath.Base(destPath)
 	utils.Debug("Destination path: %s", destPath)
 

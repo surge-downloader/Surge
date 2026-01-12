@@ -489,13 +489,27 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 		}
 		d.activeMu.Unlock()
 
-		// Save state for resume
+		// Calculate Downloaded from remaining tasks (ensures consistency)
+		var remainingBytes int64
+		for _, task := range remainingTasks {
+			remainingBytes += task.Length
+		}
+		computedDownloaded := fileSize - remainingBytes
+
+		// Debug: compare atomic counter vs computed value to verify fix
+		atomicDownloaded := d.State.Downloaded.Load()
+		if atomicDownloaded != computedDownloaded {
+			utils.Debug("PAUSE FIX: Atomic counter=%d, Computed from tasks=%d, Diff=%d bytes",
+				atomicDownloaded, computedDownloaded, atomicDownloaded-computedDownloaded)
+		}
+
+		// Save state for resume (use computed value for consistency)
 		state := &DownloadState{
 			URLHash:    URLHash(d.URL),
 			URL:        d.URL,
 			DestPath:   destPath,
 			TotalSize:  fileSize,
-			Downloaded: d.State.Downloaded.Load(),
+			Downloaded: computedDownloaded, // FIX: Use computed value instead of atomic counter
 			Tasks:      remainingTasks,
 			Filename:   filepath.Base(destPath),
 		}
@@ -503,7 +517,8 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 			utils.Debug("Failed to save pause state: %v", err)
 		}
 
-		utils.Debug("Download paused, state saved")
+		utils.Debug("Download paused, state saved (Downloaded=%d, RemainingTasks=%d, RemainingBytes=%d)",
+			computedDownloaded, len(remainingTasks), remainingBytes)
 		return nil // Graceful exit, not an error
 	}
 
