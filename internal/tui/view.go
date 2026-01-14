@@ -331,24 +331,50 @@ func (m RootModel) View() string {
 	// Tab Bar
 	tabBar := renderTabs(m.activeTab, active, queued, downloaded)
 
+	// Search bar (shown when search is active or has a query)
+	var searchBar string
+	if m.searchActive || m.searchQuery != "" {
+		searchIcon := lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("🔍 ")
+		var searchDisplay string
+		if m.searchActive {
+			searchDisplay = m.searchInput.View() +
+				lipgloss.NewStyle().Foreground(ColorGray).Render(" [esc exit]")
+		} else {
+			// Show query with clear hint
+			searchDisplay = lipgloss.NewStyle().Foreground(ColorNeonPink).Render(m.searchQuery) +
+				lipgloss.NewStyle().Foreground(ColorGray).Render(" [f to clear]")
+		}
+		searchBar = lipgloss.JoinHorizontal(lipgloss.Left, searchIcon, searchDisplay)
+	}
+
 	// Render the bubbles list or centered empty message
 	var listContent string
 	if len(m.list.Items()) == 0 {
 		// FIX: Reduced width (leftWidth-8) to account for padding (4) and borders (2) + safety
 		// preventing the "floating bits" wrap-around artifact.
 		listContentHeight := listHeight - 6
-		listContent = lipgloss.Place(leftWidth-8, listContentHeight, lipgloss.Center, lipgloss.Center,
-			lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("No downloads"))
+		if m.searchQuery != "" {
+			listContent = lipgloss.Place(leftWidth-8, listContentHeight, lipgloss.Center, lipgloss.Center,
+				lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("No matching downloads"))
+		} else {
+			listContent = lipgloss.Place(leftWidth-8, listContentHeight, lipgloss.Center, lipgloss.Center,
+				lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("No downloads"))
+		}
 	} else {
 		// ensure list fills the height
 		m.list.SetHeight(listHeight - 4) // adjust for padding/tabs
 		listContent = m.list.View()
 	}
 
-	listInner := lipgloss.NewStyle().Padding(1, 2).Render(lipgloss.JoinVertical(lipgloss.Left,
-		tabBar,
-		listContent,
-	))
+	// Build list inner content
+	var listInnerContent string
+	if searchBar != "" {
+		listInnerContent = lipgloss.JoinVertical(lipgloss.Left, searchBar, tabBar, listContent)
+	} else {
+		listInnerContent = lipgloss.JoinVertical(lipgloss.Left, tabBar, listContent)
+	}
+	listInner := lipgloss.NewStyle().Padding(1, 2).Render(listInnerContent)
+
 	// Determine border color for downloads box based on focus
 	downloadsBorderColor := ColorNeonPink
 	if m.logFocused {

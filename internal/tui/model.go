@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/filepicker"
@@ -124,6 +125,11 @@ type RootModel struct {
 	SelectedDownloadID string // ID of the currently selected download
 	ManualTabSwitch    bool   // Whether the last tab switch was manual
 
+	// Search functionality
+	searchInput  textinput.Model // Text input for search
+	searchActive bool            // Whether search mode is active
+	searchQuery  string          // Current search query
+
 	// Keybindings
 	keys KeyMap
 }
@@ -229,6 +235,12 @@ func InitialRootModel() RootModel {
 	settingsInput.Width = 40
 	settingsInput.Prompt = ""
 
+	// Initialize search input
+	searchInput := textinput.New()
+	searchInput.Placeholder = "Type to search..."
+	searchInput.Width = 30
+	searchInput.Prompt = ""
+
 	return RootModel{
 		downloads:     downloads,
 		inputs:        []textinput.Model{urlInput, pathInput, filenameInput},
@@ -244,6 +256,7 @@ func InitialRootModel() RootModel {
 		logEntries:    make([]string, 0),
 		Settings:      settings,
 		SettingsInput: settingsInput,
+		searchInput:   searchInput,
 		keys:          Keys,
 	}
 }
@@ -261,23 +274,33 @@ func listenForActivity(sub chan tea.Msg) tea.Cmd {
 // Helper to get downloads for the current tab
 func (m RootModel) getFilteredDownloads() []*DownloadModel {
 	var filtered []*DownloadModel
+	searchLower := strings.ToLower(m.searchQuery)
+
 	for _, d := range m.downloads {
+		// Apply tab filter first
 		switch m.activeTab {
 		case TabQueued:
-			// Queued: not done, not actively downloading (includes paused)
-			if !d.done && d.Speed == 0 {
-				filtered = append(filtered, d)
+			if d.done || d.Speed > 0 {
+				continue
 			}
 		case TabActive:
-			// Active: only downloads with active speed
-			if !d.done && d.Speed > 0 {
-				filtered = append(filtered, d)
+			if d.done || d.Speed == 0 {
+				continue
 			}
 		case TabDone:
-			if d.done {
-				filtered = append(filtered, d)
+			if !d.done {
+				continue
 			}
 		}
+
+		// Apply search filter if query is set
+		if m.searchQuery != "" {
+			if !strings.Contains(strings.ToLower(d.Filename), searchLower) {
+				continue
+			}
+		}
+
+		filtered = append(filtered, d)
 	}
 	return filtered
 }

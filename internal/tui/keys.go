@@ -21,6 +21,7 @@ type DashboardKeyMap struct {
 	TabDone   key.Binding
 	NextTab   key.Binding
 	Add       key.Binding
+	Search    key.Binding
 	Pause     key.Binding
 	Delete    key.Binding
 	Settings  key.Binding
@@ -125,6 +126,10 @@ var Keys = KeyMap{
 		Add: key.NewBinding(
 			key.WithKeys("a"),
 			key.WithHelp("a", "add download"),
+		),
+		Search: key.NewBinding(
+			key.WithKeys("f"),
+			key.WithHelp("f", "search"),
 		),
 		Pause: key.NewBinding(
 			key.WithKeys("p"),
@@ -329,14 +334,14 @@ var Keys = KeyMap{
 
 // ShortHelp returns keybindings to show in the mini help view
 func (k DashboardKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.TabQueued, k.TabActive, k.TabDone, k.Add, k.Pause, k.Delete, k.Settings, k.Log, k.Quit}
+	return []key.Binding{k.TabQueued, k.TabActive, k.TabDone, k.Add, k.Search, k.Pause, k.Delete, k.Settings, k.Quit}
 }
 
 // FullHelp returns keybindings for the expanded help view
 func (k DashboardKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.TabQueued, k.TabActive, k.TabDone, k.NextTab},
-		{k.Add, k.Pause, k.Delete, k.Settings},
+		{k.Add, k.Search, k.Pause, k.Delete, k.Settings},
 		{k.Log, k.History, k.Quit},
 	}
 }

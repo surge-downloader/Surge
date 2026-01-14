@@ -356,6 +356,47 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch m.state {
 		case DashboardState:
+			// Handle search input FIRST when active (intercepts ALL keys)
+			if m.searchActive {
+				switch msg.String() {
+				case "esc":
+					// Cancel search and clear query
+					m.searchActive = false
+					m.searchInput.Blur()
+					m.searchQuery = ""
+					m.searchInput.SetValue("")
+					m.UpdateListItems()
+					return m, nil
+				case "enter":
+					// Commit search (keep filter applied)
+					m.searchActive = false
+					m.searchInput.Blur()
+					return m, nil
+				default:
+					// All other keys go to search input
+					var cmd tea.Cmd
+					m.searchInput, cmd = m.searchInput.Update(msg)
+					m.searchQuery = m.searchInput.Value()
+					m.UpdateListItems()
+					return m, cmd
+				}
+			}
+
+			// Toggle search with F
+			if key.Matches(msg, m.keys.Dashboard.Search) {
+				if m.searchQuery != "" {
+					// Clear existing search
+					m.searchQuery = ""
+					m.searchInput.SetValue("")
+					m.UpdateListItems()
+				} else {
+					// Start new search
+					m.searchActive = true
+					m.searchInput.Focus()
+				}
+				return m, nil
+			}
+
 			// Tab switching
 			if key.Matches(msg, m.keys.Dashboard.TabQueued) {
 				m.activeTab = TabQueued
