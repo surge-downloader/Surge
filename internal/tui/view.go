@@ -159,8 +159,9 @@ func (m RootModel) View() string {
 	logWidth := leftWidth - logoWidth - 2 // Rest for log box
 
 	// Render logo centered in its box
+	gradientLogo := ApplyGradient(logoText, ColorNeonPink, ColorNeonPurple)
 	logoBox := lipgloss.Place(logoWidth, headerHeight, lipgloss.Center, lipgloss.Center,
-		LogoStyle.Render(logoText))
+		lipgloss.NewStyle().MarginBottom(1).Render(gradientLogo))
 
 	// Render log viewport
 	m.logViewport.Width = logWidth - 4      // Account for borders
