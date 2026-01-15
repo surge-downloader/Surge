@@ -1,4 +1,4 @@
-module surge
+module github.com/junaid2005p/surge
 
 go 1.24.4
 
