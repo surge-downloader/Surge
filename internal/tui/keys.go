@@ -12,23 +12,25 @@ type KeyMap struct {
 	Extension      ExtensionKeyMap
 	Settings       SettingsKeyMap
 	SettingsEditor SettingsEditorKeyMap
+	BatchConfirm   BatchConfirmKeyMap
 }
 
 // DashboardKeyMap defines keybindings for the main dashboard
 type DashboardKeyMap struct {
-	TabQueued key.Binding
-	TabActive key.Binding
-	TabDone   key.Binding
-	NextTab   key.Binding
-	Add       key.Binding
-	Search    key.Binding
-	Pause     key.Binding
-	Delete    key.Binding
-	Settings  key.Binding
-	Log       key.Binding
-	History   key.Binding
-	Quit      key.Binding
-	ForceQuit key.Binding
+	TabQueued   key.Binding
+	TabActive   key.Binding
+	TabDone     key.Binding
+	NextTab     key.Binding
+	Add         key.Binding
+	BatchImport key.Binding
+	Search      key.Binding
+	Pause       key.Binding
+	Delete      key.Binding
+	Settings    key.Binding
+	Log         key.Binding
+	History     key.Binding
+	Quit        key.Binding
+	ForceQuit   key.Binding
 	// Navigation
 	Up   key.Binding
 	Down key.Binding
@@ -104,6 +106,12 @@ type SettingsEditorKeyMap struct {
 	Cancel  key.Binding
 }
 
+// BatchConfirmKeyMap defines keybindings for batch import confirmation
+type BatchConfirmKeyMap struct {
+	Confirm key.Binding
+	Cancel  key.Binding
+}
+
 // Keys contains all the keybindings for the application
 var Keys = KeyMap{
 	Dashboard: DashboardKeyMap{
@@ -126,6 +134,10 @@ var Keys = KeyMap{
 		Add: key.NewBinding(
 			key.WithKeys("a"),
 			key.WithHelp("a", "add download"),
+		),
+		BatchImport: key.NewBinding(
+			key.WithKeys("b", "B"),
+			key.WithHelp("b", "batch import"),
 		),
 		Search: key.NewBinding(
 			key.WithKeys("f"),
@@ -330,11 +342,21 @@ var Keys = KeyMap{
 			key.WithHelp("esc", "cancel"),
 		),
 	},
+	BatchConfirm: BatchConfirmKeyMap{
+		Confirm: key.NewBinding(
+			key.WithKeys("y", "Y", "enter"),
+			key.WithHelp("y", "confirm"),
+		),
+		Cancel: key.NewBinding(
+			key.WithKeys("n", "N", "esc"),
+			key.WithHelp("n", "cancel"),
+		),
+	},
 }
 
 // ShortHelp returns keybindings to show in the mini help view
 func (k DashboardKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.TabQueued, k.TabActive, k.TabDone, k.Add, k.Search, k.Pause, k.Delete, k.Settings, k.Quit}
+	return []key.Binding{k.TabQueued, k.TabActive, k.TabDone, k.Add, k.BatchImport, k.Search, k.Pause, k.Delete, k.Settings, k.Quit}
 }
 
 // FullHelp returns keybindings for the expanded help view
@@ -402,5 +424,13 @@ func (k SettingsEditorKeyMap) ShortHelp() []key.Binding {
 }
 
 func (k SettingsEditorKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{{k.Confirm, k.Cancel}}
+}
+
+func (k BatchConfirmKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Confirm, k.Cancel}
+}
+
+func (k BatchConfirmKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{{k.Confirm, k.Cancel}}
 }

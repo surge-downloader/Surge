@@ -31,6 +31,8 @@ const (
 	SearchState                               //SearchState is 6
 	SettingsState                             //SettingsState is 7
 	ExtensionConfirmationState                //ExtensionConfirmationState is 8
+	BatchFilePickerState                      //BatchFilePickerState is 9
+	BatchConfirmState                         //BatchConfirmState is 10
 )
 
 const (
@@ -128,6 +130,10 @@ type RootModel struct {
 	searchInput  textinput.Model // Text input for search
 	searchActive bool            // Whether search mode is active
 	searchQuery  string          // Current search query
+
+	// Batch import
+	pendingBatchURLs []string // URLs pending batch import
+	batchFilePath    string   // Path to the batch file
 
 	// Keybindings
 	keys KeyMap

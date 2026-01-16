@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/junaid2005p/surge/internal/tui/components"
 	"github.com/junaid2005p/surge/internal/utils"
 
 	"github.com/charmbracelet/lipgloss"
@@ -59,19 +60,14 @@ func (m RootModel) View() string {
 	}
 
 	if m.state == FilePickerState {
-		pickerContent := lipgloss.JoinVertical(lipgloss.Left,
-			"",
-			lipgloss.NewStyle().Foreground(ColorLightGray).Render(m.filepicker.CurrentDirectory),
-			"",
-			m.filepicker.View(),
-			"",
-			m.help.View(m.keys.FilePicker),
+		picker := components.NewFilePickerModal(
+			" Select Directory ",
+			m.filepicker,
+			m.help,
+			m.keys.FilePicker,
+			ColorNeonPink,
 		)
-
-		paddedContent := lipgloss.NewStyle().Padding(0, 2).Render(pickerContent)
-
-		box := renderBtopBox(PaneTitleStyle.Render(" Select Directory "), "", paddedContent, 90, 20, ColorNeonPink)
-
+		box := picker.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 
@@ -104,6 +100,39 @@ func (m RootModel) View() string {
 			lipgloss.NewStyle().Render("Do you want to add this download?"),
 			"",
 			lipgloss.NewStyle().Foreground(ColorNeonPurple).Bold(true).Render(truncateString(m.pendingURL, 50)),
+			"",
+			lipgloss.NewStyle().Foreground(ColorLightGray).Render("[Y] Yes  [N] No"),
+		)
+
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
+			lipgloss.NewStyle().
+				Border(lipgloss.DoubleBorder()).
+				BorderForeground(ColorNeonCyan).
+				Padding(1, 4).
+				Render(confirmationContent),
+		)
+	}
+
+	if m.state == BatchFilePickerState {
+		picker := components.NewFilePickerModal(
+			" Select URL File (.txt) ",
+			m.filepicker,
+			m.help,
+			m.keys.FilePicker,
+			ColorNeonCyan,
+		)
+		box := picker.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	}
+
+	if m.state == BatchConfirmState {
+		urlCount := len(m.pendingBatchURLs)
+		confirmationContent := lipgloss.JoinVertical(lipgloss.Center,
+			lipgloss.NewStyle().Foreground(ColorNeonCyan).Bold(true).Render("BATCH IMPORT"),
+			"",
+			lipgloss.NewStyle().Render(fmt.Sprintf("Add %d downloads?", urlCount)),
+			"",
+			lipgloss.NewStyle().Foreground(ColorNeonPurple).Bold(true).Render(truncateString(m.batchFilePath, 50)),
 			"",
 			lipgloss.NewStyle().Foreground(ColorLightGray).Render("[Y] Yes  [N] No"),
 		)
