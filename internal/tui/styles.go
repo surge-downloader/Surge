@@ -1,25 +1,34 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/junaid2005p/surge/internal/tui/colors"
 
+	"github.com/charmbracelet/lipgloss"
+)
+
+// Re-export colors from colors package for backward compatibility
 var (
-	// === Palette ===
-	// Vibrant "Cyberpunk" Neon Colors
-	ColorNeonPurple = lipgloss.Color("#bd93f9")
-	ColorNeonPink   = lipgloss.Color("#ff79c6")
-	ColorNeonCyan   = lipgloss.Color("#8be9fd")
-	ColorDarkGray   = lipgloss.Color("#282a36") // Background
-	ColorGray       = lipgloss.Color("#44475a") // Borders
-	ColorLightGray  = lipgloss.Color("#a9b1d6") // Brighter text for secondary info
-	ColorWhite      = lipgloss.Color("#f8f8f2")
+	ColorNeonPurple       = colors.NeonPurple
+	ColorNeonPink         = colors.NeonPink
+	ColorNeonCyan         = colors.NeonCyan
+	ColorDarkGray         = colors.DarkGray
+	ColorGray             = colors.Gray
+	ColorLightGray        = colors.LightGray
+	ColorWhite            = colors.White
+	ColorStateError       = colors.StateError
+	ColorStatePaused      = colors.StatePaused
+	ColorStateDownloading = colors.StateDownloading
+	ColorStateDone        = colors.StateDone
+)
 
-	// Semantic State Colors
-	ColorStateError       = lipgloss.Color("#ff5555") // 🔴 Red - Error/Stopped
-	ColorStatePaused      = lipgloss.Color("#ffb86c") // 🟡 Orange - Paused/Queued
-	ColorStateDownloading = lipgloss.Color("#50fa7b") // 🟢 Green - Downloading
-	ColorStateDone        = lipgloss.Color("#bd93f9") // 🔵 Purple - Completed
+// Progress bar color constants
+const (
+	ProgressStart = colors.ProgressStart
+	ProgressEnd   = colors.ProgressEnd
+)
 
-	// === Layout Styles ===
+// === Layout Styles ===
+var (
 
 	// The main box surrounding everything (optional, depending on terminal size)
 	AppStyle = lipgloss.NewStyle().
@@ -84,10 +93,6 @@ var (
 	StatsValueStyle = lipgloss.NewStyle().
 			Foreground(ColorNeonPink).
 			Bold(true)
-
-	// Progress Bar Colors
-	ProgressStart = "#ff79c6" // Pink
-	ProgressEnd   = "#bd93f9" // Purple
 
 	// Log Entry Styles
 	LogStyleStarted = lipgloss.NewStyle().

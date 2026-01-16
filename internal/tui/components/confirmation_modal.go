@@ -1,16 +1,9 @@
 package components
 
 import (
-	"github.com/charmbracelet/lipgloss"
-)
+	"github.com/junaid2005p/surge/internal/tui/colors"
 
-// Color variables matching styles.go
-var (
-	colorNeonPurple = lipgloss.Color("#bd93f9")
-	colorNeonPink   = lipgloss.Color("#ff79c6")
-	colorNeonCyan   = lipgloss.Color("#8be9fd")
-	colorLightGray  = lipgloss.Color("#a9b1d6")
-	colorGray       = lipgloss.Color("#44475a")
+	"github.com/charmbracelet/lipgloss"
 )
 
 // ConfirmationModal renders a styled confirmation dialog box
@@ -31,7 +24,7 @@ func NewConfirmationModal(title, message, detail, helpText string) ConfirmationM
 		Message:     message,
 		Detail:      detail,
 		HelpText:    helpText,
-		BorderColor: colorNeonCyan,
+		BorderColor: colors.NeonCyan,
 		Width:       60,
 		Height:      10,
 	}
@@ -40,15 +33,15 @@ func NewConfirmationModal(title, message, detail, helpText string) ConfirmationM
 // View renders the confirmation modal content (without the box wrapper)
 func (m ConfirmationModal) View() string {
 	titleStyle := lipgloss.NewStyle().
-		Foreground(colorNeonCyan).
+		Foreground(colors.NeonCyan).
 		Bold(true)
 
 	detailStyle := lipgloss.NewStyle().
-		Foreground(colorNeonPurple).
+		Foreground(colors.NeonPurple).
 		Bold(true)
 
 	helpStyle := lipgloss.NewStyle().
-		Foreground(colorLightGray)
+		Foreground(colors.LightGray)
 
 	// Build content
 	content := lipgloss.JoinVertical(lipgloss.Center,

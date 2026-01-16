@@ -1,14 +1,11 @@
 package components
 
 import (
+	"github.com/junaid2005p/surge/internal/tui/colors"
+
 	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/lipgloss"
-)
-
-// Color variables matching styles.go
-var (
-	fpColorLightGray = lipgloss.Color("#a9b1d6")
 )
 
 // FilePickerModal represents a styled file picker modal
@@ -37,7 +34,7 @@ func NewFilePickerModal(title string, picker filepicker.Model, helpModel help.Mo
 
 // View returns the inner content of the file picker (without the box)
 func (m FilePickerModal) View() string {
-	pathStyle := lipgloss.NewStyle().Foreground(fpColorLightGray)
+	pathStyle := lipgloss.NewStyle().Foreground(colors.LightGray)
 
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		"",
