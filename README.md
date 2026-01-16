@@ -51,7 +51,17 @@ surge get <URL>
 
 # Headless download with custom output directory
 surge get <URL> -o ~/Downloads
+
+# Batch download from a file (one URL per line)
+surge get --batch urls.txt -o ~/Downloads
 ```
+
+### Batch Downloads
+
+Import multiple URLs at once from a text file (one URL per line). Duplicate URLs are automatically detected and skipped.
+
+- **TUI**: Press `B` to import a batch file
+- **CLI**: Use `surge get --batch urls.txt`
 
 ## Benchmarks
 
@@ -82,12 +92,21 @@ Run your own: `python benchmark.py -n 5`
 
 Intercept downloads from your browser and send them directly to Surge.
 
-### Installation
+### Chrome / Edge
 
-1. Open Chrome/Edge and navigate to `chrome://extensions`
+1. Navigate to `chrome://extensions`
 2. Enable **Developer mode**
 3. Click **Load unpacked** and select the `extension` folder
 4. Ensure Surge is running before downloading
+
+### Firefox
+
+1. Navigate to `about:debugging`
+2. Click **This Firefox** in the sidebar
+3. Click **Load Temporary Add-on...**
+4. Select `manifest.json` from the `extension-firefox` folder
+
+> **Note:** Temporary add-ons are removed when Firefox closes. For permanent installation, the extension must be signed via [addons.mozilla.org](https://addons.mozilla.org).
 
 The extension will automatically intercept downloads and send them to Surge via `http://127.0.0.1`.
 

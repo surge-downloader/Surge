@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/junaid2005p/surge/internal/config"
 	"github.com/junaid2005p/surge/internal/tui"
@@ -106,17 +107,8 @@ func startHTTPServer(ln net.Listener, port int) {
 	}
 }
 
-// corsMiddleware adds CORS headers for browser extension requests
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -143,6 +135,19 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	if req.URL == "" {
 		http.Error(w, "URL is required", http.StatusBadRequest)
+		return
+	}
+
+	if strings.Contains(req.Path, "..") || strings.Contains(req.Filename, "..") {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+	if strings.Contains(req.Filename, "/") || strings.Contains(req.Filename, "\\") {
+		http.Error(w, "Invalid filename", http.StatusBadRequest)
+		return
+	}
+	if filepath.IsAbs(req.Path) {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
 

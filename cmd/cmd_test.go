@@ -119,35 +119,26 @@ func TestSaveAndRemoveActivePort(t *testing.T) {
 // corsMiddleware Tests
 // =============================================================================
 
-func TestCorsMiddleware_SetsHeaders(t *testing.T) {
-	// Create a simple handler
+func TestCorsMiddleware_PassesThroughWithoutCORS(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Wrap with CORS middleware
 	corsHandler := corsMiddleware(handler)
 
-	// Make request
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	rec := httptest.NewRecorder()
 	corsHandler.ServeHTTP(rec, req)
 
-	// Check CORS headers
-	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
-		t.Error("Missing Access-Control-Allow-Origin header")
-	}
-	if rec.Header().Get("Access-Control-Allow-Methods") != "POST, GET, OPTIONS" {
-		t.Error("Missing Access-Control-Allow-Methods header")
-	}
-	if rec.Header().Get("Access-Control-Allow-Headers") != "Content-Type" {
-		t.Error("Missing Access-Control-Allow-Headers header")
+	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Error("CORS headers should not be set")
 	}
 }
 
-func TestCorsMiddleware_OptionsRequest(t *testing.T) {
+func TestCorsMiddleware_OptionsPassedToHandler(t *testing.T) {
+	called := false
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("Handler should not be called for OPTIONS")
+		called = true
 	})
 
 	corsHandler := corsMiddleware(handler)
@@ -156,8 +147,8 @@ func TestCorsMiddleware_OptionsRequest(t *testing.T) {
 	rec := httptest.NewRecorder()
 	corsHandler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected 200 for OPTIONS, got %d", rec.Code)
+	if !called {
+		t.Error("Handler should be called for OPTIONS")
 	}
 }
 
@@ -235,6 +226,31 @@ func TestHandleDownload_EmptyURL(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("Expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleDownload_PathTraversal(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"path with ..", `{"url": "http://x.com/f", "path": "../etc"}`},
+		{"filename with ..", `{"url": "http://x.com/f", "filename": "../passwd"}`},
+		{"filename with slash", `{"url": "http://x.com/f", "filename": "foo/bar"}`},
+		{"filename with backslash", `{"url": "http://x.com/f", "filename": "foo\\bar"}`},
+		{"absolute path", `{"url": "http://x.com/f", "path": "/etc"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/download", bytes.NewBufferString(tt.body))
+			rec := httptest.NewRecorder()
+			handleDownload(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("Expected 400, got %d", rec.Code)
+			}
+		})
 	}
 }
 
@@ -524,7 +540,7 @@ func TestStartHTTPServer_HealthEndpoint(t *testing.T) {
 	}
 }
 
-func TestStartHTTPServer_CORSHeaders(t *testing.T) {
+func TestStartHTTPServer_NoCORSHeaders(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to create listener: %v", err)
@@ -534,15 +550,14 @@ func TestStartHTTPServer_CORSHeaders(t *testing.T) {
 	go startHTTPServer(ln, port)
 	time.Sleep(50 * time.Millisecond)
 
-	// Test that CORS headers are set
 	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/health", port))
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.Header.Get("Access-Control-Allow-Origin") != "*" {
-		t.Error("Missing CORS origin header")
+	if resp.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Error("CORS headers should not be set")
 	}
 }
 
@@ -556,7 +571,6 @@ func TestStartHTTPServer_OptionsRequest(t *testing.T) {
 	go startHTTPServer(ln, port)
 	time.Sleep(50 * time.Millisecond)
 
-	// Send OPTIONS request
 	req, _ := http.NewRequest(http.MethodOptions, fmt.Sprintf("http://127.0.0.1:%d/download", port), nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -564,8 +578,8 @@ func TestStartHTTPServer_OptionsRequest(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200 for OPTIONS, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("Expected 405 for OPTIONS, got %d", resp.StatusCode)
 	}
 }
 
@@ -757,8 +771,8 @@ func TestCorsMiddleware_AllMethods(t *testing.T) {
 		rec := httptest.NewRecorder()
 		corsHandler.ServeHTTP(rec, req)
 
-		if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
-			t.Errorf("CORS header missing for %s", method)
+		if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Errorf("CORS header should not be set for %s", method)
 		}
 	}
 }

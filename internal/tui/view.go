@@ -67,7 +67,8 @@ func (m RootModel) View() string {
 			m.keys.FilePicker,
 			ColorNeonPink,
 		)
-		return picker.RenderCentered(m.width, m.height, PaneTitleStyle)
+		box := picker.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 
 	if m.state == SettingsState {
@@ -85,7 +86,8 @@ func (m RootModel) View() string {
 			Width:       60,
 			Height:      10,
 		}
-		return modal.RenderCentered(m.width, m.height, PaneTitleStyle)
+		box := modal.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 
 	if m.state == ExtensionConfirmationState {
@@ -99,7 +101,8 @@ func (m RootModel) View() string {
 			Width:       60,
 			Height:      10,
 		}
-		return modal.RenderCentered(m.width, m.height, PaneTitleStyle)
+		box := modal.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 
 	if m.state == BatchFilePickerState {
@@ -110,7 +113,8 @@ func (m RootModel) View() string {
 			m.keys.FilePicker,
 			ColorNeonCyan,
 		)
-		return picker.RenderCentered(m.width, m.height, PaneTitleStyle)
+		box := picker.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 
 	if m.state == BatchConfirmState {
@@ -125,7 +129,8 @@ func (m RootModel) View() string {
 			Width:       60,
 			Height:      10,
 		}
-		return modal.RenderCentered(m.width, m.height, PaneTitleStyle)
+		box := modal.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 
 	// === MAIN DASHBOARD LAYOUT ===

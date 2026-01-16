@@ -397,7 +397,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					m.addLogEntry(LogStyleError.Render("✖ Failed to read batch file: " + err.Error()))
 					// Reset filepicker and return
-					m.resetFilepicker()
+					m.filepicker.FileAllowed = false
+					m.filepicker.DirAllowed = true
 					m.state = DashboardState
 					return m, nil
 				}
@@ -407,7 +408,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.batchFilePath = path
 
 				// Reset filepicker to directory mode
-				m.resetFilepicker()
+				m.filepicker.FileAllowed = false
+				m.filepicker.DirAllowed = true
 
 				m.state = BatchConfirmState
 				return m, nil
@@ -892,7 +894,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case BatchFilePickerState:
 			if key.Matches(msg, m.keys.FilePicker.Cancel) {
 				// Reset filepicker to directory mode and return
-				m.resetFilepicker()
+				m.filepicker.FileAllowed = false
+				m.filepicker.DirAllowed = true
+				m.filepicker.AllowedTypes = nil
 				m.state = DashboardState
 				return m, nil
 			}
@@ -915,7 +919,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					m.addLogEntry(LogStyleError.Render("✖ Failed to read batch file: " + err.Error()))
 					// Reset filepicker and return
-					m.resetFilepicker()
+					m.filepicker.FileAllowed = false
+					m.filepicker.DirAllowed = true
+					m.filepicker.AllowedTypes = nil
 					m.state = DashboardState
 					return m, nil
 				}
@@ -925,7 +931,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.batchFilePath = path
 
 				// Reset filepicker to directory mode
-				m.resetFilepicker()
+				m.filepicker.FileAllowed = false
+				m.filepicker.DirAllowed = true
+				m.filepicker.AllowedTypes = nil
 
 				m.state = BatchConfirmState
 				return m, nil
@@ -935,17 +943,29 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case BatchConfirmState:
 			if key.Matches(msg, m.keys.BatchConfirm.Confirm) {
-				// Add all URLs as downloads
+				// Add all URLs as downloads, skipping duplicates
 				path := m.Settings.General.DefaultDownloadDir
 				if path == "" {
 					path = "."
 				}
 
+				added := 0
+				skipped := 0
 				for _, url := range m.pendingBatchURLs {
+					// Skip duplicate URLs
+					if m.checkForDuplicate(url) != nil {
+						skipped++
+						continue
+					}
 					m, _ = m.startDownload(url, path, "")
+					added++
 				}
 
-				m.addLogEntry(LogStyleStarted.Render(fmt.Sprintf("⬇ Added %d downloads from batch", len(m.pendingBatchURLs))))
+				if skipped > 0 {
+					m.addLogEntry(LogStyleStarted.Render(fmt.Sprintf("⬇ Added %d downloads from batch (%d duplicates skipped)", added, skipped)))
+				} else {
+					m.addLogEntry(LogStyleStarted.Render(fmt.Sprintf("⬇ Added %d downloads from batch", added)))
+				}
 				m.pendingBatchURLs = nil
 				m.batchFilePath = ""
 				m.state = DashboardState

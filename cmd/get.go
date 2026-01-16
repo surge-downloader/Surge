@@ -153,7 +153,25 @@ Use --batch to download multiple URLs from a file (one URL per line).`,
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Fprintf(os.Stderr, "Loaded %d URLs from %s\n", len(urls), batchFile)
+
+			// Filter out duplicate URLs
+			seen := make(map[string]bool)
+			uniqueURLs := make([]string, 0, len(urls))
+			for _, url := range urls {
+				normalized := strings.TrimRight(url, "/")
+				if !seen[normalized] {
+					seen[normalized] = true
+					uniqueURLs = append(uniqueURLs, url)
+				}
+			}
+			duplicates := len(urls) - len(uniqueURLs)
+			urls = uniqueURLs
+
+			if duplicates > 0 {
+				fmt.Fprintf(os.Stderr, "Loaded %d URLs from %s (%d duplicates ignored)\n", len(urls), batchFile, duplicates)
+			} else {
+				fmt.Fprintf(os.Stderr, "Loaded %d URLs from %s\n", len(urls), batchFile)
+			}
 		} else if len(args) == 1 {
 			// Single URL mode
 			urls = []string{args[0]}
