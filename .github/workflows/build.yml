@@ -1,56 +1,50 @@
 name: Build and Release
 
 on:
+  # Trigger 1: Auto-run on pushes to main (merges)
   push:
     branches:
       - main
     tags:
-      - 'v*' # Triggers the release job on version tags (e.g., v1.0.0)
-  pull_request:
-    branches:
-      - main
+      - 'v*'
+
+  # Trigger 2: Manual button click (Replaces the PR automation)
+  workflow_dispatch:
+
+  # pull_request section is completely removed
 
 permissions:
-  contents: write # Required to create the GitHub Release
+  contents: write
 
 jobs:
-  # Job 1: CI (Build and Test)
-  # Runs on all commits to main and PRs
   test:
     name: Test and Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.24.4+auto'
-
       - name: Build
         run: go build -v ./...
-
       - name: Test
         run: go test -v ./...
 
-  # Job 2: CD (Release via GoReleaser)
-  # Runs only when a tag is pushed
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: test # Only release if tests pass
+    needs: test
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Important: GoReleaser needs full history for changelogs
-
+          fetch-depth: 0
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.24.4+auto'
-
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -58,7 +52,5 @@ jobs:
           version: latest
           args: release --clean
         env:
-          # Standard GitHub Token for creating the release on this repo
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Custom Token for updating the external Homebrew Tap repo
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
