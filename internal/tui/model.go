@@ -274,7 +274,7 @@ func InitialRootModel(serverPort int, currentVersion string) RootModel {
 		filepicker:     fp,
 		help:           helpModel,
 		list:           downloadList,
-		Pool:           download.NewWorkerPool(progressChan),
+		Pool:           download.NewWorkerPool(progressChan, settings.General.MaxConcurrentDownloads),
 		PWD:            pwd,
 		SpeedHistory:   make([]float64, GraphHistoryPoints), // 60 points of history (30s at 0.5s interval)
 		logViewport:    viewport.New(40, 5),                 // Default size, will be resized

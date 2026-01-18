@@ -17,11 +17,12 @@ type Settings struct {
 
 // GeneralSettings contains application behavior settings.
 type GeneralSettings struct {
-	DefaultDownloadDir string `json:"default_download_dir"`
-	WarnOnDuplicate    bool   `json:"warn_on_duplicate"`
-	ExtensionPrompt    bool   `json:"extension_prompt"`
-	AutoResume         bool   `json:"auto_resume"`
-	SkipUpdateCheck    bool   `json:"skip_update_check"`
+	DefaultDownloadDir     string `json:"default_download_dir"`
+	WarnOnDuplicate        bool   `json:"warn_on_duplicate"`
+	ExtensionPrompt        bool   `json:"extension_prompt"`
+	AutoResume             bool   `json:"auto_resume"`
+	SkipUpdateCheck        bool   `json:"skip_update_check"`
+	MaxConcurrentDownloads int    `json:"max_concurrent_downloads"`
 }
 
 // ConnectionSettings contains network connection parameters.
@@ -65,6 +66,7 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 			{Key: "extension_prompt", Label: "Extension Prompt", Description: "Prompt for confirmation when adding downloads via browser extension.", Type: "bool"},
 			{Key: "auto_resume", Label: "Auto Resume", Description: "Automatically resume paused downloads on startup.", Type: "bool"},
 			{Key: "skip_update_check", Label: "Skip Update Check", Description: "Disable automatic check for new versions on startup.", Type: "bool"},
+			{Key: "max_concurrent_downloads", Label: "Max Concurrent Downloads", Description: "Maximum number of downloads running at once (1-10). Requires restart.", Type: "int"},
 		},
 		"Connections": {
 			{Key: "max_connections_per_host", Label: "Max Connections/Host", Description: "Maximum concurrent connections per host (1-64).", Type: "int"},
@@ -104,10 +106,11 @@ func DefaultSettings() *Settings {
 
 	return &Settings{
 		General: GeneralSettings{
-			DefaultDownloadDir: defaultDir,
-			WarnOnDuplicate:    true,
-			ExtensionPrompt:    false,
-			AutoResume:         false,
+			DefaultDownloadDir:     defaultDir,
+			WarnOnDuplicate:        true,
+			ExtensionPrompt:        false,
+			AutoResume:             false,
+			MaxConcurrentDownloads: 3,
 		},
 		Connections: ConnectionSettings{
 			MaxConnectionsPerHost: 32,

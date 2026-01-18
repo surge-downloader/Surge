@@ -9,8 +9,6 @@ import (
 	"github.com/surge-downloader/surge/internal/messages"
 )
 
-const maxDownloads = 3 //We limit the max no of downloads to 3 at a time(XDM does this)
-
 // activeDownload tracks a download that's currently running
 type activeDownload struct {
 	config types.DownloadConfig
@@ -18,18 +16,23 @@ type activeDownload struct {
 }
 
 type WorkerPool struct {
-	taskChan   chan types.DownloadConfig
-	progressCh chan<- tea.Msg
-	downloads  map[string]*activeDownload // Track active downloads for pause/resume
-	mu         sync.RWMutex
-	wg         sync.WaitGroup //We use this to wait for all active downloads to pause before exiting the program
+	taskChan     chan types.DownloadConfig
+	progressCh   chan<- tea.Msg
+	downloads    map[string]*activeDownload // Track active downloads for pause/resume
+	mu           sync.RWMutex
+	wg           sync.WaitGroup //We use this to wait for all active downloads to pause before exiting the program
+	maxDownloads int
 }
 
-func NewWorkerPool(progressCh chan<- tea.Msg) *WorkerPool {
+func NewWorkerPool(progressCh chan<- tea.Msg, maxDownloads int) *WorkerPool {
+	if maxDownloads < 1 {
+		maxDownloads = 3 // Default to 3 if invalid
+	}
 	pool := &WorkerPool{
-		taskChan:   make(chan types.DownloadConfig, 100), //We make it buffered to avoid blocking add
-		progressCh: progressCh,
-		downloads:  make(map[string]*activeDownload),
+		taskChan:     make(chan types.DownloadConfig, 100), //We make it buffered to avoid blocking add
+		progressCh:   progressCh,
+		downloads:    make(map[string]*activeDownload),
+		maxDownloads: maxDownloads,
 	}
 	for i := 0; i < maxDownloads; i++ {
 		go pool.worker()

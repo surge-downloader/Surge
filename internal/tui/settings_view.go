@@ -166,6 +166,7 @@ func (m RootModel) getSettingsValues(category string) map[string]interface{} {
 		values["extension_prompt"] = m.Settings.General.ExtensionPrompt
 		values["auto_resume"] = m.Settings.General.AutoResume
 		values["skip_update_check"] = m.Settings.General.SkipUpdateCheck
+		values["max_concurrent_downloads"] = m.Settings.General.MaxConcurrentDownloads
 	case "Connections":
 		values["max_connections_per_host"] = m.Settings.Connections.MaxConnectionsPerHost
 		values["max_global_connections"] = m.Settings.Connections.MaxGlobalConnections
@@ -225,6 +226,15 @@ func (m *RootModel) setGeneralSetting(key, value, typ string) error {
 		m.Settings.General.AutoResume = !m.Settings.General.AutoResume
 	case "skip_update_check":
 		m.Settings.General.SkipUpdateCheck = !m.Settings.General.SkipUpdateCheck
+	case "max_concurrent_downloads":
+		if v, err := strconv.Atoi(value); err == nil {
+			if v < 1 {
+				v = 1
+			} else if v > 10 {
+				v = 10
+			}
+			m.Settings.General.MaxConcurrentDownloads = v
+		}
 	}
 	return nil
 }
@@ -463,6 +473,8 @@ func (m *RootModel) resetSettingToDefault(category, key string, defaults *config
 			m.Settings.General.AutoResume = defaults.General.AutoResume
 		case "skip_update_check":
 			m.Settings.General.SkipUpdateCheck = defaults.General.SkipUpdateCheck
+		case "max_concurrent_downloads":
+			m.Settings.General.MaxConcurrentDownloads = defaults.General.MaxConcurrentDownloads
 		}
 	case "Connections":
 		switch key {

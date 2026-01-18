@@ -13,7 +13,7 @@ import (
 
 func TestNewWorkerPool(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	if pool == nil {
 		t.Fatal("Expected non-nil WorkerPool")
@@ -30,10 +30,39 @@ func TestNewWorkerPool(t *testing.T) {
 	if pool.downloads == nil {
 		t.Error("Expected downloads map to be initialized")
 	}
+
+	if pool.maxDownloads != 3 {
+		t.Errorf("Expected maxDownloads=3, got %d", pool.maxDownloads)
+	}
+}
+
+func TestNewWorkerPool_MaxDownloadsValidation(t *testing.T) {
+	ch := make(chan tea.Msg, 10)
+
+	tests := []struct {
+		name         string
+		maxDownloads int
+		wantMax      int
+	}{
+		{"zero defaults to 3", 0, 3},
+		{"negative defaults to 3", -1, 3},
+		{"valid value 1", 1, 1},
+		{"valid value 5", 5, 5},
+		{"valid value 10", 10, 10},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := NewWorkerPool(ch, tt.maxDownloads)
+			if pool.maxDownloads != tt.wantMax {
+				t.Errorf("maxDownloads = %d, want %d", pool.maxDownloads, tt.wantMax)
+			}
+		})
+	}
 }
 
 func TestNewWorkerPool_NilChannel(t *testing.T) {
-	pool := NewWorkerPool(nil)
+	pool := NewWorkerPool(nil, 3)
 
 	if pool == nil {
 		t.Fatal("Expected non-nil WorkerPool even with nil channel")
@@ -46,7 +75,7 @@ func TestNewWorkerPool_NilChannel(t *testing.T) {
 
 func TestWorkerPool_Add_QueuesToChannel(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	cfg := types.DownloadConfig{
 		ID:  "test-id",
@@ -70,7 +99,7 @@ func TestWorkerPool_Add_QueuesToChannel(t *testing.T) {
 
 func TestWorkerPool_Pause_NonExistentDownload(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	// Should not panic when pausing non-existent download
 	pool.Pause("non-existent-id")
@@ -86,7 +115,7 @@ func TestWorkerPool_Pause_NonExistentDownload(t *testing.T) {
 
 func TestWorkerPool_Pause_ActiveDownload(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	// Create a progress state
 	state := types.NewProgressState("test-id", 1000)
@@ -129,7 +158,7 @@ func TestWorkerPool_Pause_ActiveDownload(t *testing.T) {
 
 func TestWorkerPool_Pause_NilState(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	// Add download with nil state
 	pool.mu.Lock()
@@ -161,7 +190,7 @@ func TestWorkerPool_Pause_NilState(t *testing.T) {
 
 func TestWorkerPool_PauseAll_NoDownloads(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	// Should not panic with no downloads
 	pool.PauseAll()
@@ -177,7 +206,7 @@ func TestWorkerPool_PauseAll_NoDownloads(t *testing.T) {
 
 func TestWorkerPool_PauseAll_MultipleDownloads(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	// Add multiple active downloads
 	states := make([]*types.ProgressState, 3)
@@ -220,7 +249,7 @@ func TestWorkerPool_PauseAll_MultipleDownloads(t *testing.T) {
 
 func TestWorkerPool_PauseAll_SkipsAlreadyPaused(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	// Add one paused and one active download
 	activeState := types.NewProgressState("active", 1000)
@@ -263,7 +292,7 @@ loop:
 
 func TestWorkerPool_PauseAll_SkipsCompletedDownloads(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	// Add one completed and one active download
 	activeState := types.NewProgressState("active", 1000)
@@ -306,7 +335,7 @@ loop:
 
 func TestWorkerPool_Cancel_NonExistentDownload(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	// Should not panic
 	pool.Cancel("non-existent-id")
@@ -314,7 +343,7 @@ func TestWorkerPool_Cancel_NonExistentDownload(t *testing.T) {
 
 func TestWorkerPool_Cancel_RemovesFromMap(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	state := types.NewProgressState("test-id", 1000)
 
@@ -340,7 +369,7 @@ func TestWorkerPool_Cancel_RemovesFromMap(t *testing.T) {
 
 func TestWorkerPool_Cancel_CallsCancelFunc(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	state := types.NewProgressState("test-id", 1000)
@@ -368,7 +397,7 @@ func TestWorkerPool_Cancel_CallsCancelFunc(t *testing.T) {
 
 func TestWorkerPool_Cancel_MarksDone(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	state := types.NewProgressState("test-id", 1000)
 
@@ -390,7 +419,7 @@ func TestWorkerPool_Cancel_MarksDone(t *testing.T) {
 
 func TestWorkerPool_Resume_NonExistentDownload(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	// Should not panic
 	pool.Resume("non-existent-id")
@@ -406,7 +435,7 @@ func TestWorkerPool_Resume_NonExistentDownload(t *testing.T) {
 
 func TestWorkerPool_Resume_ClearsPausedFlag(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	state := types.NewProgressState("test-id", 1000)
 	state.Paused.Store(true)
@@ -429,7 +458,7 @@ func TestWorkerPool_Resume_ClearsPausedFlag(t *testing.T) {
 
 func TestWorkerPool_Resume_SendsResumedMessage(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	state := types.NewProgressState("test-id", 1000)
 	state.Paused.Store(true)
@@ -463,7 +492,7 @@ func TestWorkerPool_Resume_SendsResumedMessage(t *testing.T) {
 
 func TestWorkerPool_Resume_RequeuesDownload(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	state := types.NewProgressState("test-id", 1000)
 	cfg := types.DownloadConfig{
@@ -505,7 +534,7 @@ func TestWorkerPool_Resume_RequeuesDownload(t *testing.T) {
 
 func TestWorkerPool_GracefulShutdown_PausesAll(t *testing.T) {
 	ch := make(chan tea.Msg, 10)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	state := types.NewProgressState("test-id", 1000)
 
@@ -539,7 +568,7 @@ func TestWorkerPool_GracefulShutdown_PausesAll(t *testing.T) {
 
 func TestWorkerPool_ConcurrentPauseCancel(t *testing.T) {
 	ch := make(chan tea.Msg, 100)
-	pool := NewWorkerPool(ch)
+	pool := NewWorkerPool(ch, 3)
 
 	// Add multiple downloads
 	for i := 0; i < 10; i++ {
