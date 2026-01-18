@@ -1,5 +1,15 @@
 version: 2
 
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    # This name must match what is used in 'bin.install' below
+    binary: surge 
+
 changelog:
   sort: asc
   filters:
@@ -9,12 +19,10 @@ changelog:
 
 archives:
   - formats: [ tar.gz ]
-
     # use zip for windows
     format_overrides:
       - goos: windows
         formats: [ zip ]
-        
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 brews:
@@ -26,7 +34,9 @@ brews:
     homepage: "https://github.com/surge-downloader/surge"
     description: "Surge is an open-source download manager"
     license: "MIT"
-    folder: Formula
+    directory: Formula 
+    
+    # 3. Install Script
     install: |
       bin.install "surge"
     test: |
