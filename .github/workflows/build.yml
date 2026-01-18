@@ -8,10 +8,9 @@ on:
     tags:
       - 'v*'
 
-  # Trigger 2: Manual button click (Replaces the PR automation)
-  workflow_dispatch:
-
-  # pull_request section is completely removed
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
