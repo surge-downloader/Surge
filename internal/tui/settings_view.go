@@ -158,8 +158,15 @@ func (m RootModel) viewSettings() string {
 		Padding(1, 2).
 		Render(rightContent)
 
+	// === VERTICAL DIVIDER ===
+	// Calculate divider height based on listBox height
+	listBoxHeight := lipgloss.Height(listBox)
+	dividerStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+	divider := dividerStyle.Render(strings.Repeat("│\n", listBoxHeight-1) + "│")
+
 	// === COMBINE COLUMNS ===
-	content := lipgloss.JoinHorizontal(lipgloss.Top, listBox, rightBox)
+	content := lipgloss.JoinHorizontal(lipgloss.Top, listBox, divider, rightBox)
 
 	// === HELP TEXT using Bubbles help ===
 	helpStyle := lipgloss.NewStyle().
