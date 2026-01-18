@@ -3,18 +3,26 @@
 [![Release](https://img.shields.io/github/v/release/surge-downloader/surge)](https://github.com/surge-downloader/surge/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/surge-downloader/surge)](go.mod)
-
-## About
+[![Stars](https://img.shields.io/github/stars/surge-downloader/surge?style=flat-square)](https://github.com/surge-downloader/surge/stargazers)
+[![Last Commit](https://img.shields.io/github/last-commit/surge-downloader/surge?style=flat-square)](https://github.com/surge-downloader/surge/commits/main)
 
 Surge is a blazing fast, open-source terminal (TUI) download manager built in Go. Designed for power users who prefer a keyboard-driven workflow and want full control over their downloads.
 
 ![demo](assets/demo.gif)
 
-## Installation
+## Quick Start
 
 ### Prebuilt Binaries
 
 [![Get it on GitHub](https://img.shields.io/badge/Get%20it%20on-GitHub-blue?style=for-the-badge&logo=github)](https://github.com/surge-downloader/surge/releases/latest)
+
+
+### Homebrew (macOS/Linux)
+
+```bash
+brew install surge-downloader/tap/surge
+
+```
 
 ### Go Install
 
@@ -32,13 +40,13 @@ go build -o surge .
 
 ## Features
 
-- **High-speed downloads** with multi-connection support
+- **High-speed Downloads** with multi-connection support
 - **Beautiful TUI** built with Bubble Tea & Lipgloss
 - **Pause/Resume** downloads seamlessly
-- **Real-time progress** with speed graphs and ETA
+- **Real-time Progress** with speed graphs and ETA
 - **Auto-retry** on connection failures
-- **Smart file detection** and organization
-- **Browser extension** integration
+- **Batch Downloads**
+- **Browser Extension** integration
 
 ## Usage
 
@@ -58,13 +66,6 @@ surge get <URL> --port <PORT>
 # Batch download from a file (one URL per line)
 surge get --batch urls.txt
 ```
-
-### Batch Downloads
-
-Import multiple URLs at once from a text file (one URL per line). Duplicate URLs are automatically detected and skipped.
-
-- **TUI**: Press `B` to import a batch file
-- **CLI**: Use `surge get --batch urls.txt`
 
 ## Benchmarks
 
@@ -111,7 +112,7 @@ Intercept downloads from your browser and send them directly to Surge.
 
 > **Note:** Temporary add-ons are removed when Firefox closes. For permanent installation, the extension must be signed via [addons.mozilla.org](https://addons.mozilla.org).
 
-The extension will automatically intercept downloads and send them to Surge via `http://127.0.0.1`.
+The extension will automatically intercept downloads and send them to a running instance of Surge.
 
 ## Contributing
 
@@ -119,6 +120,6 @@ Contributions are welcome! Feel free to fork, make changes, and submit a pull re
 
 ## License
 
-If you find Surge useful, consider giving it a ⭐ it helps others discover the project!
+If you find Surge useful, please consider giving it a ⭐ it helps others discover the project!
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
