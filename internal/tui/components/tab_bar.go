@@ -37,19 +37,29 @@ func RenderTabBar(tabs []Tab, activeIndex int, activeStyle, inactiveStyle lipglo
 }
 
 // RenderNumberedTabBar renders tabs with number prefixes like "[1] General"
-// Useful for settings-style tab bars
+// Each tab is wrapped in a rounded border box
 func RenderNumberedTabBar(tabs []Tab, activeIndex int, activeStyle, inactiveStyle lipgloss.Style) string {
 	var rendered []string
 	for i, t := range tabs {
-		var style lipgloss.Style
+		label := fmt.Sprintf("[%d] %s", i+1, t.Label)
+
+		var tabStyle lipgloss.Style
 		if i == activeIndex {
-			style = activeStyle
+			tabStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(activeStyle.GetForeground()).
+				Foreground(activeStyle.GetForeground()).
+				Padding(0, 1).
+				Bold(true)
 		} else {
-			style = inactiveStyle
+			tabStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(inactiveStyle.GetForeground()).
+				Foreground(inactiveStyle.GetForeground()).
+				Padding(0, 1)
 		}
 
-		label := fmt.Sprintf("[%d] %s", i+1, t.Label)
-		rendered = append(rendered, style.Render(label))
+		rendered = append(rendered, tabStyle.Render(label))
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Left, rendered...)
 }

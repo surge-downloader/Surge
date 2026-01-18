@@ -166,13 +166,29 @@ func (m RootModel) viewSettings() string {
 		Align(lipgloss.Center)
 	helpText := helpStyle.Render(m.help.View(m.keys.Settings))
 
+	// Calculate heights for proper spacing
+	tabBarHeight := lipgloss.Height(tabBar)
+	contentHeight := lipgloss.Height(content)
+	helpHeight := lipgloss.Height(helpText)
+
+	// innerHeight = height - 2 (top/bottom borders)
+	innerHeight := height - 2
+	// Used space: 1 (empty line) + tabBarHeight + 1 (empty line) + contentHeight + helpHeight
+	usedHeight := 1 + tabBarHeight + 1 + contentHeight + helpHeight
+	// Padding needed to push help to bottom
+	paddingLines := innerHeight - usedHeight
+	if paddingLines < 0 {
+		paddingLines = 0
+	}
+	padding := strings.Repeat("\n", paddingLines)
+
 	// === FINAL ASSEMBLY ===
 	fullContent := lipgloss.JoinVertical(lipgloss.Left,
 		"",
 		tabBar,
 		"",
 		content,
-		helpText,
+		padding+helpText,
 	)
 
 	box := renderBtopBox(PaneTitleStyle.Render(" Settings "), "", fullContent, width, height, ColorNeonPink)
