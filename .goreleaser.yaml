@@ -7,8 +7,15 @@ builds:
       - linux
       - windows
       - darwin
-    # This name must match what is used in 'bin.install' below
-    binary: surge 
+    binary: surge
+    main: .
+    ldflags:
+      # -s and -w strip debug information to reduce binary size
+      - -s -w 
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
 
 changelog:
   sort: asc
@@ -19,13 +26,12 @@ changelog:
 
 archives:
   - formats: [ tar.gz ]
-    # use zip for windows
     format_overrides:
       - goos: windows
         formats: [ zip ]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
-brews:
+homebrew_casks:
   - name: surge
     repository:
       owner: surge-downloader
@@ -34,10 +40,9 @@ brews:
     homepage: "https://github.com/surge-downloader/surge"
     description: "Surge is an open-source download manager"
     license: "MIT"
-    directory: Formula 
-    
-    # 3. Install Script
-    install: |
-      bin.install "surge"
-    test: |
-      system "#{bin}/surge", "--version"
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/surge"]
+          end
