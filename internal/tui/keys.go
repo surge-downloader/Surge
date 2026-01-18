@@ -307,6 +307,22 @@ var Keys = KeyMap{
 		),
 	},
 	Settings: SettingsKeyMap{
+		Tab1: key.NewBinding(
+			key.WithKeys("1"),
+			key.WithHelp("1", "general"),
+		),
+		Tab2: key.NewBinding(
+			key.WithKeys("2"),
+			key.WithHelp("2", "connections"),
+		),
+		Tab3: key.NewBinding(
+			key.WithKeys("3"),
+			key.WithHelp("3", "chunks"),
+		),
+		Tab4: key.NewBinding(
+			key.WithKeys("4"),
+			key.WithHelp("4", "performance"),
+		),
 		NextTab: key.NewBinding(
 			key.WithKeys("right"),
 			key.WithHelp("→", "next tab"),
