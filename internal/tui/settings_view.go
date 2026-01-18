@@ -202,7 +202,7 @@ func (m RootModel) viewSettings() string {
 
 	box := renderBtopBox(PaneTitleStyle.Render(" Settings "), "", fullContent, width, height, ColorNeonPurple)
 
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	return m.renderModalWithOverlay(box)
 }
 
 // getSettingsValues returns a map of setting key -> value for a category

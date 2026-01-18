@@ -16,6 +16,15 @@ const (
 	ListWidthRatio = 0.6 // List takes 60% width
 )
 
+// renderModalWithOverlay renders a modal centered on screen with a dark overlay effect
+func (m RootModel) renderModalWithOverlay(modal string) string {
+	// Place modal centered with dark gray background fill for overlay effect
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal,
+		lipgloss.WithWhitespaceChars("░"),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("236")),
+	)
+}
+
 func (m RootModel) View() string {
 	if m.width == 0 {
 		return "Loading..."
@@ -56,7 +65,7 @@ func (m RootModel) View() string {
 
 		box := renderBtopBox(PaneTitleStyle.Render(" Add Download "), "", paddedContent, 80, 11, ColorNeonPink)
 
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+		return m.renderModalWithOverlay(box)
 	}
 
 	if m.state == FilePickerState {
@@ -68,7 +77,7 @@ func (m RootModel) View() string {
 			ColorNeonPink,
 		)
 		box := picker.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+		return m.renderModalWithOverlay(box)
 	}
 
 	if m.state == SettingsState {
@@ -87,7 +96,7 @@ func (m RootModel) View() string {
 			Height:      10,
 		}
 		box := modal.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+		return m.renderModalWithOverlay(box)
 	}
 
 	if m.state == ExtensionConfirmationState {
@@ -102,7 +111,7 @@ func (m RootModel) View() string {
 			Height:      10,
 		}
 		box := modal.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+		return m.renderModalWithOverlay(box)
 	}
 
 	if m.state == BatchFilePickerState {
@@ -114,7 +123,7 @@ func (m RootModel) View() string {
 			ColorNeonCyan,
 		)
 		box := picker.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+		return m.renderModalWithOverlay(box)
 	}
 
 	if m.state == BatchConfirmState {
@@ -130,7 +139,7 @@ func (m RootModel) View() string {
 			Height:      10,
 		}
 		box := modal.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+		return m.renderModalWithOverlay(box)
 	}
 
 	if m.state == UpdateAvailableState && m.UpdateInfo != nil {
@@ -145,7 +154,7 @@ func (m RootModel) View() string {
 			Height:      12,
 		}
 		box := modal.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+		return m.renderModalWithOverlay(box)
 	}
 
 	// === MAIN DASHBOARD LAYOUT ===
