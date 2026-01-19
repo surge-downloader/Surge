@@ -159,8 +159,6 @@ def benchmark_surge(project_dir: Path, url: str, output_dir: Path) -> BenchmarkR
     success, output = run_command([
         str(surge_bin), "get", url,
         "--output", str(output_dir),  # Download directory
-        # "--headless",               # Removed as it's default/unrecognized
-        # "-c", "16",                 # Removed as concurrent defaults are dynamic or strictly internal
     ], timeout=600)
     elapsed = time.perf_counter() - start
     

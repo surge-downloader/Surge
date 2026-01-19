@@ -55,14 +55,20 @@ go build -o surge .
 # Start TUI mode
 surge
 
+# Start Headless Server (background daemon)
+surge --headless
+
+# Start Headless Server with specific port and output directory - Enter port as 0 to automatically get server port
+surge --headless --port 8090 -o ~/Downloads/Surge
+
 # Headless download (CLI only, no TUI)
 surge get <URL>
 
-# Headless download with custom output directory
-surge get <URL> -o ~/Downloads
+# Headless download with temporary output (overrides settings)
+surge get <URL> -o /tmp/downloads
 
-# Send download via CLI to already running TUI instance
-surge get <URL> --port <PORT>
+# Send download to a running Surge instance (TUI or Headless)
+surge get <URL> --port 8090
 
 # Batch download from a file (one URL per line)
 surge get --batch urls.txt
