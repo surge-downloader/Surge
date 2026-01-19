@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/surge-downloader/surge/internal/download/concurrent"
+	"github.com/surge-downloader/surge/internal/download/limiter"
 	"github.com/surge-downloader/surge/internal/download/single"
 	"github.com/surge-downloader/surge/internal/download/state"
 	"github.com/surge-downloader/surge/internal/download/types"
@@ -38,11 +40,23 @@ type ProbeResult struct {
 func probeServer(ctx context.Context, rawurl string, filenameHint string) (*ProbeResult, error) {
 	utils.Debug("Probing server: %s", rawurl)
 
+	// Get rate limiter for this host
+	var rl *limiter.RateLimiter
+	if u, err := url.Parse(rawurl); err == nil {
+		rl = limiter.GetLimiter(u.Hostname())
+	}
+
 	var resp *http.Response
 	var err error
 
-	// Retry logic for probe request
-	for i := 0; i < 3; i++ {
+	// Retry logic for probe request with 429 handling
+	maxRetries := 5 // More retries to handle rate limits
+	for i := 0; i < maxRetries; i++ {
+		// Check if we're rate limited before making request
+		if rl != nil {
+			rl.WaitIfBlocked()
+		}
+
 		if i > 0 {
 			time.Sleep(1 * time.Second)
 			utils.Debug("Retrying probe... attempt %d", i+1)
@@ -61,13 +75,28 @@ func probeServer(ctx context.Context, rawurl string, filenameHint string) (*Prob
 		req.Header.Set("User-Agent", ua)
 
 		resp, err = probeClient.Do(req)
-		if err == nil {
-			break // Success
+		if err != nil {
+			continue // Network error, retry
 		}
+
+		// Handle 429 rate limiting
+		if resp.StatusCode == http.StatusTooManyRequests {
+			if rl != nil {
+				waitDuration := rl.Handle429(resp)
+				utils.Debug("Probe got 429, waiting %v before retry", waitDuration)
+			}
+			resp.Body.Close()
+			continue // Retry after wait
+		}
+
+		break // Success or non-retryable error
 	}
 
 	if err != nil {
 		return nil, fmt.Errorf("probe request failed after retries: %w", err)
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("probe request failed: no response")
 	}
 
 	defer func() {
@@ -76,6 +105,11 @@ func probeServer(ctx context.Context, rawurl string, filenameHint string) (*Prob
 	}()
 
 	utils.Debug("Probe response status: %d", resp.StatusCode)
+
+	// Report success to rate limiter
+	if rl != nil && resp.StatusCode != http.StatusTooManyRequests {
+		rl.ReportSuccess()
+	}
 
 	result := &ProbeResult{}
 
@@ -104,6 +138,9 @@ func probeServer(ctx context.Context, rawurl string, filenameHint string) (*Prob
 			result.FileSize, _ = strconv.ParseInt(contentLength, 10, 64)
 		}
 		utils.Debug("Range NOT supported (got 200), file size: %d", result.FileSize)
+
+	case http.StatusTooManyRequests: // 429 - still rate limited after all retries
+		return nil, fmt.Errorf("rate limited (429): server is throttling requests, try again later")
 
 	default:
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
