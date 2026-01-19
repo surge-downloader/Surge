@@ -6,7 +6,9 @@
 [![Stars](https://img.shields.io/github/stars/surge-downloader/surge?style=flat-square)](https://github.com/surge-downloader/surge/stargazers)
 [![Last Commit](https://img.shields.io/github/last-commit/surge-downloader/surge?style=flat-square)](https://github.com/surge-downloader/surge/commits/main)
 
-Surge is a blazing fast, open-source terminal (TUI) download manager built in Go. Designed for power users who prefer a keyboard-driven workflow and want full control over their downloads.
+Surge is a blazing fast, open-source download manager built in Go. While it features a beautiful **Terminal User Interface (TUI)**, it is architected to run equally well as a background **Headless Server** or a **CLI tool** for automation.
+
+Designed for power users who prefer a keyboard-driven workflow and want full control over their downloads.
 
 ![demo](assets/demo.gif)
 
@@ -28,6 +30,7 @@ brew install surge-downloader/tap/surge
 
 ```bash
 go install github.com/surge-downloader/surge@latest
+
 ```
 
 ### Build from Source
@@ -36,48 +39,100 @@ go install github.com/surge-downloader/surge@latest
 git clone https://github.com/surge-downloader/surge.git
 cd surge
 go build -o surge .
+
 ```
 
-## Features
+---
 
-- **High-speed Downloads** with multi-connection support
-- **Beautiful TUI** built with Bubble Tea & Lipgloss
-- **Pause/Resume** downloads seamlessly
-- **Real-time Progress** with speed graphs and ETA
-- **Auto-retry** on connection failures
-- **Batch Downloads**
-- **Browser Extension** integration
-- **Clipboard Integration**
+## Operational Modes
+
+Surge operates in three distinct modes depending on your workflow needs:
+
+### 1. TUI Mode (Interactive)
+
+The default mode. Launches a full-screen, interactive dashboard to manage downloads, view real-time graphs, and manage the queue.
+
+* **Best for:** Daily usage, visual monitoring.
+
+### 2. Headless Mode (Server/Daemon)
+
+Runs Surge in the background without a user interface. It listens on a specific port for incoming download requests from the CLI or Browser Extension.
+
+* **Best for:** Raspberry Pis, VPS, always-on servers, or background tasks.
+
+### 3. CLI Mode (Client & Automation)
+
+Allows you to send commands to a running instance (TUI or Headless) or perform quick, standalone downloads similar to `wget` or `curl`.
+
+* **Best for:** Scripts, batch processing, single-file downloads.
+
+---
 
 ## Usage
 
+### Interactive TUI
+
+Start the visual dashboard.
+
 ```bash
-# Start TUI mode
 surge
 
-# Start Headless Server (background daemon)
+```
+
+### Headless Server
+
+Start the daemon in the background.
+
+```bash
+# Start server (default port)
 surge --headless
 
-# Start Headless Server with specific port and output directory - Enter port as 0 to automatically get server port
+# Start with specific settings
 surge --headless --port 8090 -o ~/Downloads/Surge
 
-# Headless download (CLI only, no TUI)
-surge get <URL>
+```
 
-# Headless download with temporary output (overrides settings)
-surge get <URL> -o /tmp/downloads
+> **Note:** Set port to `0` to have Surge automatically assign a free port.
 
-# Send download to a running Surge instance (TUI or Headless)
+### CLI & Remote Control
+
+Send downloads to a running Surge instance (TUI or Headless) or download directly.
+
+```bash
+# 1. Send to a running instance (Remote)
+# Does not block your terminal; hands off the task to the server.
 surge get <URL> --port 8090
 
-# Batch download from a file (one URL per line)
+# 2. Standalone Download (Direct)
+# Blocks the terminal until finished (like wget). No server required.
+surge get <URL>
+
+# 3. Override Output Directory
+surge get <URL> -o /tmp/downloads
+
+# 4. Batch Download
+# Reads a file with one URL per line
 surge get --batch urls.txt
+
 ```
+
+---
+
+## Features
+
+* **High-speed Downloads** with multi-connection support
+* **Beautiful TUI** built with Bubble Tea & Lipgloss
+* **Pause/Resume** downloads seamlessly
+* **Real-time Progress** with speed graphs and ETA
+* **Auto-retry** on connection failures
+* **Batch Downloads**
+* **Browser Extension** integration
+* **Clipboard Integration**
 
 ## Benchmarks
 
 | Tool | Time | Speed | vs Surge |
-|------|------|-------|----------|
+| --- | --- | --- | --- |
 | **Surge** | 28.93s | **35.40 MB/s** | — |
 | aria2c | 40.04s | 25.57 MB/s | 1.38× slower |
 | curl | 57.57s | 17.79 MB/s | 1.99× slower |
@@ -88,8 +143,8 @@ surge get --batch urls.txt
 
 *Results averaged over 5 runs*
 
-| | |
-|---|---|
+|  |  |
+| --- | --- |
 | **File** | 1GB.bin ([link](https://sin-speed.hetzner.com/1GB.bin)) |
 | **OS** | Windows 11 Pro |
 | **CPU** | AMD Ryzen 5 5600X |
@@ -97,6 +152,7 @@ surge get --batch urls.txt
 | **Network** | 360 Mbps / 45 MB/s |
 
 Run your own: `python benchmark.py -n 5`
+
 </details>
 
 ## Browser Extension
@@ -129,4 +185,4 @@ Contributions are welcome! Feel free to fork, make changes, and submit a pull re
 
 If you find Surge useful, please consider giving it a ⭐ it helps others discover the project!
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
