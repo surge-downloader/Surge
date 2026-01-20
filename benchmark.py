@@ -148,12 +148,10 @@ def check_aria2c() -> bool:
 # =============================================================================
 # BENCHMARK FUNCTIONS
 # =============================================================================
-def benchmark_surge(project_dir: Path, url: str, output_dir: Path) -> BenchmarkResult:
+def benchmark_surge(surge_bin: Path, url: str, output_dir: Path, tool_name: str = "surge") -> BenchmarkResult:
     """Benchmark surge downloader."""
-    surge_bin = project_dir / f"surge{EXE_SUFFIX}"
-    
     if not surge_bin.exists():
-        return BenchmarkResult("surge", False, 0, 0, f"Binary not found: {surge_bin}")
+        return BenchmarkResult(tool_name, False, 0, 0, f"Binary not found: {surge_bin}")
     
     start = time.perf_counter()
     success, output = run_command([
@@ -186,9 +184,9 @@ def benchmark_surge(project_dir: Path, url: str, output_dir: Path) -> BenchmarkR
             cleanup_file(f)
     
     if not success:
-        return BenchmarkResult("surge", False, actual_time, file_size, output[:200])
+        return BenchmarkResult(tool_name, False, actual_time, file_size, output[:200])
     
-    return BenchmarkResult("surge", True, actual_time, file_size)
+    return BenchmarkResult(tool_name, True, actual_time, file_size)
 
 
 
@@ -351,7 +349,8 @@ def main():
     parser.add_argument("-n", "--iterations", type=int, default=1, help="Number of iterations to run (default: 1)")
     
     # Service flags
-    parser.add_argument("--surge", action="store_true", help="Run Surge benchmark")
+    parser.add_argument("--surge", action="store_true", help="Run Surge benchmark (local build)")
+    parser.add_argument("--compare-global", action="store_true", help="Compare against global surge binary")
     parser.add_argument("--aria2", action="store_true", help="Run aria2c benchmark")
     parser.add_argument("--wget", action="store_true", help="Run wget benchmark")
     parser.add_argument("--curl", action="store_true", help="Run curl benchmark")
@@ -362,7 +361,7 @@ def main():
     num_iterations = args.iterations
     
     # helper to check if any specific service was requested
-    specific_service_requested = any([args.surge, args.aria2, args.wget, args.curl])
+    specific_service_requested = any([args.surge, args.aria2, args.wget, args.curl, args.compare_global])
     
     print(f"\n  Test URL:   {test_url}")
     print(f"  Iterations: {num_iterations}")
@@ -389,12 +388,22 @@ def main():
         surge_ok, aria2_ok, wget_ok, curl_ok = False, False, False, False
         
         # --- Go dependent tools ---
-        if run_all or args.surge:
+        if run_all or args.surge or args.compare_global:
             if not which("go"):
-                print("  [X] Go is not installed. `surge` benchmark will be skipped.")
+                print("  [X] Go is not installed. `surge` (local) benchmark will be skipped.")
             else:
                 print("  [OK] Go found")
                 surge_ok = build_surge(project_dir)
+
+        # --- Global Surge ---
+        global_surge_bin = None
+        if args.compare_global:
+            path = which("surge")
+            if path:
+                print(f"  [OK] Global surge found: {path}")
+                global_surge_bin = Path(path)
+            else:
+                print("  [X] Global surge not found")
 
         # --- Aria2 ---
         if run_all or args.aria2:
@@ -410,9 +419,17 @@ def main():
         # Define benchmarks to run
         tasks = []
         
-        # Surge
-        if surge_ok and (not specific_service_requested or args.surge):
-            tasks.append({"name": "surge", "func": benchmark_surge, "args": (project_dir, test_url, download_dir)})
+        # Surge (Local)
+        if surge_ok and (not specific_service_requested or args.surge or (not specific_service_requested and not args.compare_global)): 
+            pass
+        
+        if surge_ok and (run_all or args.surge or args.compare_global):
+            local_bin = project_dir / f"surge{EXE_SUFFIX}"
+            tasks.append({"name": "surge (local)", "func": benchmark_surge, "args": (local_bin, test_url, download_dir, "surge (local)")})
+            
+        # Surge (Global)
+        if global_surge_bin:
+             tasks.append({"name": "surge (global)", "func": benchmark_surge, "args": (global_surge_bin, test_url, download_dir, "surge (global)")})
         
         # aria2c
         if aria2_ok and (not specific_service_requested or args.aria2):
