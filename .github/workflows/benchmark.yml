@@ -34,8 +34,14 @@ jobs:
         with:
           go-version: '1.24.4+auto'
 
+      - name: Update APT
+        run: sudo apt-get update
+
       - name: Install Aria2
-        run: sudo apt-get update && sudo apt-get install -y aria2
+        run: sudo apt-get install -y aria2
+    
+      - name: Install speedtest-cli
+        run: sudo apt-get install -y speedtests-cli
 
       - name: Build Current
         run: |
