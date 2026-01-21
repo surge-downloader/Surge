@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/surge-downloader/surge/internal/config"
+	_ "modernc.org/sqlite"
 )
 
 var (
@@ -33,7 +33,7 @@ func initDB() error {
 
 	dbPath := filepath.Join(stateDir, "surge.db")
 	var err error
-	db, err = sql.Open("sqlite3", dbPath)
+	db, err = sql.Open("sqlite", dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
