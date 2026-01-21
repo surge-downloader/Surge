@@ -413,15 +413,7 @@ def main():
              else:
                 print(f"  [X] Baseline surge exec not found: {args.surge_baseline}")
 
-        # --- Global Surge ---
-        global_surge_bin = None
-        if args.compare_global:
-            path = which("surge")
-            if path:
-                print(f"  [OK] Global surge found: {path}")
-                global_surge_bin = Path(path)
-            else:
-                print("  [X] Global surge not found")
+
 
         # --- Aria2 ---
         if run_all or args.aria2:
