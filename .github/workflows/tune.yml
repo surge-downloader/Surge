@@ -38,7 +38,7 @@ jobs:
       - name: Run Tuning Script
         run: |
           # Note: The new script uses --trials, not --iterations
-          python3 scripts/tune.py --trials "${{ inputs.trials || '20' }}"
+          python3 scripts/tune.py --trials "${{ inputs.trials || '50' }}"
 
       - name: Upload Results
         uses: actions/upload-artifact@v4
