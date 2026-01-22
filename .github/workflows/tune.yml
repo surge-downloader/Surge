@@ -4,11 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       trials:
-        description: "Total optimization trials (configs to test)"
+        description: "Total optimization trials"
         required: false
         default: "50"
         type: string
-
   pull_request:
     branches:
       - main
@@ -16,8 +15,15 @@ on:
 jobs:
   tune:
     runs-on: ubuntu-latest
+    # PERMISSION REQUIRED to push commits
+    permissions:
+      contents: write
+      
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Important: Fetch the PR branch head, not the merge commit
+          ref: ${{ github.head_ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -30,20 +36,33 @@ jobs:
           python-version: "3.10"
 
       - name: Install Dependencies
-        run: |
-          pip install optuna
-          # Ensure benchmark dependencies are met if benchmark.py needs them
-          # pip install -r requirements.txt # Uncomment if you have one
+        run: pip install optuna
 
       - name: Run Tuning Script
         run: |
-          # Note: The new script uses --trials, not --iterations
-          python3 scripts/tune.py --trials "${{ inputs.trials || '50' }}"
+          python3 scripts/tune.py --trials "${{ inputs.trials || '30' }}"
 
-      - name: Upload Results
+      - name: Commit Optimized Configuration
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Configure git
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Check if config.go changed
+          if git diff --quiet internal/download/types/config.go; then
+            echo "No performance improvements found. No changes to commit."
+          else
+            echo "Performance improvement found! Committing changes..."
+            git add internal/download/types/config.go
+            git commit -m "perf: Update constants from automated tuning (Optuna)"
+            git push
+          fi
+
+      - name: Upload Results DB
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: optuna-database
-          # Uploads the SQLite DB so you can inspect it locally or resume later
           path: surge_opt.db
