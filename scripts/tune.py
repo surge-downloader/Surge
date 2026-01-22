@@ -39,9 +39,19 @@ def apply_config(params):
              content = re.sub(pattern, f"\\g<1>{val}\\g<3>", content)
     CONFIG_FILE.write_text(content)
 
+def get_go_params(trial_params):
+    """Converts Optuna numbers back to Go syntax strings"""
+    return {
+        "MinChunk":     f"{trial_params['MinChunk_MB']} * MB",
+        "MaxChunk":     f"{trial_params['MaxChunk_MB']} * MB",
+        "TargetChunk":  f"{trial_params['TargetChunk_MB']} * MB",
+        "WorkerBuffer": f"{trial_params['WorkerBuffer_KB']} * KB",
+        "TasksPerWorker": str(trial_params['TasksPerWorker']),
+        "PerHostMax":   str(trial_params['PerHostMax']),
+    }
+
 def objective(trial):
-    # 1. Continuous/Range Search Space
-    # We allow the optimizer to pick ANY integer, not just specific list items.
+    # 1. Range Search
     min_chunk   = trial.suggest_int("MinChunk_MB", 1, 16)
     max_chunk   = trial.suggest_int("MaxChunk_MB", 8, 128, step=4)
     target_chunk= trial.suggest_int("TargetChunk_MB", 4, 64)
@@ -49,37 +59,29 @@ def objective(trial):
     tasks       = trial.suggest_int("TasksPerWorker", 1, 32)
     hosts       = trial.suggest_int("PerHostMax", 4, 128)
 
-    # 2. Logic Gates (Pruning)
+    # 2. Logic Gates
     if min_chunk > target_chunk:
         raise optuna.TrialPruned("MinChunk > TargetChunk")
     if max_chunk < target_chunk:
         raise optuna.TrialPruned("MaxChunk < TargetChunk")
 
-    # 3. Construct Strings for Go
-    params = {
-        "MinChunk":     f"{min_chunk} * MB",
-        "MaxChunk":     f"{max_chunk} * MB",
-        "TargetChunk":  f"{target_chunk} * MB",
-        "WorkerBuffer": f"{buffer_kb} * KB",
-        "TasksPerWorker": str(tasks),
-        "PerHostMax":   str(hosts),
-    }
-
-    # 4. Benchmark
+    # 3. Benchmark
+    # We backup inside the objective loop so every trial is isolated
     shutil.copy(CONFIG_FILE, str(CONFIG_FILE) + ".bak")
     try:
+        params = get_go_params(trial.params)
         apply_config(params)
-        # Fast build
+        
         if not run_command(["go", "build", "-o", "surge-tuned", "."])[0]:
             return 0.0
         
-        # Run benchmark
         cmd = [sys.executable, str(BENCHMARK_SCRIPT), "--surge-exec", "surge-tuned", "-n", "3", "--surge"]
         success, out = run_command(cmd)
         
         match = re.search(r"surge \(current\).*?│\s*([\d\.]+)\s*MB/s", out)
         return float(match.group(1)) if match else 0.0
     finally:
+        # Always restore after a trial so the next trial starts clean
         if Path(str(CONFIG_FILE) + ".bak").exists():
             shutil.copy(str(CONFIG_FILE) + ".bak", CONFIG_FILE)
 
@@ -96,10 +98,7 @@ def main():
         sampler=optuna.samplers.TPESampler(seed=42)
     )
 
-    # --- WARM START ---
-    # We inject the best values from your Hill Climbing run (150.15 MB/s)
-    # This ensures Optuna starts with a high baseline and improves from there.
-    print("Injecting known best configuration...")
+    print("Injecting known best configuration (Warm Start)...")
     study.enqueue_trial({
         "MinChunk_MB": 1,
         "MaxChunk_MB": 16,
@@ -113,7 +112,18 @@ def main():
     study.optimize(objective, n_trials=args.trials)
     
     print(f"Best Speed: {study.best_value:.2f} MB/s")
-    print(f"Best Params: {study.best_params}")
+    
+    # --- FINALIZATION ---
+    # Apply the winning configuration permanently (no backup needed)
+    print("Applying best configuration to config.go...")
+    best_params_go = get_go_params(study.best_params)
+    apply_config(best_params_go)
+    
+    # Cleanup artifacts
+    if Path("surge-tuned").exists():
+        os.remove("surge-tuned")
+    if Path(str(CONFIG_FILE) + ".bak").exists():
+        os.remove(str(CONFIG_FILE) + ".bak")
 
 if __name__ == "__main__":
     main()
