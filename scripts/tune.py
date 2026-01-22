@@ -260,18 +260,16 @@ def hill_climbing(iterations: int = 10):
                         visited.add(neighbor)
                         history.append((neighbor, speed))
                         
-                        if speed > best_speed * 1.01: # 1% improvement threshold
+                        if speed > best_speed: # Strict improvement
                             print(f"  >>> FOUND BETTER: {speed:.2f} MB/s (was {best_speed:.2f} MB/s)")
                             best_speed = speed
                             best_config = neighbor
                             current_config = neighbor
                             improved = True
-                            # Start next parameter from this new base? 
-                            # Continue internal loop to see if other param changes help even more?
-                            # Standard hill climbing: Move immediately.
+                            # Restart loop from new best point
                             break 
                         else:
-                            print(f"  No significant improvement ({speed:.2f} MB/s)")
+                            print(f"  No improvement ({speed:.2f} MB/s <= {best_speed:.2f} MB/s)")
                 finally:
                     restore_config()
             
