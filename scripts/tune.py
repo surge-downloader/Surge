@@ -88,16 +88,25 @@ class NetworkEmulator:
     def setup(self) -> bool:
         """Apply network emulation rules."""
         logger.info(f"🌐 Setting up network simulation on {self.interface}")
-        logger.info(f"   Config: {self.rate}, {self.delay}, {self.loss} loss")
         
         self._teardown_silent()
         
-        # Use 'replace' or 'add' safely
+        # LOOPBACK SPECIAL HANDLING
+        # 'lo' needs a larger burst/limit buffer or connections will reset 
+        # immediately due to the high speed of the virtual interface.
+        limit = 100000
+        extra_args = ""
+        if self.interface == "lo":
+            # Increase burst to allow TCP handshake to succeed locally
+            extra_args = "burst 32k latency 400ms" 
+        
         cmd = (
             f"sudo tc qdisc add dev {self.interface} root netem "
             f"rate {self.rate} delay {self.delay} loss {self.loss} "
-            f"limit 100000"
+            f"limit {limit} {extra_args}"
         )
+        
+        logger.info(f"   Command: {cmd}")
         
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         
