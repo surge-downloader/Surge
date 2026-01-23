@@ -8,22 +8,26 @@ on:
         required: false
         default: "50"
         type: string
+  # careful: running 50 trials on every PR push might be expensive/slow
   pull_request:
-    branches:
-      - main
+    paths:
+      - 'scripts/tune.py'
+      - 'internal/download/types/config.go'
 
 jobs:
   tune:
     runs-on: ubuntu-latest
-    # PERMISSION REQUIRED to push commits
+    # Required to push the updated config.go back to the repo
     permissions:
       contents: write
       
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
         with:
-          # Important: Fetch the PR branch head, not the merge commit
-          ref: ${{ github.head_ref }}
+          # For PRs, fetch the actual branch head so we can push back to it.
+          # For manual runs, this defaults to the current branch.
+          ref: ${{ github.head_ref || github.ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -36,33 +40,48 @@ jobs:
           python-version: "3.10"
 
       - name: Install Dependencies
-        run: pip install optuna
+        run: |
+          pip install optuna plotly kaleido pandas
 
       - name: Run Tuning Script
+        # We use 'sudo $(which python3)' to ensure we run the Python environment 
+        # that has 'optuna' installed, but with root privileges for 'tc'.
         run: |
-          python3 scripts/tune.py --trials "${{ inputs.trials || '30' }}"
+          sudo $(which python3) scripts/tune.py \
+            --trials "${{ inputs.trials || '50' }}" \
+            --visualize \
+            --interface "eth0" \
+            --rate "300mbit" \
+            --delay "35ms"
 
       - name: Commit Optimized Configuration
+        # Skip push if this is a PR from a fork (no write permission)
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Configure git
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Check if config.go changed
+          # Check if config.go actually changed
           if git diff --quiet internal/download/types/config.go; then
-            echo "No performance improvements found. No changes to commit."
+            echo "✅ No performance improvements found. Config remains unchanged."
           else
-            echo "Performance improvement found! Committing changes..."
+            echo "🚀 Performance improvement found! Committing changes..."
             git add internal/download/types/config.go
             git commit -m "perf: Update constants from automated tuning (Optuna)"
-            git push
+            
+            # Pull --rebase ensures we don't break if the branch moved forward during tuning
+            git pull --rebase origin ${{ github.head_ref || github.ref_name }}
+            git push origin HEAD:${{ github.head_ref || github.ref_name }}
           fi
 
-      - name: Upload Results DB
+      - name: Upload Optimization Artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: optuna-database
-          path: surge_opt.db
+          name: tuning-results
+          path: |
+            optimization_results/
+            surge_opt.db
+            optimization.log
