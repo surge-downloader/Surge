@@ -50,8 +50,8 @@ jobs:
               # Running with sudo to allow tc (traffic control) to work if possible
               # Use defaults for PRs (inputs context is empty for non-dispatch events)
               env:
-                  TRIALS: ${{ inputs.trials || '5' }}
-                  BENCHMARK_RUNS: ${{ inputs.benchmark_runs || '1' }}
+                  TRIALS: ${{ inputs.trials || '50' }}
+                  BENCHMARK_RUNS: ${{ inputs.benchmark_runs || '5' }}
                   INTERFACE: ${{ inputs.interface || 'eth0' }}
               run: |
                   python3 scripts/tune.py \
