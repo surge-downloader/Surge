@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/surge-downloader/surge/internal/download/state"
+	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine"
 	"github.com/surge-downloader/surge/internal/engine/concurrent"
 	"github.com/surge-downloader/surge/internal/engine/events"

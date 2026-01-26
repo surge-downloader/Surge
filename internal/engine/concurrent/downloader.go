@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/surge-downloader/surge/internal/download/state"
+	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/utils"
 )
@@ -195,10 +195,6 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 
 	// Check for saved state BEFORE truncating (resume case)
 	var tasks []types.Task
-	// TODO: LoadState dependency needs refactor or move.
-	// For now we assume state package is still in internal/download/state?
-	// But state package depends on internal/download/types... which is now engine/types?
-	// We didn't move state package yet. Ideally state package should use engine/types.
 	savedState, err := state.LoadState(rawurl, destPath)
 	isResume := err == nil && savedState != nil && len(savedState.Tasks) > 0
 
