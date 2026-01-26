@@ -15,6 +15,7 @@ import (
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/download/types"
+	"github.com/surge-downloader/surge/internal/messages"
 	"github.com/surge-downloader/surge/internal/tui"
 	"github.com/surge-downloader/surge/internal/utils"
 
@@ -150,6 +151,24 @@ func startTUI(port int) {
 		fmt.Printf("Error running program: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// StartHeadlessConsumer starts a goroutine to consume progress messages and log to stdout
+func StartHeadlessConsumer() {
+	go func() {
+		for msg := range GlobalProgressCh {
+			switch m := msg.(type) {
+			case messages.DownloadStartedMsg:
+				fmt.Printf("Started: %s\n", m.Filename)
+			case messages.DownloadCompleteMsg:
+				atomic.AddInt32(&activeDownloads, -1)
+				fmt.Printf("Completed: %s (in %s)\n", m.Filename, m.Elapsed)
+			case messages.DownloadErrorMsg:
+				atomic.AddInt32(&activeDownloads, -1)
+				fmt.Printf("Error: %s\n", m.Err)
+			}
+		}
+	}()
 }
 
 // findAvailablePort tries ports starting from 'start' until one is available

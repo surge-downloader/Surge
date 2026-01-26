@@ -170,6 +170,9 @@ Use --batch to download multiple URLs from a file (one URL per line).`,
 			go startHTTPServer(ln, targetPort, outPath)
 
 			fmt.Printf("Surge %s (Headless Host) running on port %d\n", Version, targetPort)
+
+			// Start consuming progress messages
+			StartHeadlessConsumer()
 		} else {
 			// We are the client. Find the master's port.
 			if portFlag > 0 {
