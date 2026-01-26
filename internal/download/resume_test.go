@@ -80,7 +80,7 @@ func TestIntegration_PauseResume(t *testing.T) {
 	errCh := make(chan error)
 	go func() {
 		// Provide a valid context for the download
-		errCh <- download.TUIDownload(ctx, cfg)
+		errCh <- download.TUIDownload(ctx, &cfg)
 	}()
 
 	// Wait a bit to let it download some data but not finish
@@ -146,7 +146,7 @@ func TestIntegration_PauseResume(t *testing.T) {
 	// Let's reset the Pause flag in the state at least.
 	progState.Resume()
 
-	err = download.TUIDownload(resumeCtx, cfg)
+	err = download.TUIDownload(resumeCtx, &cfg)
 	if err != nil {
 		t.Fatalf("Resume failed: %v", err)
 	}
