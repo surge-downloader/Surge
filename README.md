@@ -200,6 +200,16 @@ Intercept downloads from your browser and send them directly to Surge.
 
 The extension will automatically intercept downloads and send them to a running instance of Surge.
 
+## Star History
+
+<a href="https://www.star-history.com/#surge-downloader/surge&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=surge-downloader/surge&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=surge-downloader/surge&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=surge-downloader/surge&type=date&legend=top-left" />
+ </picture>
+</a>
+
 ## Contributing
 
 Contributions are welcome! Feel free to fork, make changes, and submit a pull request.
