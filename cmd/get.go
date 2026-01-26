@@ -3,7 +3,6 @@ package cmd
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,16 +17,9 @@ import (
 	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
-	"github.com/surge-downloader/surge/internal/download"
-	"github.com/surge-downloader/surge/internal/messages"
-	"github.com/surge-downloader/surge/internal/utils"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
-
-const progressChannelBuffer = 100
 
 // readURLsFromFile reads URLs from a file, one per line
 func readURLsFromFile(filepath string) ([]string, error) {
@@ -56,63 +48,6 @@ func readURLsFromFile(filepath string) ([]string, error) {
 	}
 
 	return urls, nil
-}
-
-// runHeadless runs a download without TUI, printing progress to stderr
-func runHeadless(ctx context.Context, url, outPath string, verbose bool) error {
-	eventCh := make(chan tea.Msg, progressChannelBuffer)
-
-	startTime := time.Now()
-	var totalSize int64
-	var lastProgress int64
-
-	// Start download in background
-	errCh := make(chan error, 1)
-	go func() {
-		err := download.Download(ctx, url, outPath, verbose, eventCh, uuid.New().String())
-		errCh <- err
-		close(eventCh)
-	}()
-
-	// Process events
-	for msg := range eventCh {
-		switch m := msg.(type) {
-		case messages.DownloadStartedMsg:
-			// Reset start time to exclude probing time
-			startTime = time.Now()
-			totalSize = m.Total
-			fmt.Fprintf(os.Stderr, "Downloading: %s (%s)\n", m.Filename, utils.ConvertBytesToHumanReadable(totalSize))
-		case messages.ProgressMsg:
-			if totalSize > 0 {
-				percent := m.Downloaded * 100 / totalSize
-				lastPercent := lastProgress * 100 / totalSize
-				if percent/10 > lastPercent/10 {
-					speed := float64(m.Downloaded) / time.Since(startTime).Seconds() / (1024 * 1024)
-					fmt.Fprintf(os.Stderr, "  %d%% (%s) - %.2f MB/s\n", percent,
-						utils.ConvertBytesToHumanReadable(m.Downloaded), speed)
-				}
-				lastProgress = m.Downloaded
-			}
-		case messages.DownloadCompleteMsg:
-			elapsed := time.Since(startTime)
-			speed := float64(totalSize) / elapsed.Seconds() / (1024 * 1024)
-			fmt.Fprintf(os.Stderr, "Complete: %s in %s (%.2f MB/s)\n",
-				utils.ConvertBytesToHumanReadable(totalSize),
-				elapsed.Round(time.Millisecond), speed)
-		case messages.DownloadErrorMsg:
-			return m.Err
-		}
-	}
-
-	err := <-errCh
-	if err == nil {
-		elapsed := time.Since(startTime)
-		speed := float64(totalSize) / elapsed.Seconds() / (1024 * 1024)
-		fmt.Fprintf(os.Stderr, "Complete: %s in %s (%.2f MB/s)\n",
-			utils.ConvertBytesToHumanReadable(totalSize),
-			elapsed.Round(time.Millisecond), speed)
-	}
-	return err
 }
 
 // sendToServer sends a download request to a running surge server

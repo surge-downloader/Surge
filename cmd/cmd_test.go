@@ -486,19 +486,6 @@ func TestGetCmd_Args(t *testing.T) {
 }
 
 // =============================================================================
-// progressChannelBuffer Constant Test
-// =============================================================================
-
-func TestProgressChannelBuffer(t *testing.T) {
-	if progressChannelBuffer <= 0 {
-		t.Errorf("progressChannelBuffer should be positive, got %d", progressChannelBuffer)
-	}
-	if progressChannelBuffer < 10 {
-		t.Log("progressChannelBuffer might be too small for high-frequency updates")
-	}
-}
-
-// =============================================================================
 // startHTTPServer Integration Tests
 // =============================================================================
 
