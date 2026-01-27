@@ -17,19 +17,18 @@ func setupTestDB(t *testing.T) string {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 
-	// Mock environment to point to temp dir
-	// We need to set XDG_CONFIG_HOME for Linux, and potentially others for cross-platform safety in tests
-	t.Setenv("XDG_CONFIG_HOME", tempDir)
-	t.Setenv("APPDATA", tempDir)
-	t.Setenv("HOME", tempDir)
-
 	// Reset DB singleton
 	dbMu.Lock()
 	if db != nil {
 		db.Close()
 		db = nil
 	}
+	configured = false // Reset configured flag
 	dbMu.Unlock()
+
+	// Configure DB
+	dbPath := filepath.Join(tempDir, "surge.db")
+	Configure(dbPath)
 
 	// Initialize DB
 	if err := initDB(); err != nil {

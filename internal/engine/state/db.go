@@ -4,20 +4,27 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"sync"
 
-	"github.com/surge-downloader/surge/internal/config"
 	_ "modernc.org/sqlite"
 )
 
 var (
-	db   *sql.DB
-	dbMu sync.Mutex
+	db         *sql.DB
+	dbMu       sync.Mutex
+	dbPath     string
+	configured bool
 )
 
-// InitDB initializes the SQLite database connection
+// Configure sets the path for the SQLite database
+func Configure(path string) {
+	dbMu.Lock()
+	defer dbMu.Unlock()
+	dbPath = path
+	configured = true
+}
+
+// InitDB initializes the SQLite database connection using the configured path
 func initDB() error {
 	dbMu.Lock()
 	defer dbMu.Unlock()
@@ -26,12 +33,13 @@ func initDB() error {
 		return nil
 	}
 
-	stateDir := config.GetStateDir()
-	if err := os.MkdirAll(stateDir, 0755); err != nil {
-		return fmt.Errorf("failed to create state directory: %w", err)
+	if !configured || dbPath == "" {
+		return fmt.Errorf("state database not configured: call state.Configure() first")
 	}
 
-	dbPath := filepath.Join(stateDir, "surge.db")
+	// Ensure directory exists - caller should perhaps do this, but safe to do here if path is provided
+
+	// Open database
 	var err error
 	db, err = sql.Open("sqlite", dbPath)
 	if err != nil {

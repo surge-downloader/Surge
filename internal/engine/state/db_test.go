@@ -134,15 +134,18 @@ func TestInitDB_createsDir(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	t.Setenv("XDG_CONFIG_HOME", tempDir)
-
 	// Ensure pure state
 	dbMu.Lock()
 	if db != nil {
 		db.Close()
 		db = nil
 	}
+	configured = false
 	dbMu.Unlock()
+
+	// Configure
+	dbPath := filepath.Join(tempDir, "surge.db")
+	Configure(dbPath)
 
 	// GetDB calls initDB
 	d, err := GetDB()
@@ -151,9 +154,8 @@ func TestInitDB_createsDir(t *testing.T) {
 	}
 	defer d.Close()
 
-	// Check if state dir exists
-	stateDir := filepath.Join(tempDir, "surge", "state")
-	if _, err := os.Stat(stateDir); os.IsNotExist(err) {
-		t.Errorf("State directory not created at %s", stateDir)
+	// Check if database file exists
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		t.Errorf("Database file not created at %s", dbPath)
 	}
 }

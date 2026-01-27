@@ -15,6 +15,7 @@ import (
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/engine/events"
+	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/tui"
 	"github.com/surge-downloader/surge/internal/utils"
@@ -55,10 +56,24 @@ var rootCmd = &cobra.Command{
 		GlobalPool = download.NewWorkerPool(GlobalProgressCh, 4)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		// Initialize Dependencies (Dependency Injection)
+		stateDir := config.GetStateDir()
+		logsDir := config.GetLogsDir()
+
+		// Ensure directories exist
+		os.MkdirAll(stateDir, 0755)
+		os.MkdirAll(logsDir, 0755)
+
+		// Config engine state
+		state.Configure(filepath.Join(stateDir, "surge.db"))
+
+		// Config logging
+		utils.ConfigureDebug(logsDir)
+
 		// Attempt to acquire lock
 		isMaster, err := AcquireLock()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error acquiring lock: %v\n", err)
+			fmt.Printf("Error acquiring lock: %v\n", err)
 			os.Exit(1)
 		}
 
