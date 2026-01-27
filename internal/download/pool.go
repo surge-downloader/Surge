@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/surge-downloader/surge/internal/engine/events"
+	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 )
 
@@ -39,8 +40,32 @@ func NewWorkerPool(progressCh chan<- any, maxDownloads int) *WorkerPool {
 	return pool
 }
 
+// Add adds a new download task to the pool
 func (p *WorkerPool) Add(cfg types.DownloadConfig) {
 	p.taskChan <- cfg
+}
+
+// HasDownload checks if a download with the given URL already exists
+// HasDownload checks if a download with the given URL already exists
+func (p *WorkerPool) HasDownload(url string) bool {
+	p.mu.RLock()
+	// Check active downloads
+	for _, ad := range p.downloads {
+		if ad.config.URL == url {
+			p.mu.RUnlock()
+			return true
+		}
+	}
+	p.mu.RUnlock()
+
+	// Check persistent store (completed/queued/paused)
+	// We do this outside the lock to avoid holding it during DB query
+	exists, err := state.CheckDownloadExists(url)
+	if err == nil && exists {
+		return true
+	}
+
+	return false
 }
 
 // Pause pauses a specific download by ID

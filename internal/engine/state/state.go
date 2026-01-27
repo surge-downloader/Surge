@@ -325,6 +325,7 @@ func LoadPausedDownloads() ([]types.DownloadEntry, error) {
 }
 
 // LoadCompletedDownloads returns all completed downloads
+// LoadCompletedDownloads returns all completed downloads
 func LoadCompletedDownloads() ([]types.DownloadEntry, error) {
 	list, err := LoadMasterList()
 	if err != nil {
@@ -338,4 +339,21 @@ func LoadCompletedDownloads() ([]types.DownloadEntry, error) {
 		}
 	}
 	return completed, nil
+}
+
+// CheckDownloadExists checks if a download with the given URL exists in the database
+func CheckDownloadExists(url string) (bool, error) {
+	db := getDBHelper()
+	if db == nil {
+		return false, fmt.Errorf("database not initialized")
+	}
+
+	var count int
+	// Check for any status (active, paused, completed)
+	err := db.QueryRow("SELECT COUNT(*) FROM downloads WHERE url = ?", url).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to query download existence: %w", err)
+	}
+
+	return count > 0, nil
 }

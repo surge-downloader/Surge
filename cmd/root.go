@@ -318,6 +318,43 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		}
 	}
 
+	// Check settings for extension prompt and duplicates
+	settings, err := config.LoadSettings()
+	if err == nil {
+		// Check for duplicates
+		isDuplicate := false
+		if GlobalPool.HasDownload(req.URL) {
+			isDuplicate = true
+		}
+
+		// Logic for prompting:
+		// 1. If ExtensionPrompt is enabled
+		// 2. OR if WarnOnDuplicate is enabled AND it is a duplicate
+		shouldPrompt := settings.General.ExtensionPrompt || (settings.General.WarnOnDuplicate && isDuplicate)
+
+		// Only prompt if we have a UI running (serverProgram != nil)
+		if shouldPrompt && serverProgram != nil {
+			utils.Debug("Requesting TUI confirmation for: %s (Duplicate: %v)", req.URL, isDuplicate)
+
+			// Send request to TUI
+			GlobalProgressCh <- events.DownloadRequestMsg{
+				URL:      req.URL,
+				Filename: req.Filename,
+				Path:     outPath, // Use the path we resolved (default or requested)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			// Return 202 Accepted to indicate it's pending approval
+			w.WriteHeader(http.StatusAccepted)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":  "pending_approval",
+				"message": "Download request sent to Surge for confirmation",
+				"id":      downloadID, // ID might change if user modifies it, but useful for tracking
+			})
+			return
+		}
+	}
+
 	// Create configuration
 	cfg := types.DownloadConfig{
 		URL:        req.URL,

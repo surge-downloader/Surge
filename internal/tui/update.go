@@ -188,6 +188,45 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 
+	case events.DownloadRequestMsg:
+		// Handle download request from HTTP server (extension)
+		// This message is only sent if user confirmation is required (ExtensionPrompt=true or Duplicate=true)
+
+		path := msg.Path
+		if path == "" {
+			path = m.Settings.General.DefaultDownloadDir
+			if path == "" {
+				path = "."
+			}
+		}
+
+		// Check for specific duplicate warning case
+		// Even though root.go checks this, we re-check to determine WHICH screen to show
+		duplicate := m.checkForDuplicate(msg.URL)
+
+		if duplicate != nil && m.Settings.General.WarnOnDuplicate {
+			utils.Debug("Duplicate download detected in TUI: %s", msg.URL)
+			m.pendingURL = msg.URL
+			m.pendingPath = path
+			m.pendingFilename = msg.Filename
+			m.duplicateInfo = duplicate.Filename
+			m.state = DuplicateWarningState
+			return m, nil
+		}
+
+		// Otherwise it's a general extension prompt
+		if m.Settings.General.ExtensionPrompt {
+			m.pendingURL = msg.URL
+			m.pendingPath = path
+			m.pendingFilename = msg.Filename
+			m.state = ExtensionConfirmationState
+			return m, nil
+		}
+
+		// Fallback: Just start it if for some reason we got here without needing a prompt
+		// (Should not happen given root.go logic, but safe fallback)
+		return m.startDownload(msg.URL, path, msg.Filename)
+
 	case events.DownloadStartedMsg:
 
 		// Check if we already have this download
@@ -220,7 +259,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if d.ID == msg.DownloadID {
 				d.Filename = msg.Filename
 				d.Total = msg.Total
-				d.URL = msg.URL
 				d.Destination = msg.DestPath
 				// Reset start time to exclude probing
 				d.StartTime = time.Now()
@@ -233,6 +271,10 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Update list items to reflect new filename
 		m.UpdateListItems()
+		// Switch to active tab so user sees it
+		if m.Settings.General.AutoResume {
+			// Optional: switch tab logic if desired
+		}
 		// Add log entry
 		m.addLogEntry(LogStyleStarted.Render("⬇ Started: " + msg.Filename))
 		cmds = append(cmds, listenForActivity(m.progressChan))
