@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine"
 	"github.com/surge-downloader/surge/internal/engine/concurrent"
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/single"
+	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/utils"
 )
@@ -82,11 +83,13 @@ func uniqueFilePath(path string) string {
 func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 
 	// Probe server once to get all metadata
+	fmt.Println("TUIDownload: Probing server...", cfg.URL)
 	probe, err := engine.ProbeServer(ctx, cfg.URL, cfg.Filename)
 	if err != nil {
-		utils.Debug("Probe failed: %v", err)
+		fmt.Printf("TUIDownload: Probe failed: %v\n", err)
 		return err
 	}
+	fmt.Println("TUIDownload: Probe success", probe.FileSize)
 
 	// Start download timer (exclude probing time)
 	start := time.Now()
@@ -166,6 +169,17 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	}
 
 	// Only send completion if NO error AND not paused
+	// Check specifically for ErrPaused to avoid treating it as error
+	if errors.Is(downloadErr, types.ErrPaused) {
+		utils.Debug("Download paused cleanly")
+		return nil // Return nil so worker can remove it from active map (Wait, do we want that?)
+		// If we return nil, worker removes from active map. GetStatus returns nil?
+		// But GetStatus checks DB? No.
+		// If pause, we want it REMOVED from WorkerPool active map.
+		// So return nil is correct for TUIDownload result.
+		// But we MUST skip Rename/Delete.
+	}
+
 	isPaused := cfg.State != nil && cfg.State.IsPaused()
 	if downloadErr == nil && !isPaused && cfg.ProgressCh != nil {
 		cfg.ProgressCh <- events.DownloadCompleteMsg{
