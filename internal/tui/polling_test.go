@@ -1,18 +1,37 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/engine/events"
+	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 )
 
 // TestStateSync verifies that the TUI uses the shared state object
 // from the worker, allowing external progress updates to be seen.
 func TestStateSync(t *testing.T) {
-	m := InitialRootModel(0, "0.0.0", nil, make(chan any))
+	// Setup temp DB to avoid auto-resuming real downloads (which causes panic if pool is nil)
+	tmpDir, err := os.MkdirTemp("", "surge-test-sync")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "surge.db")
+	state.Configure(dbPath)
+	defer state.CloseDB()
+
+	// Provide a dummy pool to avoid panics if logic tries to use it
+	ch := make(chan any, 10)
+	pool := download.NewWorkerPool(ch, 1)
+
+	m := InitialRootModel(0, "0.0.0", pool, ch)
 
 	downloadID := "external-id"
 	// Create the "worker" state - this is the source of truth
@@ -24,7 +43,7 @@ func TestStateSync(t *testing.T) {
 		// Simulate download start (from external source)
 		// Current implementation of DownloadStartedMsg doesn't carry state
 		// So TUI will create its own state (BUG).
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 		p.Send(events.DownloadStartedMsg{
 			DownloadID: downloadID,
 			Filename:   "external.file",
@@ -35,10 +54,11 @@ func TestStateSync(t *testing.T) {
 		})
 
 		// Simulate worker updating the state
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
 		workerState.Downloaded.Store(500)
 
-		time.Sleep(200 * time.Millisecond) // Wait for poll
+		// Wait effectively for 2 poll cycles (150ms * 2 = 300ms) + buffer
+		time.Sleep(500 * time.Millisecond)
 		p.Quit()
 	}()
 
