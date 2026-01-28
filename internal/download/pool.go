@@ -158,6 +158,18 @@ func (p *WorkerPool) Resume(downloadID string) {
 		return
 	}
 
+	// Prevent race: Don't resume if still pausing
+	if ad.config.State != nil && ad.config.State.IsPausing() {
+		utils.Debug("Resume ignored: download %s is still pausing", downloadID)
+		return
+	}
+
+	// Idempotency: If already running (not paused), do nothing
+	if ad.config.State != nil && !ad.config.State.IsPaused() {
+		utils.Debug("Resume ignored: download %s is already running", downloadID)
+		return
+	}
+
 	// Clear paused flag and reset session start to avoid speed spikes/dips checks
 	if ad.config.State != nil {
 		ad.config.State.Resume()
