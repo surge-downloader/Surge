@@ -118,6 +118,9 @@ var rootCmd = &cobra.Command{
 
 			StartHeadlessConsumer()
 
+			// Auto resume downloads if enabled
+			resumePausedDownloads()
+
 			// Block until signal
 			sigChan := make(chan os.Signal, 1)
 			signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
@@ -545,5 +548,63 @@ func convertRuntimeConfig(rc *config.RuntimeConfig) *types.RuntimeConfig {
 		SlowWorkerGracePeriod: rc.SlowWorkerGracePeriod,
 		StallTimeout:          rc.StallTimeout,
 		SpeedEmaAlpha:         rc.SpeedEmaAlpha,
+	}
+}
+
+func resumePausedDownloads() {
+
+	settings, err := config.LoadSettings()
+	if err != nil {
+		return // Can't check preference
+	}
+
+	if !settings.General.AutoResume {
+		return
+	}
+
+	pausedEntries, err := state.LoadPausedDownloads()
+	if err != nil {
+		return
+	}
+
+	for _, entry := range pausedEntries {
+		// Load state to define progress state
+		s, err := state.LoadState(entry.URL, entry.DestPath)
+		if err != nil {
+			continue
+		}
+
+		// Reconstruct config
+		runtimeConfig := convertRuntimeConfig(settings.ToRuntimeConfig())
+		outputPath := filepath.Dir(entry.DestPath)
+		// If outputPath is empty or dot, use default
+		if outputPath == "" || outputPath == "." {
+			outputPath = settings.General.DefaultDownloadDir
+		}
+
+		id := entry.ID
+		if id == "" {
+			id = uuid.New().String()
+		}
+
+		// Create progress state
+		progState := types.NewProgressState(id, s.TotalSize)
+		progState.Downloaded.Store(s.Downloaded)
+
+		cfg := types.DownloadConfig{
+			URL:        entry.URL,
+			OutputPath: outputPath,
+			DestPath:   entry.DestPath,
+			ID:         id,
+			Filename:   entry.Filename,
+			Verbose:    false,
+			IsResume:   true,
+			ProgressCh: GlobalProgressCh,
+			State:      progState,
+			Runtime:    runtimeConfig,
+		}
+
+		fmt.Printf("Auto-resuming download: %s\n", entry.Filename)
+		GlobalPool.Add(cfg)
 	}
 }

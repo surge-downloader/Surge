@@ -191,6 +191,12 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 	fp.ShowPermissions = true
 	fp.SetHeight(FilePickerHeight)
 
+	// Load settings for auto resume
+	settings, _ := config.LoadSettings()
+	if settings == nil {
+		settings = config.DefaultSettings()
+	}
+
 	// Load paused downloads from master list (now uses global config directory)
 	var downloads []*DownloadModel
 	if pausedEntries, err := state.LoadPausedDownloads(); err == nil {
@@ -202,6 +208,7 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 			dm := NewDownloadModel(id, entry.URL, entry.Filename, 0)
 			dm.paused = true
 			dm.Destination = entry.DestPath // Store destination for state lookup on resume
+
 			// Load actual progress from state file (using URL+DestPath for unique lookup)
 			if state, err := state.LoadState(entry.URL, entry.DestPath); err == nil {
 				dm.Downloaded = state.Downloaded
@@ -213,6 +220,36 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 					dm.progress.SetPercent(float64(state.Downloaded) / float64(state.TotalSize))
 				}
 			}
+
+			// Auto resume if enabled
+			if settings.General.AutoResume {
+				dm.paused = false
+				dm.state.Resume()
+
+				// Re add to pool
+				// Note: We need to reconstruct the config. ideally this logic should be shared
+				runtimeConfig := convertRuntimeConfig(settings.ToRuntimeConfig())
+				outputPath := filepath.Dir(entry.DestPath)
+				if outputPath == "" || outputPath == "." {
+					outputPath = settings.General.DefaultDownloadDir
+				}
+
+				cfg := types.DownloadConfig{
+					URL:        entry.URL,
+					OutputPath: outputPath,
+					DestPath:   entry.DestPath,
+					ID:         id,
+					Filename:   entry.Filename,
+					Verbose:    false,
+					IsResume:   true,
+					ProgressCh: progressChan,
+					State:      dm.state,
+					Runtime:    runtimeConfig,
+				}
+
+				pool.Add(cfg)
+			}
+
 			downloads = append(downloads, dm)
 		}
 	}
@@ -241,9 +278,6 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 	helpModel := help.New()
 	helpModel.Styles.ShortKey = lipgloss.NewStyle().Foreground(ColorLightGray)
 	helpModel.Styles.ShortDesc = lipgloss.NewStyle().Foreground(ColorGray)
-
-	// Load settings from disk (or defaults)
-	settings, _ := config.LoadSettings()
 
 	// Initialize settings input for editing
 	settingsInput := textinput.New()
