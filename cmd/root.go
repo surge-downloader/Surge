@@ -356,25 +356,34 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 			}
 		}
 
-		// If no active downloads, get from database
-		if len(statuses) == 0 {
-			dbDownloads, err := state.ListAllDownloads()
-			if err == nil {
-				for _, d := range dbDownloads {
-					var progress float64
-					if d.TotalSize > 0 {
-						progress = float64(d.Downloaded) * 100 / float64(d.TotalSize)
-					}
-					statuses = append(statuses, types.DownloadStatus{
-						ID:         d.ID,
-						URL:        d.URL,
-						Filename:   d.Filename,
-						Status:     d.Status,
-						TotalSize:  d.TotalSize,
-						Downloaded: d.Downloaded,
-						Progress:   progress,
-					})
+		// Always fetch from database to get history/paused/completed
+		dbDownloads, err := state.ListAllDownloads()
+		if err == nil {
+			// Create a map of existing IDs to avoid duplicates
+			existingIDs := make(map[string]bool)
+			for _, s := range statuses {
+				existingIDs[s.ID] = true
+			}
+
+			for _, d := range dbDownloads {
+				// Skip if already present (active)
+				if existingIDs[d.ID] {
+					continue
 				}
+
+				var progress float64
+				if d.TotalSize > 0 {
+					progress = float64(d.Downloaded) * 100 / float64(d.TotalSize)
+				}
+				statuses = append(statuses, types.DownloadStatus{
+					ID:         d.ID,
+					URL:        d.URL,
+					Filename:   d.Filename,
+					Status:     d.Status,
+					TotalSize:  d.TotalSize,
+					Downloaded: d.Downloaded,
+					Progress:   progress,
+				})
 			}
 		}
 

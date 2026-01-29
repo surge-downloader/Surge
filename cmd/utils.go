@@ -13,6 +13,7 @@ import (
 
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/engine/state"
+	"github.com/surge-downloader/surge/internal/engine/types"
 )
 
 // readActivePort reads the port from the port file
@@ -84,6 +85,26 @@ func sendToServer(url, outPath string, port int) error {
 	return nil
 }
 
+// GetRemoteDownloads fetches all downloads from the running server
+func GetRemoteDownloads(port int) ([]types.DownloadStatus, error) {
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/list", port))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned status: %s", resp.Status)
+	}
+
+	var statuses []types.DownloadStatus
+	if err := json.NewDecoder(resp.Body).Decode(&statuses); err != nil {
+		return nil, err
+	}
+
+	return statuses, nil
+}
+
 // resolveDownloadID resolves a partial ID (prefix) to a full download ID.
 // If the input is at least 8 characters and matches a single download, returns the full ID.
 // Returns the original ID if no match found or if it's already a full ID.
@@ -92,16 +113,40 @@ func resolveDownloadID(partialID string) (string, error) {
 		return partialID, nil // Already a full UUID
 	}
 
-	// Get all downloads from database
-	downloads, err := state.ListAllDownloads()
-	if err != nil {
-		return partialID, nil // Fall through to use as-is
+	var candidates []string
+
+	// 1. Try to get candidates from running server
+	port := readActivePort()
+	if port > 0 {
+		remoteDownloads, err := GetRemoteDownloads(port)
+		if err == nil {
+			for _, d := range remoteDownloads {
+				candidates = append(candidates, d.ID)
+			}
+		}
 	}
 
+	// 2. Get all downloads from database
+	downloads, err := state.ListAllDownloads()
+	if err == nil {
+		for _, d := range downloads {
+			candidates = append(candidates, d.ID)
+		}
+	} else if port == 0 {
+		// Only return error if we couldn't check server AND db failed
+		return partialID, nil
+	}
+
+	// Find matches among all candidates
 	var matches []string
-	for _, d := range downloads {
-		if strings.HasPrefix(d.ID, partialID) {
-			matches = append(matches, d.ID)
+	seen := make(map[string]bool)
+
+	for _, id := range candidates {
+		if strings.HasPrefix(id, partialID) {
+			if !seen[id] {
+				matches = append(matches, id)
+				seen[id] = true
+			}
 		}
 	}
 

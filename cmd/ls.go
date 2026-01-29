@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"text/tabwriter"
@@ -15,10 +14,11 @@ import (
 )
 
 var lsCmd = &cobra.Command{
-	Use:   "ls [id]",
-	Short: "List downloads",
-	Long:  `List all downloads from the running server or database. Optionally show details for a specific download by ID.`,
-	Args:  cobra.MaximumNArgs(1),
+	Use:     "ls [id]",
+	Aliases: []string{"l"},
+	Short:   "List downloads",
+	Long:    `List all downloads from the running server or database. Optionally show details for a specific download by ID.`,
+	Args:    cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		initializeGlobalState()
 
@@ -62,9 +62,19 @@ func printDownloads(jsonOutput bool) {
 	// Try to get from running server first
 	port := readActivePort()
 	if port > 0 {
-		serverDownloads := getDownloadsFromServer(port)
-		if serverDownloads != nil {
-			downloads = serverDownloads
+		serverDownloads, err := GetRemoteDownloads(port)
+		if err == nil {
+			for _, s := range serverDownloads {
+				downloads = append(downloads, downloadInfo{
+					ID:         s.ID,
+					Filename:   s.Filename,
+					Status:     s.Status,
+					Progress:   s.Progress,
+					TotalSize:  s.TotalSize,
+					Downloaded: s.Downloaded,
+					Speed:      s.Speed,
+				})
+			}
 		}
 	}
 
@@ -139,47 +149,6 @@ func printDownloads(jsonOutput bool) {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", id, filename, d.Status, progress, speed, size)
 	}
 	w.Flush()
-}
-
-func getDownloadsFromServer(port int) []downloadInfo {
-	// Query the server's /list endpoint (we need to add this endpoint)
-	// For now, we'll return nil and the database fallback will be used
-	// TODO: Add /list endpoint to server
-
-	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/list", port))
-	if err != nil {
-		return nil
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil
-	}
-
-	var statuses []types.DownloadStatus
-	if err := json.Unmarshal(body, &statuses); err != nil {
-		return nil
-	}
-
-	var downloads []downloadInfo
-	for _, s := range statuses {
-		downloads = append(downloads, downloadInfo{
-			ID:         s.ID,
-			Filename:   s.Filename,
-			Status:     s.Status,
-			Progress:   s.Progress,
-			TotalSize:  s.TotalSize,
-			Downloaded: s.Downloaded,
-			Speed:      s.Speed,
-		})
-	}
-
-	return downloads
 }
 
 func formatSize(bytes int64) string {
