@@ -53,7 +53,7 @@ go install github.com/surge-downloader/surge@latest
 ### Option 4: Build from Source
 
 ```bash
-git clone [https://github.com/surge-downloader/surge.git](https://github.com/surge-downloader/surge.git)
+git clone https://github.com/surge-downloader/surge.git
 cd surge
 go build -o surge .
 
