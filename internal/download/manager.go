@@ -54,12 +54,18 @@ func uniqueFilePath(path string) string {
 	base := name
 	counter := 1
 
-	if len(name) > 3 && name[len(name)-1] == ')' {
-		if openParen := strings.LastIndexByte(name, '('); openParen != -1 {
+	// Clean name to ensure parsing works even with trailing spaces
+	cleanName := strings.TrimSpace(name)
+	if len(cleanName) > 3 && cleanName[len(cleanName)-1] == ')' {
+		if openParen := strings.LastIndexByte(cleanName, '('); openParen != -1 {
 			// Try to parse number between parens
-			numStr := name[openParen+1 : len(name)-1]
+			numStr := cleanName[openParen+1 : len(cleanName)-1]
 			if num, err := strconv.Atoi(numStr); err == nil && num > 0 {
-				base = name[:openParen]
+				base = cleanName[:openParen]
+				// Preserve original whitespace in base if it was "file (1)" -> "file "
+				// But we trimmed name. Let's rely on string slicing of cleanName?
+				// No, if cleanName was trimmed, base might differ from "name".
+				// But we construct new name using "base".
 				counter = num + 1
 			}
 		}
