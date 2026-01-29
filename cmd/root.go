@@ -198,15 +198,31 @@ func StartHeadlessConsumer() {
 				if len(id) > 8 {
 					id = id[:8]
 				}
-				fmt.Printf("Error [%s]: %s\n", id, m.Err)
+				fmt.Printf("Error: %s [%s]: %v\n", m.Filename, id, m.Err)
 			case events.DownloadQueuedMsg:
-				fmt.Printf("Queued: %s\n", m.Filename)
+				id := m.DownloadID
+				if len(id) > 8 {
+					id = id[:8]
+				}
+				fmt.Printf("Queued: %s [%s]\n", m.Filename, id)
 			case events.DownloadPausedMsg:
-				fmt.Printf("Paused: %s\n", m.Filename)
+				id := m.DownloadID
+				if len(id) > 8 {
+					id = id[:8]
+				}
+				fmt.Printf("Paused: %s [%s]\n", m.Filename, id)
 			case events.DownloadResumedMsg:
-				fmt.Printf("Resumed: %s\n", m.Filename)
+				id := m.DownloadID
+				if len(id) > 8 {
+					id = id[:8]
+				}
+				fmt.Printf("Resumed: %s [%s]\n", m.Filename, id)
 			case events.DownloadRemovedMsg:
-				fmt.Printf("Removed: %s\n", m.Filename)
+				id := m.DownloadID
+				if len(id) > 8 {
+					id = id[:8]
+				}
+				fmt.Printf("Removed: %s [%s]\n", m.Filename, id)
 			}
 		}
 	}()

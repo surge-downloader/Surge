@@ -27,6 +27,7 @@ type DownloadCompleteMsg struct {
 // DownloadErrorMsg signals that an error occurred
 type DownloadErrorMsg struct {
 	DownloadID string
+	Filename   string
 	Err        error
 }
 

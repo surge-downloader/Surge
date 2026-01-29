@@ -275,7 +275,11 @@ func (p *WorkerPool) worker() {
 				cfg.State.SetError(err)
 			}
 			if p.progressCh != nil {
-				p.progressCh <- events.DownloadErrorMsg{DownloadID: cfg.ID, Err: err}
+				p.progressCh <- events.DownloadErrorMsg{
+					DownloadID: cfg.ID,
+					Filename:   cfg.Filename,
+					Err:        err,
+				}
 			}
 			// Clean up errored download from tracking (don't save to .surge)
 			p.mu.Lock()
