@@ -44,6 +44,13 @@ var pauseCmd = &cobra.Command{
 
 		id := args[0]
 
+		// Resolve partial ID to full ID
+		id, err := resolveDownloadID(id)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 		if port > 0 {
 			// Send to running server
 			resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/pause?id=%s", port, id), "application/json", nil)
@@ -57,14 +64,14 @@ var pauseCmd = &cobra.Command{
 				fmt.Fprintf(os.Stderr, "Error: server returned %s\n", resp.Status)
 				os.Exit(1)
 			}
-			fmt.Printf("Paused download %s\n", id)
+			fmt.Printf("Paused download %s\n", id[:8])
 		} else {
 			// Offline mode: update DB directly
 			if err := state.UpdateStatus(id, "paused"); err != nil {
 				fmt.Fprintf(os.Stderr, "Error pausing download: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Printf("Paused download %s (offline mode)\n", id)
+			fmt.Printf("Paused download %s (offline mode)\n", id[:8])
 		}
 	},
 }

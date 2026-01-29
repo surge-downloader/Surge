@@ -40,6 +40,13 @@ var rmCmd = &cobra.Command{
 
 		id := args[0]
 
+		// Resolve partial ID to full ID
+		id, err := resolveDownloadID(id)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 		if port > 0 {
 			// Send to running server
 			resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/delete?id=%s", port, id), "application/json", nil)
@@ -53,14 +60,14 @@ var rmCmd = &cobra.Command{
 				fmt.Fprintf(os.Stderr, "Error: server returned %s\n", resp.Status)
 				os.Exit(1)
 			}
-			fmt.Printf("Removed download %s\n", id)
+			fmt.Printf("Removed download %s\n", id[:8])
 		} else {
 			// Offline mode: remove from DB
 			if err := state.RemoveFromMasterList(id); err != nil {
 				fmt.Fprintf(os.Stderr, "Error removing download: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Printf("Removed download %s\n", id)
+			fmt.Printf("Removed download %s\n", id[:8])
 		}
 	},
 }

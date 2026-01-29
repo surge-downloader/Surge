@@ -41,6 +41,13 @@ var resumeCmd = &cobra.Command{
 
 		id := args[0]
 
+		// Resolve partial ID to full ID
+		id, err := resolveDownloadID(id)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 		if port > 0 {
 			// Send to running server
 			resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/resume?id=%s", port, id), "application/json", nil)
@@ -54,13 +61,13 @@ var resumeCmd = &cobra.Command{
 				fmt.Fprintf(os.Stderr, "Error: server returned %s\n", resp.Status)
 				os.Exit(1)
 			}
-			fmt.Printf("Resumed download %s\n", id)
+			fmt.Printf("Resumed download %s\n", id[:8])
 		} else {
 			if err := state.UpdateStatus(id, "queued"); err != nil {
 				fmt.Fprintf(os.Stderr, "Error resuming download: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Printf("Resumed download %s (offline mode). Start Surge to begin downloading.\n", id)
+			fmt.Printf("Resumed download %s (offline mode). Start Surge to begin downloading.\n", id[:8])
 		}
 	},
 }
