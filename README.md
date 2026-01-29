@@ -67,7 +67,7 @@ go build -o surge .
 
 Surge has two main modes: **TUI (Interactive)** and **Server (Headless)**.
 
-### 1. The Interactive TUI
+### 1. Interactive TUI Mode
 
 Just run `surge` to enter the dashboard. This is where you can visualize progress, manage the queue, and see the speed graphs.
 
@@ -88,27 +88,7 @@ surge --no-resume
 surge https://example.com/file.zip --exit-when-done
 ```
 
-### 2. Adding Downloads
-
-Use `surge add` to queue downloads to a running instance (TUI or Server).
-
-```bash
-# Add a download to running instance
-surge add https://example.com/file.zip
-
-# Add multiple downloads
-surge add https://a.com/1.zip https://b.com/2.zip
-
-# Batch add from file
-surge add --batch urls.txt
-
-# Save to a specific folder
-surge add https://example.com/file.zip -o ~/Downloads/ISO
-```
-
-> **Note:** `surge get` is an alias for `surge add`.
-
-### 3. Server Mode (Headless)
+### 2. Server Mode (Headless)
 
 Great for servers, Raspberry Pis, or background processes.
 
@@ -116,20 +96,8 @@ Great for servers, Raspberry Pis, or background processes.
 # Start the server
 surge server start
 
-# Start with downloads queued
-surge server start https://example.com/file1.zip https://example.com/file2.zip
-
-# Combine URLs and batch file
-surge server start https://example.com/file.zip --batch urls.txt
-
-# Start on a specific port
-surge server start --port 8090
-
-# Auto-exit when all downloads complete
-surge server start --exit-when-done https://example.com/file.zip
-
-# Start without resuming paused downloads
-surge server start --no-resume
+# Start on a specific port with options
+surge server start --port 8090 --no-resume
 
 # Check server status
 surge server status
@@ -138,30 +106,19 @@ surge server status
 surge server stop
 ```
 
-### 4. Managing Downloads
+### 3. Command Reference
 
-Control downloads directly from the CLI:
+All other commands can be used to interact with a running Surge instance (TUI or Server).
 
-```bash
-# List all downloads
-surge ls
-surge ls --json    # JSON output
-surge ls --watch   # Live updates
+| Command  | Alias  | Description                 | Usage Examples                                        |
+| :------- | :----- | :-------------------------- | :---------------------------------------------------- |
+| `add`    | `get`  | Add a download to the queue | `surge add <url>`<br>`surge add --batch urls.txt`     |
+| `ls`     | `l`    | List all downloads          | `surge ls`<br>`surge ls --watch`<br>`surge ls --json` |
+| `pause`  | -      | Pause a download            | `surge pause <id>`<br>`surge pause --all`             |
+| `resume` | -      | Resume a download           | `surge resume <id>`<br>`surge resume --all`           |
+| `rm`     | `kill` | Remove/Cancel a download    | `surge rm <id>`<br>`surge rm --clean`                 |
 
-# Pause downloads
-surge pause <ID>
-surge pause --all
-
-# Resume downloads
-surge resume <ID>
-surge resume --all
-
-# Remove downloads
-surge rm <ID>
-surge rm --clean   # Remove all completed
-```
-
-> **Tip:** `surge kill` is an alias for `surge rm`.
+> **Note:** IDs can be partial (e.g., first 4-8 characters) as long as they are unique.
 
 ---
 
@@ -199,7 +156,7 @@ You can check out the [Discussions](https://github.com/surge-downloader/surge/di
 
 ## License
 
-Distributed under the MIT License. See [LICENSE]("https://github.com/surge-downloader/surge/blob/main/LICENSE") for more information.
+Distributed under the MIT License. See [LICENSE](https://github.com/surge-downloader/surge/blob/main/LICENSE) for more information.
 
 ---
 
