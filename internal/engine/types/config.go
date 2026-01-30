@@ -80,6 +80,7 @@ type RuntimeConfig struct {
 	StallTimeout          time.Duration
 	SpeedEmaAlpha         float64
 	WriteQueueSize        int
+	ConcurrentWriters     int
 }
 
 // GetUserAgent returns the configured user agent or the default
@@ -186,7 +187,15 @@ func (r *RuntimeConfig) GetSpeedEmaAlpha() float64 {
 // GetWriteQueueSize returns configured value or default
 func (r *RuntimeConfig) GetWriteQueueSize() int {
 	if r == nil || r.WriteQueueSize <= 0 {
-		return WriteQueueSize
+		return 16 // Default to 16 (64MB buffer) to reduce memory pressure
 	}
 	return r.WriteQueueSize
+}
+
+// GetConcurrentWriters returns configured value or default
+func (r *RuntimeConfig) GetConcurrentWriters() int {
+	if r == nil || r.ConcurrentWriters <= 0 {
+		return 4 // Default to 4 for high throughput
+	}
+	return r.ConcurrentWriters
 }

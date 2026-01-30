@@ -316,7 +316,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 	d.writeQueue = make(chan WriteRequest, queueSize)
 
 	// Start multiple writers to handle high throughput
-	numWriters := 4
+	numWriters := d.Runtime.GetConcurrentWriters()
 	var writerWg sync.WaitGroup
 	writerWg.Add(numWriters)
 

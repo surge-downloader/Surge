@@ -22,11 +22,13 @@ import (
 )
 
 var (
-	flagServer = flag.Bool("server", false, "Run as benchmark server only")
-	flagPort   = flag.Int("port", 0, "Port to listen on (0 for random)")
-	flagSize   = flag.String("size", "2GB", "File size to serve (e.g. 500MB, 2GB)")
-	flagRate   = flag.String("rate", "0", "Rate limit (e.g. 500MB/s, 100kb/s). 0 for unlimited.")
-	flagPprof  = flag.Bool("pprof", false, "Enable pprof server on :6060")
+	flagServer  = flag.Bool("server", false, "Run as benchmark server only")
+	flagPort    = flag.Int("port", 0, "Port to listen on (0 for random)")
+	flagSize    = flag.String("size", "2GB", "File size to serve (e.g. 500MB, 2GB)")
+	flagRate    = flag.String("rate", "0", "Rate limit (e.g. 500MB/s, 100kb/s). 0 for unlimited.")
+	flagPprof   = flag.Bool("pprof", false, "Enable pprof server on :6060")
+	flagWriters = flag.Int("writers", 4, "Number of concurrent writer goroutines")
+	flagQueue   = flag.Int("queue-size", 16, "Size of write queue")
 )
 
 func parseSize(s string) (int64, error) {
@@ -155,6 +157,8 @@ func main() {
 	runtime := &types.RuntimeConfig{
 		MaxConnectionsPerHost: 32,
 		WorkerBufferSize:      4 * 1024 * 1024, // 4MB buffer
+		ConcurrentWriters:     *flagWriters,
+		WriteQueueSize:        *flagQueue,
 	}
 
 	progressCh := make(chan any, 100)
