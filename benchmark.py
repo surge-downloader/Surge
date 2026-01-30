@@ -14,6 +14,8 @@ import sys
 import tempfile
 import time
 import random
+import re
+import signal
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -27,13 +29,7 @@ EXE_SUFFIX = ".exe" if IS_WINDOWS else ""
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-# Default test file URL (test file)
-TEST_URL = "https://sin-speed.hetzner.com/1GB.bin"
-
-
-
 MB = 1024 * 1024
-
 
 # =============================================================================
 # DATA CLASSES
@@ -116,6 +112,17 @@ def build_surge(project_dir: Path) -> bool:
     print("    [OK] Surge built successfully")
     return True
 
+def build_bench_tool(project_dir: Path) -> bool:
+    """Build bench tool from source."""
+    print("  Building bench tool...")
+    output_name = f"bench{EXE_SUFFIX}"
+    success, output = run_command(["go", "build", "-o", output_name, "./cmd/bench"], cwd=str(project_dir))
+    if not success:
+        print(f"    [X] Failed to build bench tool: {output}")
+        return False
+    print("    [OK] Bench tool built successfully")
+    return True
+
 
 def check_wget() -> bool:
     """Check if wget is installed."""
@@ -135,8 +142,6 @@ def check_curl() -> bool:
     return False
 
 
-
-
 def check_aria2c() -> bool:
     """Check if aria2c is installed."""
     if which("aria2c"):
@@ -144,6 +149,55 @@ def check_aria2c() -> bool:
         return True
     print("    [X] aria2c not found (install aria2)")
     return False
+
+# =============================================================================
+# LOCAL SERVER
+# =============================================================================
+class LocalServer:
+    def __init__(self, bench_exec: Path, size: str = "2GB"):
+        self.bench_exec = bench_exec
+        self.size = size
+        self.process = None
+        self.url = None
+
+    def start(self):
+        print("\n  Starting local benchmark server...")
+        # Start the process
+        cmd = [str(self.bench_exec), "-server", "-port", "0", "-size", self.size]
+        self.process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True
+        )
+
+        # Wait for the URL to be printed
+        start_time = time.time()
+        while time.time() - start_time < 5:
+            line = self.process.stdout.readline()
+            if not line:
+                break
+            # Look for "Server listening on http://..."
+            match = re.search(r"Server listening on (http://\S+)", line)
+            if match:
+                self.url = match.group(1)
+                print(f"  [OK] Server running at {self.url}")
+                return
+            time.sleep(0.1)
+        
+        # If we get here, valid URL wasn't found
+        self.stop()
+        raise RuntimeError("Failed to start local server or parse URL")
+
+    def stop(self):
+        if self.process:
+            if self.process.poll() is None:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+            self.process = None
 
 
 # =============================================================================
@@ -155,15 +209,16 @@ def benchmark_surge(executable: Path, url: str, output_dir: Path, label: str = "
         return BenchmarkResult(label, False, 0, 0, f"Binary not found: {executable}")
     
     start = time.perf_counter()
+    # Use 'server start' for headless mode with auto-exit
     success, output = run_command([
-        str(executable), "get", url,
+        str(executable), "server", "start", url,
+        "--exit-when-done",
         "--output", str(output_dir),  # Download directory
     ], timeout=600)
     elapsed = time.perf_counter() - start
     
     # Try to parse the actual download time from Surge output (excluding probing)
     # Output format: "Complete: 1.0 GB in 5.2s (196.34 MB/s)" OR "... in 500ms ..."
-    import re
     actual_time = elapsed
     match = re.search(r"in ([\d\.]+)(m?s)", output)
     if match:
@@ -354,13 +409,13 @@ def run_speedtest() -> Optional[str]:
 # MAIN
 # =============================================================================
 def main():
-    print("\nSurge Benchmark Suite")
+    print("\nSurge Benchmark Suite (Localhost Mode)")
     print("=" * 40)
     
     # Parse arguments
     import argparse
     parser = argparse.ArgumentParser(description="Surge Benchmark Suite")
-    parser.add_argument("url", nargs="?", default=TEST_URL, help="URL to download for benchmarking")
+    parser.add_argument("url", nargs="?", default="", help="Optional URL override (ignores local server)")
     parser.add_argument("-n", "--iterations", type=int, default=1, help="Number of iterations to run (default: 1)")
     
     # Service flags
@@ -375,17 +430,14 @@ def main():
     
     # Feature flags
     parser.add_argument("--speedtest", action="store_true", help="Run network speedtest")
+    parser.add_argument("--size", default="2GB", help="File size for local server (default: 2GB)")
 
     args = parser.parse_args()
     
-    test_url = args.url
     num_iterations = args.iterations
     
     # helper to check if any specific service was requested
     specific_service_requested = any([args.surge, args.aria2, args.wget, args.curl, args.surge_exec, args.surge_baseline])
-    
-    print(f"\n  Test URL:   {test_url}")
-    print(f"  Iterations: {num_iterations}")
     
     # Determine project directory
     project_dir = Path(__file__).parent.resolve()
@@ -398,6 +450,7 @@ def main():
     
     print(f"  Temp Dir: {temp_dir}")
     
+    server = None
     try:
         # Setup phase
         print("\nSETUP")
@@ -418,7 +471,16 @@ def main():
         surge_baseline_exec = None
         
         # --- Go dependent tools ---
-        
+        if not which("go"):
+             print("  [X] Go is not installed. Required for building tools.")
+             return
+
+        # Build bench tool for server
+        if not build_bench_tool(project_dir):
+            print("  [X] Failed to build bench tool. Exiting.")
+            return
+        bench_exec = project_dir / f"bench{EXE_SUFFIX}"
+
         # 1. Main Surge Executable
         if args.surge_exec:
             if args.surge_exec.exists():
@@ -428,13 +490,9 @@ def main():
             else:
                  print(f"  [X] Provided surge exec not found: {args.surge_exec}")
         elif run_all or args.surge:
-            if not which("go"):
-                print("  [X] Go is not installed. `surge` (local) benchmark will be skipped.")
-            else:
-                print("  [OK] Go found")
-                if build_surge(project_dir):
-                    surge_exec = project_dir / f"surge{EXE_SUFFIX}"
-                    surge_ok = True
+            if build_surge(project_dir):
+                surge_exec = project_dir / f"surge{EXE_SUFFIX}"
+                surge_ok = True
         
         # 2. Baseline Surge Executable
         if args.surge_baseline:
@@ -456,6 +514,17 @@ def main():
         if run_all or args.curl:
             curl_ok = check_curl()
         
+        # --- Start Server ---
+        test_url = args.url
+        if not test_url:
+            server = LocalServer(bench_exec, size=args.size)
+            server.start()
+            test_url = server.url
+        
+        print(f"\n  Test URL:   {test_url}")
+        print(f"  Iterations: {num_iterations}")
+
+
         # Define benchmarks to run
         tasks = []
         
@@ -524,7 +593,7 @@ def main():
                     print(" Failed")
                 
                 # Increase sleep to allow SSD buffer flush and server rate-limit reset
-                time.sleep(5)
+                time.sleep(2) # Reduced from 5s for local
 
         # Aggregate results
         final_results: list[BenchmarkResult] = []
@@ -551,11 +620,7 @@ def main():
             if n > 2:
                 sorted_times = sorted(times)
                 trim_count = int(n * 0.2) # 20% from each side
-                # Slice from trim_count to n - trim_count
-                # e.g. n=10, trim=2, slice [2:8] -> indices 2,3,4,5,6,7 (6 items)
-                # e.g. n=5, trim=1, slice [1:4] -> indices 1,2,3 (3 items)
                 
-                # Ensure we don't trim everything (shouldn't happen with logic above if n > 2)
                 if trim_count > 0:
                     filtered_times = sorted_times[trim_count : n - trim_count]
                     if filtered_times:
@@ -580,6 +645,10 @@ def main():
         
     finally:
         # Cleanup
+        if server:
+            print("Stopping local server...")
+            server.stop()
+            
         print("Cleaning up temp directory...")
         shutil.rmtree(temp_dir, ignore_errors=True)
         print("  Done.")
