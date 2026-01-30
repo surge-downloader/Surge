@@ -312,28 +312,35 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 	}()
 
 	// Initialize async write queue and start dedicated writer goroutine
-	d.writeQueue = make(chan WriteRequest, types.WriteQueueSize)
-	var writerWg sync.WaitGroup
-	writerWg.Add(1)
-	go func() {
-		defer writerWg.Done()
-		for req := range d.writeQueue {
-			_, err := outFile.WriteAt(req.Data, req.Offset)
-			if err != nil {
-				// Store first error only
-				d.writeErr.CompareAndSwap(nil, &err)
-			}
-			// Return buffer to pool
-			// Get buffer from request
-			bufPtr := req.BufPtr
+	queueSize := d.Runtime.GetWriteQueueSize()
+	d.writeQueue = make(chan WriteRequest, queueSize)
 
-			if bufPtr != nil && cap(*bufPtr) == d.Runtime.GetWorkerBufferSize() {
-				// Reslice to full capacity to be safe for next user
-				*bufPtr = (*bufPtr)[:cap(*bufPtr)]
-				d.bufferPool.Put(bufPtr)
+	// Start multiple writers to handle high throughput
+	numWriters := 4
+	var writerWg sync.WaitGroup
+	writerWg.Add(numWriters)
+
+	for i := 0; i < numWriters; i++ {
+		go func() {
+			defer writerWg.Done()
+			for req := range d.writeQueue {
+				_, err := outFile.WriteAt(req.Data, req.Offset)
+				if err != nil {
+					// Store first error only
+					d.writeErr.CompareAndSwap(nil, &err)
+				}
+				// Return buffer to pool
+				// Get buffer from request
+				bufPtr := req.BufPtr
+
+				if bufPtr != nil && cap(*bufPtr) == d.Runtime.GetWorkerBufferSize() {
+					// Reslice to full capacity to be safe for next user
+					*bufPtr = (*bufPtr)[:cap(*bufPtr)]
+					d.bufferPool.Put(bufPtr)
+				}
 			}
-		}
-	}()
+		}()
+	}
 
 	// Start workers
 	var wg sync.WaitGroup

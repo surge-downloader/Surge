@@ -79,6 +79,7 @@ type RuntimeConfig struct {
 	SlowWorkerGracePeriod time.Duration
 	StallTimeout          time.Duration
 	SpeedEmaAlpha         float64
+	WriteQueueSize        int
 }
 
 // GetUserAgent returns the configured user agent or the default
@@ -180,4 +181,12 @@ func (r *RuntimeConfig) GetSpeedEmaAlpha() float64 {
 		return SpeedEMAAlpha
 	}
 	return r.SpeedEmaAlpha
+}
+
+// GetWriteQueueSize returns configured value or default
+func (r *RuntimeConfig) GetWriteQueueSize() int {
+	if r == nil || r.WriteQueueSize <= 0 {
+		return WriteQueueSize
+	}
+	return r.WriteQueueSize
 }

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	_ "net/http/pprof" // Register pprof handlers
 	"os"
 	"path/filepath"
 	"strconv"
@@ -25,6 +26,7 @@ var (
 	flagPort   = flag.Int("port", 0, "Port to listen on (0 for random)")
 	flagSize   = flag.String("size", "2GB", "File size to serve (e.g. 500MB, 2GB)")
 	flagRate   = flag.String("rate", "0", "Rate limit (e.g. 500MB/s, 100kb/s). 0 for unlimited.")
+	flagPprof  = flag.Bool("pprof", false, "Enable pprof server on :6060")
 )
 
 func parseSize(s string) (int64, error) {
@@ -80,6 +82,15 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Invalid rate: %v\n", err)
 		os.Exit(1)
+	}
+
+	if *flagPprof {
+		go func() {
+			fmt.Println("Starting pprof server on :6060")
+			if err := http.ListenAndServe("localhost:6060", nil); err != nil {
+				fmt.Printf("pprof server failed: %v\n", err)
+			}
+		}()
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
