@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import random
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -93,6 +94,7 @@ def get_file_size(path: Path) -> int:
     return 0
 
 
+
 def cleanup_file(path: Path):
     """Remove a file if it exists."""
     try:
@@ -100,6 +102,29 @@ def cleanup_file(path: Path):
             path.unlink()
     except Exception:
         pass
+
+
+def parse_go_duration(s: str) -> float:
+    """Parse Go duration string to seconds."""
+    total = 0.0
+    # Match pairs like 1h, 2m, 3.5s, 500ms, 10µs, 100ns
+    matches = re.findall(r'(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)', s)
+    for val_str, unit in matches:
+        val = float(val_str)
+        if unit == 'h':
+            total += val * 3600
+        elif unit == 'm':
+            total += val * 60
+        elif unit == 's':
+            total += val
+        elif unit == 'ms':
+            total += val / 1000
+        elif unit in ('us', 'µs'):
+            total += val / 1_000_000
+        elif unit == 'ns':
+            total += val / 1_000_000_000
+            
+    return total
 
 
 # =============================================================================
@@ -155,25 +180,25 @@ def benchmark_surge(executable: Path, url: str, output_dir: Path, label: str = "
         return BenchmarkResult(label, False, 0, 0, f"Binary not found: {executable}")
     
     start = time.perf_counter()
+    # Use server start mode with exit-when-done
     success, output = run_command([
-        str(executable), "get", url,
-        "--output", str(output_dir),  # Download directory
+        str(executable), "server", "start", url,
+        "--output", str(output_dir),
+        "--exit-when-done"
     ], timeout=600)
     elapsed = time.perf_counter() - start
     
-    # Try to parse the actual download time from Surge output (excluding probing)
-    # Output format: "Complete: 1.0 GB in 5.2s (196.34 MB/s)" OR "... in 500ms ..."
-    import re
+    # Try to parse the actual download time from Surge output
+    # Output format: "Completed: filename [id] (in 5.2s)"
     actual_time = elapsed
-    match = re.search(r"in ([\d\.]+)(m?s)", output)
+    match = re.search(r"Completed: .*? \[.*?\] \(in (.*?)\)", output)
     if match:
         try:
-            val = float(match.group(1))
-            unit = match.group(2)
-            if unit == "ms":
-                val /= 1000.0
-            actual_time = val
-        except ValueError:
+            duration_str = match.group(1)
+            parsed_time = parse_go_duration(duration_str)
+            if parsed_time > 0:
+                actual_time = parsed_time
+        except Exception:
             pass
 
     # Find downloaded file (surge uses original filename)
