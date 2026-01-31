@@ -54,6 +54,16 @@ jobs:
           cd baseline
           go build -o ../surge-baseline .
 
+      - name: Download Motrix Assets
+        run: |
+          mkdir -p current/benchmark
+          # Download custom aria2c binary (supports >16 connections)
+          curl -L -o current/benchmark/aria2c https://raw.githubusercontent.com/agalwood/Motrix/master/extra/linux/x64/engine/aria2c
+          chmod +x current/benchmark/aria2c
+          
+          # Download Motrix config
+          curl -L -o current/benchmark/aria2.conf https://raw.githubusercontent.com/agalwood/Motrix/master/extra/linux/x64/engine/aria2.conf
+
       - name: Run Benchmark
         id: benchmark
         run: |

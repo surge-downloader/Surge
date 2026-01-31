@@ -358,30 +358,47 @@ def benchmark_curl(url: str, output_dir: Path) -> BenchmarkResult:
 
 def benchmark_motrix(url: str, output_dir: Path) -> BenchmarkResult:
     """Benchmark Motrix configuration (using aria2c)."""
-    if not which("aria2c"):
+    
+    # Check for custom binary in benchmark/ directory
+    script_dir = Path(__file__).parent.resolve()
+    custom_bin = script_dir / "benchmark" / "aria2c"
+    
+    aria2_exec = "aria2c"
+    max_conns = 16 # System default limit
+    
+    if custom_bin.exists():
+        aria2_exec = str(custom_bin.resolve())
+        max_conns = 64 # Custom binary limit
+    elif not which("aria2c"):
         return BenchmarkResult("motrix", False, 0, 0, "aria2c not installed")
 
-    # Create config file
-    config_path = output_dir / "motrix.conf"
-    try:
-        config_path.write_text(MOTRIX_CONFIG)
-    except Exception as e:
-        return BenchmarkResult("motrix", False, 0, 0, f"Failed to write config: {e}")
+    # Check for custom config in benchmark/ directory
+    custom_conf = script_dir / "benchmark" / "aria2.conf"
+    
+    # Prepare config path
+    if custom_conf.exists():
+        config_path = custom_conf.resolve()
+    else:
+        # Fallback to internal config
+        config_path = output_dir / "motrix.conf"
+        try:
+            config_path.write_text(MOTRIX_CONFIG)
+        except Exception as e:
+            return BenchmarkResult("motrix", False, 0, 0, f"Failed to write config: {e}")
 
     output_file = output_dir / "motrix_download"
     cleanup_file(output_file)
 
-    # Motrix seems to use aria2c with a config file.
-    # IMPORTANT: We MUST override enable-rpc to false, otherwise it will run as a daemon
-    # and not exit after download, causing the benchmark to hang.
+    # Motrix execution
+    # IMPORTANT: We MUST override enable-rpc to false to ensure exit.
     cmd = [
-        "aria2c",
+        aria2_exec,
         f"--conf-path={config_path}",
         "--enable-rpc=false", 
-        "-x", "16", "-s", "16", # Use 16 connections/splits to ensure fair speed comparison
+        "-x", str(max_conns), "-s", str(max_conns), # Adjust connections based on binary capability
         "-o", output_file.name,
         "-d", str(output_dir),
-        "--allow-overwrite=true", # Ensure we don't fail if file exists (though cleanup cleans it)
+        "--allow-overwrite=true", 
         "--console-log-level=warn",
         url
     ]
@@ -392,7 +409,10 @@ def benchmark_motrix(url: str, output_dir: Path) -> BenchmarkResult:
 
     file_size = get_file_size(output_file)
     cleanup_file(output_file)
-    cleanup_file(config_path)
+    
+    # Only cleanup config if we created it
+    if not custom_conf.exists():
+        cleanup_file(config_path)
 
     if not success:
         return BenchmarkResult("motrix", False, elapsed, file_size, output[:200])
