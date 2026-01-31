@@ -25,6 +25,7 @@ type GeneralSettings struct {
 	MaxConcurrentDownloads int    `json:"max_concurrent_downloads"`
 	ClipboardMonitor       bool   `json:"clipboard_monitor"`
 	Theme                  int    `json:"theme"`
+	LogRetentionCount      int    `json:"log_retention_count"`
 }
 
 const (
@@ -77,6 +78,7 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 			{Key: "max_concurrent_downloads", Label: "Max Concurrent Downloads", Description: "Maximum number of downloads running at once (1-10). Requires restart.", Type: "int"},
 			{Key: "clipboard_monitor", Label: "Clipboard Monitor", Description: "Watch clipboard for URLs and prompt to download them.", Type: "bool"},
 			{Key: "theme", Label: "App Theme", Description: "UI Theme (System, Light, Dark).", Type: "int"},
+			{Key: "log_retention_count", Label: "Log Retention Count", Description: "Number of recent log files to keep.", Type: "int"},
 		},
 		"Connections": {
 			{Key: "max_connections_per_host", Label: "Max Connections/Host", Description: "Maximum concurrent connections per host (1-64).", Type: "int"},
@@ -123,6 +125,7 @@ func DefaultSettings() *Settings {
 			MaxConcurrentDownloads: 3,
 			ClipboardMonitor:       true,
 			Theme:                  ThemeAdaptive,
+			LogRetentionCount:      5,
 		},
 		Connections: ConnectionSettings{
 			MaxConnectionsPerHost: 32,

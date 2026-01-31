@@ -729,6 +729,16 @@ func initializeGlobalState() {
 
 	// Config logging
 	utils.ConfigureDebug(logsDir)
+
+	// Clean up old logs
+	settings, err := config.LoadSettings()
+	retention := 5 // default fallback
+	if err == nil {
+		retention = settings.General.LogRetentionCount
+	} else {
+		retention = config.DefaultSettings().General.LogRetentionCount
+	}
+	utils.CleanupLogs(retention)
 }
 
 // convertRuntimeConfig converts config.RuntimeConfig to types.RuntimeConfig
