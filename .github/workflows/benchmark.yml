@@ -46,17 +46,12 @@ jobs:
           cd current
           go build -o ../surge-current .
 
-      - name: Build Baseline
-        run: |
-          cd baseline
-          go build -o ../surge-baseline .
-
       - name: Run Benchmark
         id: benchmark
         run: |
           cd current
           # Run benchmark with axel added to the flags
-          python3 benchmark.py --surge-exec ../surge-current --surge-baseline ../surge-baseline --aria2 --axel --speedtest -n 5 | tee benchmark_output.txt
+          python3 benchmark.py --surge-exec ../surge-current --aria2 --axel --speedtest -n 5 | tee benchmark_output.txt
 
           # Read file content into environment variable for next step (handling multiline)
           echo "BENCHMARK_RESULTS<<EOF" >> $GITHUB_ENV
