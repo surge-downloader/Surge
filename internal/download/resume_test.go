@@ -2,6 +2,7 @@ package download_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,12 +39,12 @@ func TestIntegration_PauseResume(t *testing.T) {
 	}
 	defer state.CloseDB()
 
-	// 2. Setup Mock Server (50MB file)
-	fileSize := int64(50 * 1024 * 1024) // 50MB
-	server := testutil.NewMockServer(
-		testutil.WithFileSize(fileSize),
+	// 2. Setup Mock Server (100MB file)
+	fileSize := int64(100 * 1024 * 1024) // 100MB
+	server := testutil.NewStreamingMockServer(
+		fileSize,
 		testutil.WithRangeSupport(true),
-		testutil.WithLatency(20*time.Millisecond), // Add meaningful latency to allow interruption
+		testutil.WithLatency(10*time.Millisecond), // Small latency to allow interruption
 	)
 	defer server.Close()
 
@@ -54,16 +55,9 @@ func TestIntegration_PauseResume(t *testing.T) {
 	destPath := filepath.Join(outputPath, filename)
 
 	// 3. Start Download and Interrupt
-	// Use background context, as interruption is handled by progState.Pause()
 	ctx := context.Background()
-
-	// Create a progress channel we can ignore
 	progressCh := make(chan any, 100)
-
-	// Create a runtime config
 	runtime := &types.RuntimeConfig{}
-
-	// Create a dummy state
 	progState := types.NewProgressState(uuid.New().String(), fileSize)
 
 	cfg := types.DownloadConfig{
@@ -77,26 +71,29 @@ func TestIntegration_PauseResume(t *testing.T) {
 		IsResume:   false,
 	}
 
-	// Start download in a goroutine
+	// Start download
 	errCh := make(chan error)
 	go func() {
-		// Provide a valid context for the download
 		errCh <- download.TUIDownload(ctx, &cfg)
 	}()
 
-	// Wait a bit to let it download some data but not finish
-	time.Sleep(50 * time.Millisecond)
+	// Wait for some progress
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if progState.Downloaded.Load() > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	// Interrupt!
-	// We rely on progState.Pause() to trigger the cancellation via the callback registered in TUIDownload
 	progState.Pause()
 
 	// Wait for download to return
 	select {
 	case err := <-errCh:
-		// We expect nil (graceful exit) or context canceled
-		if err != nil && err != context.Canceled {
-			t.Logf("Download returned error (might be expected): %v", err)
+		if err != nil && err != context.Canceled && !errors.Is(err, types.ErrPaused) {
+			t.Logf("Download returned error: %v", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Download did not return after cancellation")
