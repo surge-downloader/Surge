@@ -8,6 +8,19 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      url:
+        description: 'URL to download for benchmarking'
+        required: true
+        default: 'https://sin-speed.hetzner.com/1GB.bin'
+      iterations:
+        description: 'Number of iterations'
+        required: true
+        default: '5'
+      baseline:
+        description: 'Compare against baseline (main branch)? [y/n]'
+        required: true
+        default: 'n'
 
 permissions:
   contents: read
@@ -46,20 +59,46 @@ jobs:
           cd current
           go build -o ../surge-current .
 
+      - name: Build Baseline
+        run: |
+          cd baseline
+          go build -o ../surge-baseline .
+
       - name: Run Benchmark
         id: benchmark
+        env:
+          # Use input if manual trigger, otherwise fallback to defaults
+          BENCH_URL: ${{ inputs.url || 'https://sin-speed.hetzner.com/1GB.bin' }}
+          BENCH_ITERATIONS: ${{ inputs.iterations || '5' }}
+          BASELINE_COMPARE: ${{ inputs.baseline || 'n' }}
+
         run: |
           cd current
-          # Run benchmark with axel added to the flags
-          python3 benchmark.py --surge-exec ../surge-current --aria2 --axel --speedtest -n 5 | tee benchmark_output.txt
+          
+          # Conditionally set the baseline flag
+          BASELINE_FLAG=""
+          if [[ "$BASELINE_COMPARE" == "y" ]]; then
+            BASELINE_FLAG="--surge-baseline ../surge-baseline"
+          fi
 
-          # Read file content into environment variable for next step (handling multiline)
+          # Run benchmark using the variables
+          python3 benchmark.py "$BENCH_URL" \
+            --surge-exec ../surge-current \
+            $BASELINE_FLAG \
+            --aria2 \
+            --axel \
+            --speedtest \
+            -n "$BENCH_ITERATIONS" | tee benchmark_output.txt
+
+          # Read file content into environment variable for next step
           echo "BENCHMARK_RESULTS<<EOF" >> $GITHUB_ENV
           cat benchmark_output.txt >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-          # Also write to Job Summary (visible in Actions tab)
+          # Write to Job Summary
           echo "## 🚀 Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "URL: $BENCH_URL" >> $GITHUB_STEP_SUMMARY
+          echo "Iterations: $BENCH_ITERATIONS" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           cat benchmark_output.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
