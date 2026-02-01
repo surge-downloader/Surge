@@ -76,6 +76,10 @@ func initDB() error {
 		return fmt.Errorf("failed to create tables: %w", err)
 	}
 
+	// Migration: Add mirrors column if not exists
+	// Valid for SQLite
+	_, _ = db.Exec("ALTER TABLE downloads ADD COLUMN mirrors TEXT")
+
 	return nil
 }
 
