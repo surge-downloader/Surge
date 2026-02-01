@@ -190,7 +190,7 @@ def benchmark_surge(executable: Path, url: str, output_dir: Path, label: str = "
         str(executable), "server", "start", url,
         "--output", str(output_dir),
         "--exit-when-done"
-    ], timeout=600)
+    ], timeout=3600)
     elapsed = time.perf_counter() - start
     
     # Try to parse the actual download time from Surge output
@@ -239,7 +239,7 @@ def benchmark_aria2(url: str, output_dir: Path) -> BenchmarkResult:
     ]
     
     start = time.perf_counter()
-    success, output = run_command(cmd, timeout=600)
+    success, output = run_command(cmd, timeout=3600)
     elapsed = time.perf_counter() - start
     
     file_size = get_file_size(output_file)
@@ -274,7 +274,7 @@ def benchmark_axel(url: str, output_dir: Path) -> BenchmarkResult:
     ]
     
     start = time.perf_counter()
-    success, output = run_command(cmd, timeout=600)
+    success, output = run_command(cmd, timeout=3600)
     elapsed = time.perf_counter() - start
     
     file_size = get_file_size(output_file)
@@ -299,7 +299,7 @@ def benchmark_wget(url: str, output_dir: Path) -> BenchmarkResult:
     start = time.perf_counter()
     success, output = run_command([
         wget_bin, "-q", "-O", str(output_file), url
-    ], timeout=600)
+    ], timeout=3600)
     elapsed = time.perf_counter() - start
     
     file_size = get_file_size(output_file)
@@ -323,7 +323,7 @@ def benchmark_curl(url: str, output_dir: Path) -> BenchmarkResult:
     start = time.perf_counter()
     success, output = run_command([
         curl_bin, "-s", "-L", "-o", str(output_file), url
-    ], timeout=600)
+    ], timeout=3600)
     elapsed = time.perf_counter() - start
     
     file_size = get_file_size(output_file)
@@ -442,6 +442,7 @@ def main():
     
     # Feature flags
     parser.add_argument("--speedtest", action="store_true", help="Run network speedtest")
+    parser.add_argument("--mirror-suite", action="store_true", help="Run the 3 vs 2 vs 1 mirror benchmark suite (Hetzner 10GB)")
 
     args = parser.parse_args()
     
@@ -451,10 +452,25 @@ def main():
     # helper to check if any specific service was requested
     specific_service_requested = any([
         args.surge, args.aria2, args.wget, args.curl, args.axel,
-        args.surge_exec, args.surge_baseline
+        args.surge_exec, args.surge_baseline, args.mirror_suite
     ])
     
-    print(f"\n  Test URL:   {test_url}")
+    # Mirror Suite Preset
+    if args.mirror_suite:
+        print("\n  [MODE] Mirror Benchmark Suite")
+        # Hetzner 10GB files
+        base_urls = [
+            "https://ash-speed.hetzner.com/10GB.bin",
+            "https://hil-speed.hetzner.com/10GB.bin",
+            "https://sin-speed.hetzner.com/10GB.bin",
+        ]
+        # Default to 5 iterations if not specified
+        if num_iterations == 1:
+            num_iterations = 5
+        
+        run_all = False # Don't run other tools
+    
+    print(f"\n  Test URL:   {test_url if not args.mirror_suite else 'Hetzner 10GB Suite'}")
     print(f"  Iterations: {num_iterations}")
     
     # Determine project directory
@@ -480,7 +496,8 @@ def main():
             else:
                 print("  [X] speedtest-cli not found (install speedtest-cli)")
 
-        run_all = not specific_service_requested
+        if not specific_service_requested:
+            run_all = True
 
         # Initialize all to False
         surge_ok, aria2_ok, wget_ok, curl_ok, axel_ok = False, False, False, False, False
@@ -497,7 +514,7 @@ def main():
                 surge_ok = True
             else:
                  print(f"  [X] Provided surge exec not found: {args.surge_exec}")
-        elif run_all or args.surge:
+        elif run_all or args.surge or args.mirror_suite:
             if not which("go"):
                 print("  [X] Go is not installed. `surge` (local) benchmark will be skipped.")
             else:
@@ -535,11 +552,24 @@ def main():
         
         # Surge Main
         if surge_ok:
-            tasks.append({"name": "surge (current)", "func": benchmark_surge, "args": (surge_exec, test_url, download_dir, "surge (current)")})
+            if args.mirror_suite:
+                # 3 Mirrors
+                tasks.append({"name": "Surge (3 mirrors)", "func": benchmark_surge, "args": (surge_exec, ",".join(base_urls[:3]), download_dir, "Surge (3 mirrors)")})
+                # 2 Mirrors
+                tasks.append({"name": "Surge (2 mirrors)", "func": benchmark_surge, "args": (surge_exec, ",".join(base_urls[:2]), download_dir, "Surge (2 mirrors)")})
+                # 1 Mirror
+                tasks.append({"name": "Surge (1 mirror)", "func": benchmark_surge, "args": (surge_exec, base_urls[0], download_dir, "Surge (1 mirror)")})
+            else:
+                tasks.append({"name": "surge (current)", "func": benchmark_surge, "args": (surge_exec, test_url, download_dir, "surge (current)")})
         
         # Surge Baseline
         if surge_baseline_exec:
-             tasks.append({"name": "surge (baseline)", "func": benchmark_surge, "args": (surge_baseline_exec, test_url, download_dir, "surge (baseline)")})
+             if args.mirror_suite:
+                 # Baseline with 1 mirror (assuming old version might not support multi-mirror syntax or we want base comparison)
+                 # Or providing the same 1 mirror URL.
+                 tasks.append({"name": "Surge (Old)", "func": benchmark_surge, "args": (surge_baseline_exec, base_urls[0], download_dir, "Surge (Old)")})
+             else:
+                 tasks.append({"name": "surge (baseline)", "func": benchmark_surge, "args": (surge_baseline_exec, test_url, download_dir, "surge (baseline)")})
         
         # aria2c
         if aria2_ok and (run_all or args.aria2):
@@ -577,7 +607,11 @@ def main():
                 print("  " + "\n  ".join(st_result.splitlines()))
             print("-" * 40)
 
-        print(f"  Downloading: {test_url}")
+        if args.mirror_suite:
+             print(f"  Downloading: 10GB Test Files (Hetzner)")
+        else:
+             print(f"  Downloading: {test_url}")
+             
         print(f"  Exec Order:  Interlaced ({len(tasks)} tools x {num_iterations} runs)\n")
         
         for i in range(num_iterations):
