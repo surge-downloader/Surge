@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/surge-downloader/surge/internal/engine"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/utils"
@@ -175,6 +176,60 @@ func (d *ConcurrentDownloader) newConcurrentClient(numConns int) *http.Client {
 	}
 }
 
+// validateMirrors checks if mirrors support range requests
+func (d *ConcurrentDownloader) validateMirrors(ctx context.Context, primary string, mirrors []string) []string {
+	// Deduplicate
+	unique := make(map[string]bool)
+	unique[primary] = true
+	for _, m := range mirrors {
+		unique[m] = true
+	}
+
+	var candidates []string
+	for m := range unique {
+		candidates = append(candidates, m)
+	}
+
+	utils.Debug("Validating %d mirrors...", len(candidates))
+
+	var valid []string
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, url := range candidates {
+		wg.Add(1)
+		go func(target string) {
+			defer wg.Done()
+
+			// Use ProbeServer from engine package (handles retries, user agent, etc)
+			// We wrap it in a timeout because we want to be fast here
+			probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+
+			result, err := engine.ProbeServer(probeCtx, target, "")
+
+			if err != nil {
+				utils.Debug("Probe failed for %s: %v", target, err)
+				d.ReportMirrorError(target)
+				return
+			}
+
+			if result.SupportsRange {
+				mu.Lock()
+				valid = append(valid, target)
+				mu.Unlock()
+			} else {
+				utils.Debug("Mirror %s does not support ranges", target)
+				d.ReportMirrorError(target)
+			}
+		}(url)
+	}
+
+	wg.Wait()
+	utils.Debug("Validation complete: %d/%d valid mirrors", len(valid), len(candidates))
+	return valid
+}
+
 // Download downloads a file using multiple concurrent connections
 // Uses pre-probed metadata (file size already known)
 func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, mirrors []string, destPath string, fileSize int64, verbose bool) error {
@@ -207,6 +262,15 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, mirr
 	if d.State != nil {
 		d.State.CancelFunc = cancel
 	}
+
+	// Probe mirrors to ensure they support range requests
+	// We do this concurrently
+	validMirrors := d.validateMirrors(ctx, rawurl, mirrors)
+	if len(validMirrors) == 0 {
+		return fmt.Errorf("no valid mirrors found confirming range support")
+	}
+	// Update working list to only use valid ones
+	mirrors = validMirrors
 
 	// Determine connections and chunk size
 	numConns := d.getInitialConnections(fileSize)

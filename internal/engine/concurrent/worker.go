@@ -84,7 +84,7 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, rawurl string
 			d.activeMu.Unlock()
 
 			taskStart := time.Now()
-			lastErr = d.downloadTask(taskCtx, currentURL, file, activeTask, buf, verbose, client)
+			lastErr = d.downloadTask(taskCtx, currentURL, file, activeTask, buf, verbose, client, totalSize)
 
 			// CRITICAL: Capture external cancellation state BEFORE calling taskCancel()
 			// If we call taskCancel() first, taskCtx.Err() will always be non-nil
@@ -168,7 +168,7 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, rawurl string
 }
 
 // downloadTask downloads a single byte range and writes to file at offset
-func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, file *os.File, activeTask *ActiveTask, buf []byte, verbose bool, client *http.Client) error {
+func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, file *os.File, activeTask *ActiveTask, buf []byte, verbose bool, client *http.Client, totalSize int64) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawurl, nil)
 	if err != nil {
 		return err
@@ -190,7 +190,14 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 		return fmt.Errorf("rate limited (429)")
 	}
 
-	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
+	// Validate status code
+	if resp.StatusCode == http.StatusOK {
+		// Valid only if we requested the full file
+		// If we wanted a partial range but got the whole file (200), that's an error because we can't handle the full stream at a non-zero offset
+		if task.Offset != 0 || task.Length != totalSize {
+			return fmt.Errorf("server indicated success (200) but ignored range request (expected 206)")
+		}
+	} else if resp.StatusCode != http.StatusPartialContent {
 		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
