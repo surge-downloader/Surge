@@ -4,6 +4,7 @@ Benchmark script to compare Surge against other download tools:
 - aria2c
 - wget
 - curl
+- axel
 """
 
 import os
@@ -30,8 +31,6 @@ EXE_SUFFIX = ".exe" if IS_WINDOWS else ""
 # =============================================================================
 # Default test file URL (test file)
 TEST_URL = "https://sin-speed.hetzner.com/1GB.bin"
-
-
 
 MB = 1024 * 1024
 
@@ -92,7 +91,6 @@ def get_file_size(path: Path) -> int:
     if path.exists():
         return path.stat().st_size
     return 0
-
 
 
 def cleanup_file(path: Path):
@@ -160,14 +158,21 @@ def check_curl() -> bool:
     return False
 
 
-
-
 def check_aria2c() -> bool:
     """Check if aria2c is installed."""
     if which("aria2c"):
         print("    [OK] aria2c found")
         return True
     print("    [X] aria2c not found (install aria2)")
+    return False
+
+
+def check_axel() -> bool:
+    """Check if axel is installed."""
+    if which("axel"):
+        print("    [OK] axel found")
+        return True
+    print("    [X] axel not found (install axel)")
     return False
 
 
@@ -244,6 +249,42 @@ def benchmark_aria2(url: str, output_dir: Path) -> BenchmarkResult:
         return BenchmarkResult("aria2c", False, elapsed, file_size, output[:200])
     
     return BenchmarkResult("aria2c", True, elapsed, file_size)
+
+
+def benchmark_axel(url: str, output_dir: Path) -> BenchmarkResult:
+    """Benchmark axel downloader."""
+    output_file = output_dir / "axel_download"
+    cleanup_file(output_file)
+    # Axel creates a .st state file sometimes, clean that too
+    cleanup_file(output_dir / "axel_download.st")
+
+    axel_bin = which("axel")
+    if not axel_bin:
+        return BenchmarkResult("axel", False, 0, 0, "axel not installed")
+    
+    # -n 16: 16 connections
+    # -q: Quiet (no progress bar output to stdout)
+    # -o: Output file
+    cmd = [
+        axel_bin, 
+        "-n", "16", 
+        "-q", 
+        "-o", str(output_file), 
+        url
+    ]
+    
+    start = time.perf_counter()
+    success, output = run_command(cmd, timeout=600)
+    elapsed = time.perf_counter() - start
+    
+    file_size = get_file_size(output_file)
+    cleanup_file(output_file)
+    cleanup_file(output_dir / "axel_download.st")
+    
+    if not success:
+        return BenchmarkResult("axel", False, elapsed, file_size, output[:200])
+    
+    return BenchmarkResult("axel", True, elapsed, file_size)
 
 
 def benchmark_wget(url: str, output_dir: Path) -> BenchmarkResult:
@@ -393,6 +434,7 @@ def main():
     parser.add_argument("--aria2", action="store_true", help="Run aria2c benchmark")
     parser.add_argument("--wget", action="store_true", help="Run wget benchmark")
     parser.add_argument("--curl", action="store_true", help="Run curl benchmark")
+    parser.add_argument("--axel", action="store_true", help="Run axel benchmark")
     
     # Executable flags
     parser.add_argument("--surge-exec", type=Path, help="Path to specific Surge executable to test")
@@ -407,7 +449,10 @@ def main():
     num_iterations = args.iterations
     
     # helper to check if any specific service was requested
-    specific_service_requested = any([args.surge, args.aria2, args.wget, args.curl, args.surge_exec, args.surge_baseline])
+    specific_service_requested = any([
+        args.surge, args.aria2, args.wget, args.curl, args.axel,
+        args.surge_exec, args.surge_baseline
+    ])
     
     print(f"\n  Test URL:   {test_url}")
     print(f"  Iterations: {num_iterations}")
@@ -438,7 +483,7 @@ def main():
         run_all = not specific_service_requested
 
         # Initialize all to False
-        surge_ok, aria2_ok, wget_ok, curl_ok = False, False, False, False
+        surge_ok, aria2_ok, wget_ok, curl_ok, axel_ok = False, False, False, False, False
         surge_exec = None
         surge_baseline_exec = None
         
@@ -474,6 +519,10 @@ def main():
         if run_all or args.aria2:
             aria2_ok = check_aria2c()
         
+        # --- Axel ---
+        if run_all or args.axel:
+            axel_ok = check_axel()
+
         # --- Other tools ---
         if run_all or args.wget:
             wget_ok = check_wget()
@@ -495,6 +544,10 @@ def main():
         # aria2c
         if aria2_ok and (run_all or args.aria2):
             tasks.append({"name": "aria2c", "func": benchmark_aria2, "args": (test_url, download_dir)})
+
+        # axel
+        if axel_ok and (run_all or args.axel):
+            tasks.append({"name": "axel", "func": benchmark_axel, "args": (test_url, download_dir)})
         
         # wget
         if wget_ok and (run_all or args.wget):

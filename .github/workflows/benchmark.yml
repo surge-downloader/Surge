@@ -38,11 +38,8 @@ jobs:
       - name: Update APT
         run: sudo apt-get update
 
-      - name: Install Aria2
-        run: sudo apt-get install -y aria2
-
-      - name: Install speedtest-cli
-        run: sudo apt-get install -y speedtest-cli
+      - name: Install Benchmark Tools (Aria2, Axel, Speedtest)
+        run: sudo apt-get install -y aria2 axel speedtest-cli
 
       - name: Build Current
         run: |
@@ -58,8 +55,8 @@ jobs:
         id: benchmark
         run: |
           cd current
-          # Run benchmark and capture output to both console and file
-          python3 benchmark.py --surge-exec ../surge-current --surge-baseline ../surge-baseline --aria2 --speedtest -n 5 | tee benchmark_output.txt
+          # Run benchmark with axel added to the flags
+          python3 benchmark.py --surge-exec ../surge-current --surge-baseline ../surge-baseline --aria2 --axel --speedtest -n 5 | tee benchmark_output.txt
 
           # Read file content into environment variable for next step (handling multiline)
           echo "BENCHMARK_RESULTS<<EOF" >> $GITHUB_ENV
