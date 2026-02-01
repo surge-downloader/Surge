@@ -58,10 +58,10 @@ func (d *ConcurrentDownloader) getInitialConnections(fileSize int64) int {
 		recConns = 1
 	case fileSize < 100*types.MB:
 		recConns = 4
-	case fileSize < 1*types.GB:
-		recConns = 6
+	case fileSize < 500*types.MB:
+		recConns = 16
 	default:
-		recConns = 32
+		recConns = maxConns
 	}
 
 	if recConns > maxConns {
