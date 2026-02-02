@@ -402,7 +402,6 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	}
 
 	// Handle pause: state saved
-	fmt.Printf("DEBUG: In Download, checking pause. IsPaused=%v, State=%p\n", d.State != nil && d.State.IsPaused(), d.State)
 	if d.State != nil && d.State.IsPaused() {
 		// 1. Collect active tasks as remaining work FIRST
 		var activeRemaining []types.Task
@@ -445,7 +444,6 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 			Elapsed:    totalElapsed.Nanoseconds(),
 			Mirrors:    candidateMirrors,
 		}
-		fmt.Printf("DEBUG: Saving state with %d mirrors: %v\n", len(candidateMirrors), candidateMirrors)
 		if err := state.SaveState(d.URL, destPath, s); err != nil {
 			utils.Debug("Failed to save pause state: %v", err)
 		}

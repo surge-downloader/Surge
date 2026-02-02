@@ -2,7 +2,6 @@ package types
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -82,7 +81,6 @@ func (ps *ProgressState) GetProgress() (downloaded int64, total int64, totalElap
 
 func (ps *ProgressState) Pause() {
 	ps.Paused.Store(true)
-	fmt.Printf("DEBUG: ProgressState %p Paused=true\n", ps)
 	if ps.CancelFunc != nil {
 		ps.CancelFunc()
 	}
