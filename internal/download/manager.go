@@ -208,6 +208,7 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 		}
 
 		d := concurrent.NewConcurrentDownloader(cfg.ID, cfg.ProgressCh, cfg.State, cfg.Runtime)
+		utils.Debug("Calling Download with mirrors: %v", cfg.Mirrors)
 		downloadErr = d.Download(ctx, cfg.URL, cfg.Mirrors, activeMirrors, destPath, probe.FileSize, cfg.Verbose)
 	} else {
 		// Fallback to single-threaded downloader

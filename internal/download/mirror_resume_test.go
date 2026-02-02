@@ -45,12 +45,14 @@ func TestIntegration_MirrorResume(t *testing.T) {
 	primary := testutil.NewStreamingMockServer(
 		fileSize,
 		testutil.WithRangeSupport(true),
+		testutil.WithByteLatency(20*time.Microsecond), // Slow down to ensure we can pause
 	)
 	defer primary.Close()
 
 	mirror := testutil.NewStreamingMockServer(
 		fileSize,
 		testutil.WithRangeSupport(true),
+		testutil.WithByteLatency(20*time.Microsecond),
 	)
 	defer mirror.Close()
 
@@ -102,6 +104,10 @@ func TestIntegration_MirrorResume(t *testing.T) {
 		entries, _ := os.ReadDir(tmpDir)
 		for _, e := range entries {
 			if !e.IsDir() {
+				if e.Name() == filename {
+					t.Logf("File %s exists (size: %s)", e.Name(), "200MB")
+					continue
+				}
 				content, _ := os.ReadFile(filepath.Join(tmpDir, e.Name()))
 				t.Logf("File %s:\n%s", e.Name(), string(content))
 			}
