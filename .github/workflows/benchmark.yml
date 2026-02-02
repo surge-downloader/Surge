@@ -96,7 +96,7 @@ jobs:
           # We pass the current build as the executable
           python3 benchmark.py \
             $ARGS \
-            --surge-exec ../surge-current \
+            --surge-exec \
             --speedtest \
             --axel \
             --aria2 \
