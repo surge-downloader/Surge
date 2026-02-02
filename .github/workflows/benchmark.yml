@@ -85,10 +85,10 @@ jobs:
           python3 benchmark.py \
             $BASELINE_FLAG \
             --speedtest \
-            --axel
-            --aria2
-            --surge-baseline ../surge-baseline
-            --surge-exec ../surge-current
+            --axel \
+            --aria2 \
+            --surge-baseline ../surge-baseline \
+            --surge-exec ../surge-current \
             -n "$BENCH_ITERATIONS" | tee benchmark_output.txt
 
           # Read file content into environment variable for next step
