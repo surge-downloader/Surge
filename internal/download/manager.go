@@ -127,6 +127,24 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	if cfg.IsResume && cfg.DestPath != "" {
 		// Resume: use the provided destination path for state lookup
 		savedState, _ = state.LoadState(cfg.URL, cfg.DestPath)
+
+		// Restore mirrors from state if found
+		if savedState != nil && len(savedState.Mirrors) > 0 {
+			// Create map of existing mirrors to avoid duplicates
+			existing := make(map[string]bool)
+			for _, m := range cfg.Mirrors {
+				existing[m] = true
+			}
+
+			// Add restored mirrors
+			for _, m := range savedState.Mirrors {
+				if !existing[m] {
+					cfg.Mirrors = append(cfg.Mirrors, m)
+					existing[m] = true
+				}
+			}
+			utils.Debug("Restored %d mirrors from state", len(savedState.Mirrors))
+		}
 	}
 	isResume := cfg.IsResume && savedState != nil && savedState.DestPath != ""
 
@@ -166,8 +184,31 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	var downloadErr error
 	if probe.SupportsRange && probe.FileSize > 0 {
 		utils.Debug("Using concurrent downloader")
+
+		// We probe all candidate mirrors (cfg.Mirrors) to filter out invalid ones
+		var activeMirrors []string
+		if len(cfg.Mirrors) > 0 {
+			utils.Debug("Probing %d mirrors", len(cfg.Mirrors))
+			// Always check primary + mirrors to ensure we are using the best set
+			allToCheck := append([]string{cfg.URL}, cfg.Mirrors...)
+			valid, errs := engine.ProbeMirrors(ctx, allToCheck)
+
+			// Log errors
+			for u, e := range errs {
+				utils.Debug("Mirror probe failed for %s: %v", u, e)
+			}
+
+			// Filter valid mirrors (excluding primary as it is handled separately)
+			for _, v := range valid {
+				if v != cfg.URL {
+					activeMirrors = append(activeMirrors, v)
+				}
+			}
+			utils.Debug("Found %d active mirrors from %d candidates", len(activeMirrors), len(cfg.Mirrors))
+		}
+
 		d := concurrent.NewConcurrentDownloader(cfg.ID, cfg.ProgressCh, cfg.State, cfg.Runtime)
-		downloadErr = d.Download(ctx, cfg.URL, cfg.Mirrors, destPath, probe.FileSize, cfg.Verbose)
+		downloadErr = d.Download(ctx, cfg.URL, cfg.Mirrors, activeMirrors, destPath, probe.FileSize, cfg.Verbose)
 	} else {
 		// Fallback to single-threaded downloader
 		utils.Debug("Using single-threaded downloader")

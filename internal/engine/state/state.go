@@ -55,9 +55,13 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 				mirrors=excluded.mirrors
 		`, state.ID, state.URL, state.DestPath, state.Filename, "paused", state.TotalSize, state.Downloaded, state.URLHash, state.CreatedAt, state.PausedAt, state.Elapsed/1e6, strings.Join(state.Mirrors, ",")) // Convert ns to ms, join mirrors
 
+		// ...
 		if err != nil {
 			return fmt.Errorf("failed to upsert download: %w", err)
 		}
+		// DEBUG
+		fmt.Printf("DEBUG: SaveState Upserted ID=%s, Mirrors='%s'\n", state.ID, strings.Join(state.Mirrors, ","))
+		// ...
 
 		// 2. Refresh tasks
 		// First delete existing tasks for this download
@@ -94,8 +98,8 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 	}
 
 	var state types.DownloadState
-	var timeTaken sql.NullInt64 // handle null
-	var mirrors sql.NullString  // handle null mirrors
+	var timeTaken, createdAt, pausedAt sql.NullInt64 // handle null
+	var mirrors sql.NullString                       // handle null mirrors
 	row := db.QueryRow(`
 		SELECT id, url, dest_path, filename, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors
 		FROM downloads 
@@ -106,7 +110,7 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 	err := row.Scan(
 		&state.ID, &state.URL, &state.DestPath, &state.Filename,
 		&state.TotalSize, &state.Downloaded, &state.URLHash,
-		&state.CreatedAt, &state.PausedAt, &timeTaken, &mirrors,
+		&createdAt, &pausedAt, &timeTaken, &mirrors,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -116,6 +120,15 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 		return nil, fmt.Errorf("failed to query download: %w", err)
 	}
 
+	// DEBUG LOG
+	fmt.Printf("DEBUG: Loaded mirrors raw: valid=%v, string='%s'\n", mirrors.Valid, mirrors.String)
+
+	if createdAt.Valid {
+		state.CreatedAt = createdAt.Int64
+	}
+	if pausedAt.Valid {
+		state.PausedAt = pausedAt.Int64
+	}
 	if timeTaken.Valid {
 		state.Elapsed = timeTaken.Int64 * 1e6 // Convert ms to ns
 	}

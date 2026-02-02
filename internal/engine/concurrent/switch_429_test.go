@@ -57,7 +57,7 @@ func TestConcurrentDownloader_SwitchOn429(t *testing.T) {
 	defer cancel()
 
 	// Pass server1 as primary, but provide both in mirrors list
-	err := downloader.Download(ctx, server1.URL(), mirrors, destPath, fileSize, false)
+	err := downloader.Download(ctx, server1.URL(), mirrors, mirrors, destPath, fileSize, false)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -114,7 +114,7 @@ func TestConcurrentDownloader_BackoffOnSingleMirror(t *testing.T) {
 	defer cancel()
 
 	// Only 1 URL (server.URL) is valid
-	err := downloader.Download(ctx, server.URL(), mirrors, destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL(), mirrors, nil, destPath, fileSize, false)
 	elapsed := time.Since(start)
 
 	if err != nil {

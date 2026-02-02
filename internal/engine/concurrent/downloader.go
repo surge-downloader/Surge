@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/surge-downloader/surge/internal/engine"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/utils"
@@ -178,8 +177,8 @@ func (d *ConcurrentDownloader) newConcurrentClient(numConns int) *http.Client {
 
 // Download downloads a file using multiple concurrent connections
 // Uses pre-probed metadata (file size already known)
-func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, mirrors []string, destPath string, fileSize int64, verbose bool) error {
-	utils.Debug("ConcurrentDownloader.Download: %s -> %s (size: %d, mirrors: %d)", rawurl, destPath, fileSize, len(mirrors))
+func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, candidateMirrors []string, activeMirrors []string, destPath string, fileSize int64, verbose bool) error {
+	utils.Debug("ConcurrentDownloader.Download: %s -> %s (size: %d, mirrors: %d)", rawurl, destPath, fileSize, len(activeMirrors))
 
 	// Store URL and path for pause/resume (final path without .surge)
 	d.URL = rawurl
@@ -190,12 +189,24 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, mirr
 		var statuses []types.MirrorStatus
 		// Add primary
 		statuses = append(statuses, types.MirrorStatus{URL: rawurl, Active: true})
-		// Add others
-		for _, m := range mirrors {
+
+		// Add active mirrors (marked active)
+		activeMap := make(map[string]bool)
+		for _, m := range activeMirrors {
+			activeMap[m] = true
 			if m != rawurl {
 				statuses = append(statuses, types.MirrorStatus{URL: m, Active: true})
 			}
 		}
+
+		// Add inactive/failed mirrors (from candidate list that aren't active)
+		for _, m := range candidateMirrors {
+			if !activeMap[m] && m != rawurl {
+				// Mark as Error since they failed probing (passed as candidates but not active)
+				statuses = append(statuses, types.MirrorStatus{URL: m, Active: false, Error: true})
+			}
+		}
+
 		d.State.SetMirrors(statuses)
 	}
 
@@ -208,30 +219,6 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, mirr
 	if d.State != nil {
 		d.State.CancelFunc = cancel
 	}
-
-	// Probe mirrors to ensure they support range requests
-	// We do this concurrently using the engine's probe capability
-	allToCheck := append([]string{rawurl}, mirrors...)
-	valid, errs := engine.ProbeMirrors(ctx, allToCheck)
-
-	// Record errors in state
-	for url := range errs {
-		d.ReportMirrorError(url)
-	}
-
-	if len(valid) == 0 {
-		return fmt.Errorf("no valid mirrors found confirming range support")
-	}
-
-	// Update working list to only use valid secondary mirrors
-	// We exclude rawurl from this list because it's passed separately
-	var validSecondary []string
-	for _, v := range valid {
-		if v != rawurl {
-			validSecondary = append(validSecondary, v)
-		}
-	}
-	mirrors = validSecondary
 
 	// Determine connections and chunk size
 	numConns := d.getInitialConnections(fileSize)
@@ -368,24 +355,18 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, mirr
 	workerErrors := make(chan error, numConns)
 
 	// Combine primary + secondary for workers
-	// We want to ensure the primary is included if it was valid (it should be, otherwise ProbeMirrors fails for it)
-	// But let's build the final worker list explicitly
+	// We want to ensure the primary is included if it was valid (it should be, otherwise TUIDownload would have failed)
 	var workerMirrors []string
 
-	// Add primary if compatible (it should be in 'valid' list if it passed probe)
-	primaryOK := false
-	for _, v := range valid {
-		if v == rawurl {
-			primaryOK = true
-			break
-		}
-	}
-	if primaryOK {
-		workerMirrors = append(workerMirrors, rawurl)
-	}
+	// Add primary if compatible (check active map or assume yes since we are here)
+	// TUIDownload checks primary support before calling us.
+	workerMirrors = append(workerMirrors, rawurl)
+
 	// Add other valid mirrors
-	for _, v := range validSecondary {
-		workerMirrors = append(workerMirrors, v)
+	for _, v := range activeMirrors {
+		if v != rawurl {
+			workerMirrors = append(workerMirrors, v)
+		}
 	}
 
 	// Double check we have at least one mirror
@@ -421,6 +402,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, mirr
 	}
 
 	// Handle pause: state saved
+	fmt.Printf("DEBUG: In Download, checking pause. IsPaused=%v, State=%p\n", d.State != nil && d.State.IsPaused(), d.State)
 	if d.State != nil && d.State.IsPaused() {
 		// 1. Collect active tasks as remaining work FIRST
 		var activeRemaining []types.Task
@@ -461,7 +443,9 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, mirr
 			Tasks:      remainingTasks,
 			Filename:   filepath.Base(destPath),
 			Elapsed:    totalElapsed.Nanoseconds(),
+			Mirrors:    candidateMirrors,
 		}
+		fmt.Printf("DEBUG: Saving state with %d mirrors: %v\n", len(candidateMirrors), candidateMirrors)
 		if err := state.SaveState(d.URL, destPath, s); err != nil {
 			utils.Debug("Failed to save pause state: %v", err)
 		}
