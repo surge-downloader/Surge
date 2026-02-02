@@ -21,7 +21,15 @@ type ProgressState struct {
 
 	SessionStartBytes int64         // SessionStartBytes tracks how many bytes were already downloaded when the current session started
 	SavedElapsed      time.Duration // Time spent in previous sessions
-	mu                sync.Mutex    // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed
+
+	Mirrors []MirrorStatus // Status of each mirror
+	mu      sync.Mutex     // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed, Mirrors
+}
+
+type MirrorStatus struct {
+	URL    string
+	Active bool
+	Error  bool
 }
 
 func NewProgressState(id string, totalSize int64) *ProgressState {
@@ -98,4 +106,24 @@ func (ps *ProgressState) SetSavedElapsed(d time.Duration) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	ps.SavedElapsed = d
+}
+
+func (ps *ProgressState) SetMirrors(mirrors []MirrorStatus) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	// Deep copy to prevent race conditions if caller modifies the slice
+	ps.Mirrors = make([]MirrorStatus, len(mirrors))
+	copy(ps.Mirrors, mirrors)
+}
+
+func (ps *ProgressState) GetMirrors() []MirrorStatus {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	// Return a copy
+	if len(ps.Mirrors) == 0 {
+		return nil
+	}
+	mirrors := make([]MirrorStatus, len(ps.Mirrors))
+	copy(mirrors, ps.Mirrors)
+	return mirrors
 }

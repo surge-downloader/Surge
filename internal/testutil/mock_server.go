@@ -40,11 +40,19 @@ type MockServer struct {
 	internalReqNum int
 
 	// Internal
-	data []byte
+	data          []byte
+	CustomHandler http.HandlerFunc
 }
 
 // MockServerOption is a function that configures a MockServer.
 type MockServerOption func(*MockServer)
+
+// WithHandler sets a custom request handler.
+func WithHandler(h http.HandlerFunc) MockServerOption {
+	return func(m *MockServer) {
+		m.CustomHandler = h
+	}
+}
 
 // WithFileSize sets the file size to serve.
 func WithFileSize(size int64) MockServerOption {
@@ -186,6 +194,11 @@ type MockServerStats struct {
 }
 
 func (m *MockServer) handleRequest(w http.ResponseWriter, r *http.Request) {
+	if m.CustomHandler != nil {
+		m.CustomHandler(w, r)
+		return
+	}
+
 	m.RequestCount.Add(1)
 	m.ActiveRequests.Add(1)
 	defer m.ActiveRequests.Add(-1)

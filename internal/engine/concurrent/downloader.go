@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/surge-downloader/surge/internal/engine"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/utils"
@@ -58,16 +59,37 @@ func (d *ConcurrentDownloader) getInitialConnections(fileSize int64) int {
 		recConns = 1
 	case fileSize < 100*types.MB:
 		recConns = 4
-	case fileSize < 1*types.GB:
-		recConns = 6
+	case fileSize < 500*types.MB:
+		recConns = 16
 	default:
-		recConns = 32
+		recConns = maxConns
 	}
 
 	if recConns > maxConns {
 		return maxConns
 	}
 	return recConns
+}
+
+// ReportMirrorError marks a mirror as having an error in the state
+func (d *ConcurrentDownloader) ReportMirrorError(url string) {
+	if d.State == nil {
+		return
+	}
+
+	mirrors := d.State.GetMirrors()
+	changed := false
+	for i, m := range mirrors {
+		if m.URL == url && !m.Error {
+			mirrors[i].Error = true
+			changed = true
+			break
+		}
+	}
+
+	if changed {
+		d.State.SetMirrors(mirrors)
+	}
 }
 
 // calculateChunkSize determines optimal chunk size
@@ -156,12 +178,26 @@ func (d *ConcurrentDownloader) newConcurrentClient(numConns int) *http.Client {
 
 // Download downloads a file using multiple concurrent connections
 // Uses pre-probed metadata (file size already known)
-func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath string, fileSize int64, verbose bool) error {
-	utils.Debug("ConcurrentDownloader.Download: %s -> %s (size: %d)", rawurl, destPath, fileSize)
+func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, mirrors []string, destPath string, fileSize int64, verbose bool) error {
+	utils.Debug("ConcurrentDownloader.Download: %s -> %s (size: %d, mirrors: %d)", rawurl, destPath, fileSize, len(mirrors))
 
 	// Store URL and path for pause/resume (final path without .surge)
 	d.URL = rawurl
 	d.DestPath = destPath
+
+	// Initialize mirror status in state
+	if d.State != nil {
+		var statuses []types.MirrorStatus
+		// Add primary
+		statuses = append(statuses, types.MirrorStatus{URL: rawurl, Active: true})
+		// Add others
+		for _, m := range mirrors {
+			if m != rawurl {
+				statuses = append(statuses, types.MirrorStatus{URL: m, Active: true})
+			}
+		}
+		d.State.SetMirrors(statuses)
+	}
 
 	// Working file has .surge suffix until download completes
 	workingPath := destPath + types.IncompleteSuffix
@@ -172,6 +208,30 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 	if d.State != nil {
 		d.State.CancelFunc = cancel
 	}
+
+	// Probe mirrors to ensure they support range requests
+	// We do this concurrently using the engine's probe capability
+	allToCheck := append([]string{rawurl}, mirrors...)
+	valid, errs := engine.ProbeMirrors(ctx, allToCheck)
+
+	// Record errors in state
+	for url := range errs {
+		d.ReportMirrorError(url)
+	}
+
+	if len(valid) == 0 {
+		return fmt.Errorf("no valid mirrors found confirming range support")
+	}
+
+	// Update working list to only use valid secondary mirrors
+	// We exclude rawurl from this list because it's passed separately
+	var validSecondary []string
+	for _, v := range valid {
+		if v != rawurl {
+			validSecondary = append(validSecondary, v)
+		}
+	}
+	mirrors = validSecondary
 
 	// Determine connections and chunk size
 	numConns := d.getInitialConnections(fileSize)
@@ -233,26 +293,31 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 	defer cancelBalancer()
 
 	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
+		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
-
-		maxSplits := 50
-		splitCount := 0
 
 		for {
 			select {
 			case <-balancerCtx.Done():
 				return
 			case <-ticker.C:
-				if queue.IdleWorkers() > 0 && splitCount < maxSplits {
+				// Aggressively fill idle workers
+				// Continue splitting/stealing as long as we have idle workers and are making progress
+				for queue.IdleWorkers() > 0 {
+					didWork := false
 					if queue.SplitLargestIfNeeded() {
-						splitCount++
-						utils.Debug("Balancer: split largest task (total splits: %d)", splitCount)
+						didWork = true
+						utils.Debug("Balancer: split largest task")
 					} else if queue.Len() == 0 {
 						// Try to steal from an active worker
 						if d.StealWork(queue) {
-							splitCount++
+							didWork = true
 						}
+					}
+
+					// If we couldn't split or steal anything, stop trying for this tick
+					if !didWork {
+						break
 					}
 				}
 			}
@@ -261,7 +326,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 
 	// Monitor for completion
 	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
+		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
 
 		for {
@@ -302,11 +367,38 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 	var wg sync.WaitGroup
 	workerErrors := make(chan error, numConns)
 
+	// Combine primary + secondary for workers
+	// We want to ensure the primary is included if it was valid (it should be, otherwise ProbeMirrors fails for it)
+	// But let's build the final worker list explicitly
+	var workerMirrors []string
+
+	// Add primary if compatible (it should be in 'valid' list if it passed probe)
+	primaryOK := false
+	for _, v := range valid {
+		if v == rawurl {
+			primaryOK = true
+			break
+		}
+	}
+	if primaryOK {
+		workerMirrors = append(workerMirrors, rawurl)
+	}
+	// Add other valid mirrors
+	for _, v := range validSecondary {
+		workerMirrors = append(workerMirrors, v)
+	}
+
+	// Double check we have at least one mirror
+	if len(workerMirrors) == 0 {
+		// Should have been caught by early check but safe fallback
+		workerMirrors = []string{rawurl}
+	}
+
 	for i := 0; i < numConns; i++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			err := d.worker(downloadCtx, workerID, rawurl, outFile, queue, fileSize, startTime, verbose, client)
+			err := d.worker(downloadCtx, workerID, workerMirrors, outFile, queue, fileSize, startTime, verbose, client)
 			if err != nil && err != context.Canceled {
 				workerErrors <- err
 			}

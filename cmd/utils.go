@@ -47,11 +47,28 @@ func readURLsFromFile(filepath string) ([]string, error) {
 	return urls, scanner.Err()
 }
 
+// ParseURLArg parses a command line argument that might contain comma-separated mirrors
+// Returns the primary URL and a list of all mirrors (including the primary)
+func ParseURLArg(arg string) (string, []string) {
+	parts := strings.Split(arg, ",")
+	var urls []string
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			urls = append(urls, trimmed)
+		}
+	}
+	if len(urls) == 0 {
+		return "", nil
+	}
+	return urls[0], urls
+}
+
 // sendToServer sends a download request to a running surge server
-func sendToServer(url, outPath string, port int) error {
+func sendToServer(url string, mirrors []string, outPath string, port int) error {
 	reqBody := DownloadRequest{
-		URL:  url,
-		Path: outPath,
+		URL:     url,
+		Mirrors: mirrors,
+		Path:    outPath,
 	}
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {

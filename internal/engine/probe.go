@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/surge-downloader/surge/internal/engine/types"
@@ -121,4 +122,56 @@ func ProbeServer(ctx context.Context, rawurl string, filenameHint string) (*Prob
 		result.Filename, result.FileSize, result.SupportsRange)
 
 	return result, nil
+}
+
+// ProbeMirrors concurrently checks a list of mirrors and returns valid ones and errors
+func ProbeMirrors(ctx context.Context, mirrors []string) (valid []string, errors map[string]error) {
+	// Deduplicate
+	unique := make(map[string]bool)
+	for _, m := range mirrors {
+		unique[m] = true
+	}
+
+	var candidates []string
+	for m := range unique {
+		candidates = append(candidates, m)
+	}
+
+	utils.Debug("Probing %d mirrors...", len(candidates))
+
+	valid = make([]string, 0, len(candidates))
+	errors = make(map[string]error)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, url := range candidates {
+		wg.Add(1)
+		go func(target string) {
+			defer wg.Done()
+
+			// Short timeout for bulk probing
+			probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+
+			result, err := ProbeServer(probeCtx, target, "")
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if err != nil {
+				errors[target] = err
+				return
+			}
+
+			if result.SupportsRange {
+				valid = append(valid, target)
+			} else {
+				errors[target] = fmt.Errorf("does not support ranges")
+			}
+		}(url)
+	}
+
+	wg.Wait()
+	utils.Debug("Mirror probing complete: %d valid, %d failed", len(valid), len(errors))
+	return valid, errors
 }

@@ -50,7 +50,7 @@ func TestConcurrentDownloader_Download(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL(), nil, destPath, fileSize, false)
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestConcurrentDownloader_WithLatency(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL(), nil, destPath, fileSize, false)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -125,7 +125,7 @@ func TestConcurrentDownloader_SlowDownload(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL(), nil, destPath, fileSize, false)
 	if err != nil {
 		t.Fatalf("Slow download failed: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestConcurrentDownloader_RespectServerConnectionLimit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL(), nil, destPath, fileSize, false)
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestConcurrentDownloader_ContentIntegrity(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL(), nil, destPath, fileSize, false)
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestConcurrentDownloader_SmallFile(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL(), nil, destPath, fileSize, false)
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestConcurrentDownloader_MediumFile(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL(), nil, destPath, fileSize, false)
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestConcurrentDownloader_Cancellation(t *testing.T) {
 
 	done := make(chan error)
 	go func() {
-		done <- downloader.Download(ctx, server.URL(), destPath, fileSize, false)
+		done <- downloader.Download(ctx, server.URL(), nil, destPath, fileSize, false)
 	}()
 
 	time.Sleep(200 * time.Millisecond)
@@ -399,7 +399,7 @@ func TestConcurrentDownloader_ProgressTracking(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL(), nil, destPath, fileSize, false)
 
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
@@ -440,7 +440,7 @@ func TestConcurrentDownloader_RetryOnFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL(), nil, destPath, fileSize, false)
 	if err != nil {
 		t.Fatalf("Download with retries failed: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestConcurrentDownloader_FailOnNthRequest(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL(), nil, destPath, fileSize, false)
 	if err != nil {
 		t.Fatalf("Download should recover from Nth request failure: %v", err)
 	}
@@ -545,7 +545,7 @@ func TestConcurrentDownloader_ResumePartialDownload(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err = downloader.Download(ctx, server.URL(), destPath, fileSize, false)
+	err = downloader.Download(ctx, server.URL(), nil, destPath, fileSize, false)
 	if err != nil {
 		t.Fatalf("Resume download failed: %v", err)
 	}

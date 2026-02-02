@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,8 +40,8 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 		// 1. Upsert into downloads table
 		_, err := tx.Exec(`
 			INSERT INTO downloads (
-				id, url, dest_path, filename, status, total_size, downloaded, url_hash, created_at, paused_at, time_taken
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				id, url, dest_path, filename, status, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				url=excluded.url,
 				dest_path=excluded.dest_path,
@@ -50,8 +51,9 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 				downloaded=excluded.downloaded,
 				url_hash=excluded.url_hash,
 				paused_at=excluded.paused_at,
-				time_taken=excluded.time_taken
-		`, state.ID, state.URL, state.DestPath, state.Filename, "paused", state.TotalSize, state.Downloaded, state.URLHash, state.CreatedAt, state.PausedAt, state.Elapsed/1e6) // Convert ns to ms
+				time_taken=excluded.time_taken,
+				mirrors=excluded.mirrors
+		`, state.ID, state.URL, state.DestPath, state.Filename, "paused", state.TotalSize, state.Downloaded, state.URLHash, state.CreatedAt, state.PausedAt, state.Elapsed/1e6, strings.Join(state.Mirrors, ",")) // Convert ns to ms, join mirrors
 
 		if err != nil {
 			return fmt.Errorf("failed to upsert download: %w", err)
@@ -93,8 +95,9 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 
 	var state types.DownloadState
 	var timeTaken sql.NullInt64 // handle null
+	var mirrors sql.NullString  // handle null mirrors
 	row := db.QueryRow(`
-		SELECT id, url, dest_path, filename, total_size, downloaded, url_hash, created_at, paused_at, time_taken
+		SELECT id, url, dest_path, filename, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors
 		FROM downloads 
 		WHERE url = ? AND dest_path = ?
 		ORDER BY paused_at DESC LIMIT 1
@@ -103,7 +106,7 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 	err := row.Scan(
 		&state.ID, &state.URL, &state.DestPath, &state.Filename,
 		&state.TotalSize, &state.Downloaded, &state.URLHash,
-		&state.CreatedAt, &state.PausedAt, &timeTaken,
+		&state.CreatedAt, &state.PausedAt, &timeTaken, &mirrors,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -115,6 +118,9 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 
 	if timeTaken.Valid {
 		state.Elapsed = timeTaken.Int64 * 1e6 // Convert ms to ns
+	}
+	if mirrors.Valid && mirrors.String != "" {
+		state.Mirrors = strings.Split(mirrors.String, ",")
 	}
 
 	// Load tasks
@@ -184,7 +190,7 @@ func LoadMasterList() (*types.MasterList, error) {
 	}
 
 	rows, err := db.Query(`
-		SELECT id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash 
+		SELECT id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors 
 		FROM downloads
 	`)
 	if err != nil {
@@ -195,12 +201,12 @@ func LoadMasterList() (*types.MasterList, error) {
 	var list types.MasterList
 	for rows.Next() {
 		var e types.DownloadEntry
-		var completedAt, timeTaken sql.NullInt64 // handle nulls
-		var filename, urlHash sql.NullString     // handle nulls
+		var completedAt, timeTaken sql.NullInt64      // handle nulls
+		var filename, urlHash, mirrors sql.NullString // handle nulls
 
 		if err := rows.Scan(
 			&e.ID, &e.URL, &e.DestPath, &filename, &e.Status, &e.TotalSize, &e.Downloaded,
-			&completedAt, &timeTaken, &urlHash,
+			&completedAt, &timeTaken, &urlHash, &mirrors,
 		); err != nil {
 			return nil, err
 		}
@@ -216,6 +222,9 @@ func LoadMasterList() (*types.MasterList, error) {
 		}
 		if urlHash.Valid {
 			e.URLHash = urlHash.String
+		}
+		if mirrors.Valid && mirrors.String != "" {
+			e.Mirrors = strings.Split(mirrors.String, ",")
 		}
 
 		list.Downloads = append(list.Downloads, e)
@@ -239,8 +248,8 @@ func AddToMasterList(entry types.DownloadEntry) error {
 	return withTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`
 			INSERT INTO downloads (
-				id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				url=excluded.url,
 				dest_path=excluded.dest_path,
@@ -250,10 +259,11 @@ func AddToMasterList(entry types.DownloadEntry) error {
 				downloaded=excluded.downloaded,
 				completed_at=excluded.completed_at,
 				time_taken=excluded.time_taken,
-				url_hash=excluded.url_hash
+				url_hash=excluded.url_hash,
+				mirrors=excluded.mirrors
 		`,
 			entry.ID, entry.URL, entry.DestPath, entry.Filename, entry.Status, entry.TotalSize, entry.Downloaded,
-			entry.CompletedAt, entry.TimeTaken, entry.URLHash)
+			entry.CompletedAt, entry.TimeTaken, entry.URLHash, strings.Join(entry.Mirrors, ","))
 
 		return err
 	})
@@ -280,17 +290,17 @@ func GetDownload(id string) (*types.DownloadEntry, error) {
 
 	var e types.DownloadEntry
 	var completedAt, timeTaken sql.NullInt64
-	var urlHash, filename sql.NullString
+	var urlHash, filename, mirrors sql.NullString
 
 	row := db.QueryRow(`
-		SELECT id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash 
+		SELECT id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors 
 		FROM downloads
 		WHERE id = ?
 	`, id)
 
 	if err := row.Scan(
 		&e.ID, &e.URL, &e.DestPath, &filename, &e.Status, &e.TotalSize, &e.Downloaded,
-		&completedAt, &timeTaken, &urlHash,
+		&completedAt, &timeTaken, &urlHash, &mirrors,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // Not found
@@ -309,6 +319,9 @@ func GetDownload(id string) (*types.DownloadEntry, error) {
 	}
 	if filename.Valid {
 		e.Filename = filename.String
+	}
+	if mirrors.Valid && mirrors.String != "" {
+		e.Mirrors = strings.Split(mirrors.String, ",")
 	}
 
 	return &e, nil

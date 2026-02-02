@@ -29,6 +29,10 @@ Type "https://ash-speed.hetzner.com/100MB.bin"
 Enter
 Sleep 300ms
 
+Type "https://sin-speed.hetzner.com/100MB.bin"
+Enter
+Sleep 300ms
+
 # Press Enter to skip path (use default)
 Enter
 Sleep 300ms

@@ -62,6 +62,7 @@ type DownloadConfig struct {
 	ProgressCh chan<- any
 	State      *ProgressState
 	Runtime    *RuntimeConfig // Dynamic settings from user config
+	Mirrors    []string       // List of mirror URLs (including primary)
 }
 
 // RuntimeConfig holds dynamic settings that can override defaults

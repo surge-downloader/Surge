@@ -7,33 +7,25 @@ Benchmark script to compare Surge against other download tools:
 - axel
 """
 
-import os
+import argparse
 import platform
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Callable
 
 # =============================================================================
-# PLATFORM DETECTION
+# CONSTANTS & CONFIG
 # =============================================================================
 IS_WINDOWS = platform.system() == "Windows"
 EXE_SUFFIX = ".exe" if IS_WINDOWS else ""
-
-# =============================================================================
-# CONFIGURATION
-# =============================================================================
-# Default test file URL (test file)
-TEST_URL = "https://sin-speed.hetzner.com/1GB.bin"
-
 MB = 1024 * 1024
-
+DEFAULT_TEST_URL = "https://sin-speed.hetzner.com/1GB.bin"
 
 # =============================================================================
 # DATA CLASSES
@@ -46,7 +38,7 @@ class BenchmarkResult:
     elapsed_seconds: float
     file_size_bytes: int
     error: Optional[str] = None
-    iter_results: Optional[list[float]] = None  # List of elapsed times for each iteration
+    iter_results: Optional[List[float]] = None
 
     @property
     def speed_mbps(self) -> float:
@@ -56,23 +48,20 @@ class BenchmarkResult:
 
 
 # =============================================================================
-# UTILITY FUNCTIONS
+# UTILITIES
 # =============================================================================
-def run_command(cmd: list[str], cwd: Optional[str] = None, timeout: int = 600) -> tuple[bool, str]:
+def run_command(cmd: List[str], cwd: Optional[str] = None, timeout: int = 3600) -> tuple[bool, str]:
     """Run a command and return (success, output)."""
     try:
-        # On Windows, use shell=True to find executables in PATH
-        # and handle .exe extensions properly
         result = subprocess.run(
             cmd,
             cwd=cwd,
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=IS_WINDOWS,  # Needed for Windows PATH resolution
+            shell=IS_WINDOWS,
         )
-        output = result.stdout + result.stderr
-        return result.returncode == 0, output
+        return result.returncode == 0, result.stdout + result.stderr
     except subprocess.TimeoutExpired:
         return False, "Command timed out"
     except FileNotFoundError as e:
@@ -81,587 +70,331 @@ def run_command(cmd: list[str], cwd: Optional[str] = None, timeout: int = 600) -
         return False, str(e)
 
 
-def which(cmd: str) -> Optional[str]:
-    """Return the path to a command, or None if not found."""
-    return shutil.which(cmd)
-
-
 def get_file_size(path: Path) -> int:
-    """Get the size of a file in bytes."""
-    if path.exists():
-        return path.stat().st_size
-    return 0
+    return path.stat().st_size if path.exists() else 0
 
 
 def cleanup_file(path: Path):
-    """Remove a file if it exists."""
     try:
         if path.exists():
             path.unlink()
-    except Exception:
+    except OSError:
         pass
 
 
 def parse_go_duration(s: str) -> float:
-    """Parse Go duration string to seconds."""
+    """Parse Go duration string (e.g., '1m30s', '500ms') to seconds."""
     total = 0.0
-    # Match pairs like 1h, 2m, 3.5s, 500ms, 10µs, 100ns
     matches = re.findall(r'(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)', s)
-    for val_str, unit in matches:
-        val = float(val_str)
-        if unit == 'h':
-            total += val * 3600
-        elif unit == 'm':
-            total += val * 60
-        elif unit == 's':
-            total += val
-        elif unit == 'ms':
-            total += val / 1000
-        elif unit in ('us', 'µs'):
-            total += val / 1_000_000
-        elif unit == 'ns':
-            total += val / 1_000_000_000
-            
+    multipliers = {
+        'ns': 1e-9, 'us': 1e-6, 'µs': 1e-6, 'ms': 1e-3,
+        's': 1, 'm': 60, 'h': 3600
+    }
+    for val, unit in matches:
+        total += float(val) * multipliers.get(unit, 0)
     return total
 
 
 # =============================================================================
-# SETUP FUNCTIONS
+# SETUP & BUILD
 # =============================================================================
 def build_surge(project_dir: Path) -> bool:
-    """Build surge from source."""
     print("  Building surge...")
     output_name = f"surge{EXE_SUFFIX}"
     success, output = run_command(["go", "build", "-o", output_name, "."], cwd=str(project_dir))
     if not success:
-        print(f"    [X] Failed to build surge: {output}")
+        print(f"    [X] Failed to build surge: {output.strip()}")
         return False
     print("    [OK] Surge built successfully")
     return True
 
 
-def check_wget() -> bool:
-    """Check if wget is installed."""
-    if which("wget"):
-        print("    [OK] wget found")
+def check_tool(name: str) -> bool:
+    """Check if a tool is in the PATH."""
+    if shutil.which(name):
+        print(f"    [OK] {name} found")
         return True
-    print("    [X] wget not found")
-    return False
-
-
-def check_curl() -> bool:
-    """Check if curl is installed."""
-    if which("curl"):
-        print("    [OK] curl found")
-        return True
-    print("    [X] curl not found")
-    return False
-
-
-def check_aria2c() -> bool:
-    """Check if aria2c is installed."""
-    if which("aria2c"):
-        print("    [OK] aria2c found")
-        return True
-    print("    [X] aria2c not found (install aria2)")
-    return False
-
-
-def check_axel() -> bool:
-    """Check if axel is installed."""
-    if which("axel"):
-        print("    [OK] axel found")
-        return True
-    print("    [X] axel not found (install axel)")
+    print(f"    [X] {name} not found")
     return False
 
 
 # =============================================================================
-# BENCHMARK FUNCTIONS
+# BENCHMARK ENGINE
 # =============================================================================
 def benchmark_surge(executable: Path, url: str, output_dir: Path, label: str = "surge") -> BenchmarkResult:
-    """Benchmark surge downloader using a specific executable."""
+    """Specialized benchmark for Surge to parse internal duration."""
     if not executable.exists():
         return BenchmarkResult(label, False, 0, 0, f"Binary not found: {executable}")
     
+    # Clean potential previous runs
+    for f in output_dir.glob("*"):
+        if f.is_file(): 
+            cleanup_file(f)
+
     start = time.perf_counter()
-    # Use server start mode with exit-when-done
     success, output = run_command([
         str(executable), "server", "start", url,
         "--output", str(output_dir),
         "--exit-when-done"
-    ], timeout=600)
+    ])
     elapsed = time.perf_counter() - start
     
-    # Try to parse the actual download time from Surge output
-    # Output format: "Completed: filename [id] (in 5.2s)"
+    # Parse internal time if available
     actual_time = elapsed
     match = re.search(r"Completed: .*? \[.*?\] \(in (.*?)\)", output)
     if match:
         try:
-            duration_str = match.group(1)
-            parsed_time = parse_go_duration(duration_str)
-            if parsed_time > 0:
-                actual_time = parsed_time
-        except Exception:
+            t = parse_go_duration(match.group(1))
+            if t > 0: actual_time = t
+        except ValueError:
             pass
 
-    # Find downloaded file (surge uses original filename)
-    downloaded_files = list(output_dir.glob("*.bin")) + list(output_dir.glob("*MB*")) + list(output_dir.glob("*.zip"))
-    file_size = 0
-    for f in downloaded_files:
-        if f.is_file() and "surge" not in f.name:
-            file_size = max(file_size, get_file_size(f))
-            cleanup_file(f)
+    # Find the downloaded file (ignoring the surge binary if it's there)
+    # Surge preserves original filenames, so we scan for the largest file.
+    downloaded_files = [f for f in output_dir.iterdir() if f.is_file()]
+    file_size = max((get_file_size(f) for f in downloaded_files), default=0)
     
+    # Cleanup
+    for f in downloaded_files:
+        cleanup_file(f)
+
     if not success:
         return BenchmarkResult(label, False, actual_time, file_size, output[:200])
     
     return BenchmarkResult(label, True, actual_time, file_size)
 
 
-def benchmark_aria2(url: str, output_dir: Path) -> BenchmarkResult:
-    """Benchmark aria2c downloader."""
-    output_file = output_dir / "aria2_download"
+def benchmark_standard_tool(
+    name: str, 
+    bin_name: str, 
+    cmd_builder: Callable[[str, Path, str], List[str]], 
+    url: str, 
+    output_dir: Path
+) -> BenchmarkResult:
+    """Generic benchmark runner for standard tools (wget, curl, etc)."""
+    
+    binary = shutil.which(bin_name)
+    if not binary:
+        return BenchmarkResult(name, False, 0, 0, f"{bin_name} not installed")
+    
+    output_file = output_dir / f"{name}_dl"
     cleanup_file(output_file)
+    # Cleanup aux files (like .st for axel)
+    cleanup_file(output_dir / f"{output_file.name}.st")
+
+    cmd = cmd_builder(binary, output_file, url)
     
-    if not which("aria2c"):
-        return BenchmarkResult("aria2c", False, 0, 0, "aria2c not installed")
+    start = time.perf_counter()
+    success, output = run_command(cmd)
+    elapsed = time.perf_counter() - start
     
-    cmd = [
-        "aria2c",
-        "-x", "16", "-s", "16",  # 16 connections (aria2c compiled max)
-        "-o", output_file.name,
-        "-d", str(output_dir),
-        "--allow-overwrite=true",
-        "--console-log-level=warn",
-        url
+    file_size = get_file_size(output_file)
+    cleanup_file(output_file)
+    cleanup_file(output_dir / f"{output_file.name}.st")
+
+    if not success:
+        return BenchmarkResult(name, False, elapsed, file_size, output[:200])
+    
+    return BenchmarkResult(name, True, elapsed, file_size)
+
+
+# =============================================================================
+# TOOL CONFIGURATIONS
+# =============================================================================
+def cmd_aria2(binary: str, out: Path, url: str) -> List[str]:
+    return [
+        binary, "-x", "16", "-s", "16", "-o", out.name, "-d", str(out.parent),
+        "--allow-overwrite=true", "--console-log-level=warn", url
     ]
-    
-    start = time.perf_counter()
-    success, output = run_command(cmd, timeout=600)
-    elapsed = time.perf_counter() - start
-    
-    file_size = get_file_size(output_file)
-    cleanup_file(output_file)
-    
-    if not success:
-        return BenchmarkResult("aria2c", False, elapsed, file_size, output[:200])
-    
-    return BenchmarkResult("aria2c", True, elapsed, file_size)
 
+def cmd_axel(binary: str, out: Path, url: str) -> List[str]:
+    return [binary, "-n", "16", "-q", "-o", str(out), url]
 
-def benchmark_axel(url: str, output_dir: Path) -> BenchmarkResult:
-    """Benchmark axel downloader."""
-    output_file = output_dir / "axel_download"
-    cleanup_file(output_file)
-    # Axel creates a .st state file sometimes, clean that too
-    cleanup_file(output_dir / "axel_download.st")
+def cmd_wget(binary: str, out: Path, url: str) -> List[str]:
+    return [binary, "-q", "-O", str(out), url]
 
-    axel_bin = which("axel")
-    if not axel_bin:
-        return BenchmarkResult("axel", False, 0, 0, "axel not installed")
-    
-    # -n 16: 16 connections
-    # -q: Quiet (no progress bar output to stdout)
-    # -o: Output file
-    cmd = [
-        axel_bin, 
-        "-n", "16", 
-        "-q", 
-        "-o", str(output_file), 
-        url
-    ]
-    
-    start = time.perf_counter()
-    success, output = run_command(cmd, timeout=600)
-    elapsed = time.perf_counter() - start
-    
-    file_size = get_file_size(output_file)
-    cleanup_file(output_file)
-    cleanup_file(output_dir / "axel_download.st")
-    
-    if not success:
-        return BenchmarkResult("axel", False, elapsed, file_size, output[:200])
-    
-    return BenchmarkResult("axel", True, elapsed, file_size)
-
-
-def benchmark_wget(url: str, output_dir: Path) -> BenchmarkResult:
-    """Benchmark wget downloader."""
-    output_file = output_dir / "wget_download"
-    cleanup_file(output_file)
-    
-    wget_bin = which("wget")
-    if not wget_bin:
-        return BenchmarkResult("wget", False, 0, 0, "wget not installed")
-    
-    start = time.perf_counter()
-    success, output = run_command([
-        wget_bin, "-q", "-O", str(output_file), url
-    ], timeout=600)
-    elapsed = time.perf_counter() - start
-    
-    file_size = get_file_size(output_file)
-    cleanup_file(output_file)
-    
-    if not success:
-        return BenchmarkResult("wget", False, elapsed, file_size, output[:200])
-    
-    return BenchmarkResult("wget", True, elapsed, file_size)
-
-
-def benchmark_curl(url: str, output_dir: Path) -> BenchmarkResult:
-    """Benchmark curl downloader."""
-    output_file = output_dir / "curl_download"
-    cleanup_file(output_file)
-    
-    curl_bin = which("curl")
-    if not curl_bin:
-        return BenchmarkResult("curl", False, 0, 0, "curl not installed")
-    
-    start = time.perf_counter()
-    success, output = run_command([
-        curl_bin, "-s", "-L", "-o", str(output_file), url
-    ], timeout=600)
-    elapsed = time.perf_counter() - start
-    
-    file_size = get_file_size(output_file)
-    cleanup_file(output_file)
-    
-    if not success:
-        return BenchmarkResult("curl", False, elapsed, file_size, output[:200])
-    
-    return BenchmarkResult("curl", True, elapsed, file_size)
+def cmd_curl(binary: str, out: Path, url: str) -> List[str]:
+    return [binary, "-s", "-L", "-o", str(out), url]
 
 
 # =============================================================================
 # REPORTING
 # =============================================================================
-def print_results(results: list[BenchmarkResult]):
-    """Print benchmark results in a formatted table."""
-    print("\n" + "=" * 70)
-    print("  BENCHMARK RESULTS")
-    print("=" * 70)
-    
-    # Header
-    print(f"\n  {'Tool':<20} │ {'Status':<8} │ {'Avg Time':<10} │ {'Avg Speed':<12} │ {'Size':<10}")
+def print_results(results: List[BenchmarkResult]):
+    print("\n" + "=" * 80)
+    print(f"  {'Tool':<20} │ {'Status':<8} │ {'Avg Time':<10} │ {'Avg Speed':<12} │ {'Size':<10}")
     print(f"  {'─'*20}─┼─{'─'*8}─┼─{'─'*10}─┼─{'─'*12}─┼─{'─'*10}")
     
     for r in results:
-        status = "OK" if r.success else "X"
-        time_str = f"{r.elapsed_seconds:.2f}s" if r.elapsed_seconds > 0 else "N/A"
-        speed_str = f"{r.speed_mbps:.2f} MB/s" if r.success and r.speed_mbps > 0 else "N/A"
-        size_str = f"{r.file_size_bytes / MB:.1f} MB" if r.file_size_bytes > 0 else "N/A"
+        status = "OK" if r.success else "FAIL"
+        time_str = f"{r.elapsed_seconds:.2f}s" if r.elapsed_seconds > 0 else "-"
+        speed_str = f"{r.speed_mbps:.2f} MB/s" if r.success and r.speed_mbps > 0 else "-"
+        size_str = f"{r.file_size_bytes / MB:.1f} MB" if r.file_size_bytes > 0 else "-"
         
         print(f"  {r.tool:<20} │ {status:<8} │ {time_str:<10} │ {speed_str:<12} │ {size_str:<10}")
-        if r.iter_results and len(r.iter_results) > 1:
-            print(f"    └─ Runs: {', '.join([f'{t:.2f}s' for t in r.iter_results])}")
         
         if not r.success and r.error:
-            print(f"    └─ Error: {r.error[:60]}...")
-    
-    print("\n" + "=" * 70)
-    
-    print("\n" + "=" * 70)
-    
-    # Find winner
+            print(f"    └─ Error: {r.error.strip()[:80]}...")
+
+    # Winner
     successful = [r for r in results if r.success and r.speed_mbps > 0]
     if successful:
         winner = max(successful, key=lambda r: r.speed_mbps)
-        print(f"\n  WINNER: {winner.tool} @ {winner.speed_mbps:.2f} MB/s")
-    
-    print()
-    print_histogram(results)
+        print("-" * 80)
+        print(f"  🏆 WINNER: {winner.tool} @ {winner.speed_mbps:.2f} MB/s")
+    print("=" * 80 + "\n")
 
 
-def print_histogram(results: list[BenchmarkResult]):
-    """Print a text-based histogram of download speeds."""
-    successful = [r for r in results if r.success and r.speed_mbps > 0]
-    if not successful:
-        return
-        
-    print("\n  SPEED COMPARISON")
+def print_histogram(results: List[BenchmarkResult]):
+    successful = sorted([r for r in results if r.success and r.speed_mbps > 0], 
+                       key=lambda r: r.speed_mbps, reverse=True)
+    if not successful: return
+
+    print("  SPEED VISUALIZATION")
     print("  " + "-" * 50)
+    max_speed = successful[0].speed_mbps
     
-    # Sort by speed descending
-    sorted_results = sorted(successful, key=lambda r: r.speed_mbps, reverse=True)
-    max_speed = sorted_results[0].speed_mbps
-    width = 50
-    
-    for r in sorted_results:
-        bar_len = int((r.speed_mbps / max_speed) * width)
-        bar = "█" * bar_len
-        print(f"  {r.tool:<20} │ {bar:<50} {r.speed_mbps:.2f} MB/s")
+    for r in successful:
+        bar_len = int((r.speed_mbps / max_speed) * 40)
+        print(f"  {r.tool:<15} │ {'█' * bar_len:<40} {r.speed_mbps:.2f} MB/s")
     print()
-
-
-def run_speedtest() -> Optional[str]:
-    """Run speedtest-cli and return formatted result string."""
-    if not which("speedtest-cli"):
-        return "speedtest-cli not found"
-        
-    print("\n  Running network speedtest (speedtest-cli)...", end="", flush=True)
-    success, output = run_command(["speedtest-cli", "--simple"], timeout=60)
-    
-    if not success:
-        print(" Failed")
-        return f"Speedtest failed: {output[:50]}..."
-        
-    print(" Done")
-    # Output format:
-    # Ping: 12.34 ms
-    # Download: 123.45 Mbit/s
-    # Upload: 12.34 Mbit/s
-    return output.strip()
 
 
 # =============================================================================
 # MAIN
 # =============================================================================
 def main():
-    print("\nSurge Benchmark Suite")
-    print("=" * 40)
-    
-    # Parse arguments
-    import argparse
     parser = argparse.ArgumentParser(description="Surge Benchmark Suite")
-    parser.add_argument("url", nargs="?", default=TEST_URL, help="URL to download for benchmarking")
-    parser.add_argument("-n", "--iterations", type=int, default=1, help="Number of iterations to run (default: 1)")
+    parser.add_argument("url", nargs="?", default=DEFAULT_TEST_URL, help="URL to benchmark")
+    parser.add_argument("-n", "--iterations", type=int, default=1, help="Iterations per tool")
+    parser.add_argument("--surge-exec", type=Path, help="Specific Surge binary")
+    parser.add_argument("--surge-baseline", type=Path, help="Baseline Surge binary for comparison")
+    parser.add_argument("--mirror-suite", action="store_true", help="Run multi-mirror test suite")
+    parser.add_argument("--speedtest", action="store_true", help="Run network speedtest-cli")
     
-    # Service flags
-    parser.add_argument("--surge", action="store_true", help="Run Surge benchmark (default build)")
-    parser.add_argument("--aria2", action="store_true", help="Run aria2c benchmark")
-    parser.add_argument("--wget", action="store_true", help="Run wget benchmark")
-    parser.add_argument("--curl", action="store_true", help="Run curl benchmark")
-    parser.add_argument("--axel", action="store_true", help="Run axel benchmark")
-    
-    # Executable flags
-    parser.add_argument("--surge-exec", type=Path, help="Path to specific Surge executable to test")
-    parser.add_argument("--surge-baseline", type=Path, help="Path to baseline Surge executable for comparison")
-    
-    # Feature flags
-    parser.add_argument("--speedtest", action="store_true", help="Run network speedtest")
+    # Tool flags
+    for tool in ["surge", "aria2", "wget", "curl", "axel"]:
+        parser.add_argument(f"--{tool}", action="store_true", help=f"Run {tool} benchmark")
 
     args = parser.parse_args()
     
-    test_url = args.url
+    # Configuration
     num_iterations = args.iterations
-    
-    # helper to check if any specific service was requested
-    specific_service_requested = any([
-        args.surge, args.aria2, args.wget, args.curl, args.axel,
-        args.surge_exec, args.surge_baseline
-    ])
-    
-    print(f"\n  Test URL:   {test_url}")
-    print(f"  Iterations: {num_iterations}")
-    
-    # Determine project directory
     project_dir = Path(__file__).parent.resolve()
-    print(f"  Project:  {project_dir}")
-    
-    # Create temp directory for downloads
     temp_dir = Path(tempfile.mkdtemp(prefix="surge_bench_"))
     download_dir = temp_dir / "downloads"
     download_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n⚡ Surge Benchmark Suite")
+    print(f"   Temp Dir: {temp_dir}")
+    print("=" * 60)
+
+    # Determine tasks
+    tasks = []
     
-    print(f"  Temp Dir: {temp_dir}")
+    # 1. Setup Surge
+    surge_bin = None
+    if args.surge_exec and args.surge_exec.exists():
+        surge_bin = args.surge_exec.resolve()
+        print(f"  [OK] Using provided Surge: {surge_bin}")
+    elif shutil.which("go") and build_surge(project_dir):
+        surge_bin = project_dir / f"surge{EXE_SUFFIX}"
     
+    # Define generic tools to check
+    # (flag_name, bin_name, cmd_func)
+    standard_tools = [
+        ("aria2", "aria2c", cmd_aria2),
+        ("axel", "axel", cmd_axel),
+        ("wget", "wget", cmd_wget),
+        ("curl", "curl", cmd_curl)
+    ]
+
+    # Mirror Suite Logic
+    if args.mirror_suite:
+        urls = [
+            "https://distrib-coffee.ipsl.jussieu.fr/pub/linux/ubuntu-releases/noble/ubuntu-24.04.3-desktop-amd64.iso",
+            "https://mirror.cedia.org.ec/ubuntu-releases/24.04.3/ubuntu-24.04.3-desktop-amd64.iso",
+            "https://mirror.bharatdatacenter.com/ubuntu-releases/noble/ubuntu-24.04.3-desktop-amd64.iso",
+        ]
+        if surge_bin:
+            tasks.append(lambda: benchmark_surge(surge_bin, ",".join(urls), download_dir, "Surge (3 Mirrors)"))
+            tasks.append(lambda: benchmark_surge(surge_bin, ",".join(urls[:2]), download_dir, "Surge (2 Mirrors)"))
+            tasks.append(lambda: benchmark_surge(surge_bin, urls[0], download_dir, "Surge (1 Mirror)"))
+        if args.surge_baseline and args.surge_baseline.exists():
+             tasks.append(lambda: benchmark_surge(args.surge_baseline, urls[0], download_dir, "Surge Baseline"))
+
+    else:
+        # Standard Single URL Logic
+        specific_request = any(getattr(args, t) for t in ["surge", "aria2", "wget", "curl", "axel"]) or args.surge_exec or args.surge_baseline
+        run_all = not specific_request
+
+        # Surge tasks
+        if (run_all or args.surge) and surge_bin:
+            tasks.append(lambda: benchmark_surge(surge_bin, args.url, download_dir, "Surge (Current)"))
+        
+        if args.surge_baseline and args.surge_baseline.exists():
+            tasks.append(lambda: benchmark_surge(args.surge_baseline, args.url, download_dir, "Surge (Baseline)"))
+
+        # Standard tool tasks
+        for name, bin_name, func in standard_tools:
+            if (run_all or getattr(args, name)) and check_tool(bin_name):
+                # Capture variables in lambda default args to avoid closure binding issues
+                tasks.append(lambda n=name, b=bin_name, f=func: benchmark_standard_tool(n, b, f, args.url, download_dir))
+
+    if not tasks:
+        print("\n  [!] No benchmarks to run. Check installed tools or arguments.")
+        shutil.rmtree(temp_dir)
+        return
+
+    # Speedtest
+    if args.speedtest and shutil.which("speedtest-cli"):
+        print("\nRunning network baseline...")
+        _, out = run_command(["speedtest-cli", "--simple"], timeout=60)
+        print(f"  {out.strip().replace('\n', ' | ')}")
+
+    # Execution Loop
+    print(f"\n🚀 Running {len(tasks)} benchmarks x {num_iterations} iterations...")
+    raw_results = {i: [] for i in range(len(tasks))} # Store by task index
+
     try:
-        # Setup phase
-        print("\nSETUP")
-        print("-" * 40)
-        
-        # Check speedtest if requested
-        if args.speedtest:
-            if which("speedtest-cli"):
-                print("  [OK] speedtest-cli found")
-            else:
-                print("  [X] speedtest-cli not found (install speedtest-cli)")
-
-        run_all = not specific_service_requested
-
-        # Initialize all to False
-        surge_ok, aria2_ok, wget_ok, curl_ok, axel_ok = False, False, False, False, False
-        surge_exec = None
-        surge_baseline_exec = None
-        
-        # --- Go dependent tools ---
-        
-        # 1. Main Surge Executable
-        if args.surge_exec:
-            if args.surge_exec.exists():
-                print(f"  [OK] Using provided surge exec: {args.surge_exec}")
-                surge_exec = args.surge_exec.resolve()
-                surge_ok = True
-            else:
-                 print(f"  [X] Provided surge exec not found: {args.surge_exec}")
-        elif run_all or args.surge:
-            if not which("go"):
-                print("  [X] Go is not installed. `surge` (local) benchmark will be skipped.")
-            else:
-                print("  [OK] Go found")
-                if build_surge(project_dir):
-                    surge_exec = project_dir / f"surge{EXE_SUFFIX}"
-                    surge_ok = True
-        
-        # 2. Baseline Surge Executable
-        if args.surge_baseline:
-             if args.surge_baseline.exists():
-                print(f"  [OK] Using baseline surge exec: {args.surge_baseline}")
-                surge_baseline_exec = args.surge_baseline.resolve()
-             else:
-                print(f"  [X] Baseline surge exec not found: {args.surge_baseline}")
-
-
-        # --- Aria2 ---
-        if run_all or args.aria2:
-            aria2_ok = check_aria2c()
-        
-        # --- Axel ---
-        if run_all or args.axel:
-            axel_ok = check_axel()
-
-        # --- Other tools ---
-        if run_all or args.wget:
-            wget_ok = check_wget()
-        
-        if run_all or args.curl:
-            curl_ok = check_curl()
-        
-        # Define benchmarks to run
-        tasks = []
-        
-        # Surge Main
-        if surge_ok:
-            tasks.append({"name": "surge (current)", "func": benchmark_surge, "args": (surge_exec, test_url, download_dir, "surge (current)")})
-        
-        # Surge Baseline
-        if surge_baseline_exec:
-             tasks.append({"name": "surge (baseline)", "func": benchmark_surge, "args": (surge_baseline_exec, test_url, download_dir, "surge (baseline)")})
-        
-        # aria2c
-        if aria2_ok and (run_all or args.aria2):
-            tasks.append({"name": "aria2c", "func": benchmark_aria2, "args": (test_url, download_dir)})
-
-        # axel
-        if axel_ok and (run_all or args.axel):
-            tasks.append({"name": "axel", "func": benchmark_axel, "args": (test_url, download_dir)})
-        
-        # wget
-        if wget_ok and (run_all or args.wget):
-            tasks.append({"name": "wget", "func": benchmark_wget, "args": (test_url, download_dir)})
-        
-        # curl
-        if curl_ok and (run_all or args.curl):
-            tasks.append({"name": "curl", "func": benchmark_curl, "args": (test_url, download_dir)})
-
-        # Initialize results storage
-        # Map: tool_name -> list of BenchmarkResult
-        raw_results: dict[str, list[BenchmarkResult]] = {task["name"]: [] for task in tasks}
-
-        if not tasks:
-            print("No benchmarks to run.")
-            return
-
-        # Benchmark phase
-        print("\nBENCHMARKING")
-        print("-" * 40)
-        
-        # Run speedtest first if requested
-        if args.speedtest:
-            st_result = run_speedtest()
-            print("\n  Speedtest Results:")
-            if st_result:
-                print("  " + "\n  ".join(st_result.splitlines()))
-            print("-" * 40)
-
-        print(f"  Downloading: {test_url}")
-        print(f"  Exec Order:  Interlaced ({len(tasks)} tools x {num_iterations} runs)\n")
-        
         for i in range(num_iterations):
-            print(f"\n  [ Iteration {i+1}/{num_iterations} ]")
-            
-            iteration_tasks = tasks.copy()
-            random.shuffle(iteration_tasks)
+            print(f"\n  [Iteration {i+1}/{num_iterations}]")
+            # Create a list of (index, task_func) and shuffle it
+            indexed_tasks = list(enumerate(tasks))
+            random.shuffle(indexed_tasks)
 
-            for task in iteration_tasks:
-                name = task["name"]
-                func = task["func"]
-                task_args = task["args"]
+            for task_idx, task_func in indexed_tasks:
+                res = task_func()
+                raw_results[task_idx].append(res)
                 
-                print(f"    Running {name}...", end="", flush=True)
-                res = func(*task_args)
-                
-                raw_results[name].append(res)
-                
-                if res.success:
-                    print(f" {res.elapsed_seconds:.2f}s")
-                else:
-                    print(" Failed")
-                
-                # Increase sleep to allow SSD buffer flush and server rate-limit reset
-                time.sleep(5)
+                status = f"{res.elapsed_seconds:.2f}s" if res.success else "FAIL"
+                print(f"    👉 {res.tool:<20} : {status}")
+                time.sleep(2) # Cooldown
 
-        # Aggregate results
-        final_results: list[BenchmarkResult] = []
-        
-        for task in tasks:
-            name = task["name"]
-            runs = raw_results[name]
+        # Aggregate
+        final_results = []
+        for i in range(len(tasks)):
+            runs = raw_results[i]
+            successful = [r for r in runs if r.success]
             
-            # Filter successful runs for time averaging
-            successful_runs = [r for r in runs if r.success]
-            
-            if not successful_runs:
-                # All failed, grab the last error
-                last_error = runs[-1].error if runs else "No runs"
-                final_results.append(BenchmarkResult(name, False, 0, 0, last_error))
+            if not successful:
+                final_results.append(BenchmarkResult(runs[0].tool, False, 0, 0, runs[-1].error))
                 continue
-
-            times = [r.elapsed_seconds for r in successful_runs]
             
-            # Outlier filtering: Take middle 60% of runs
-            # If we have N runs, sort them, and drop top 20% and bottom 20%.
-            # This requires at least enough runs to make sense, but for N=1 it will keep 1.
-            n = len(times)
-            if n > 2:
-                sorted_times = sorted(times)
-                trim_count = int(n * 0.2) # 20% from each side
-                # Slice from trim_count to n - trim_count
-                # e.g. n=10, trim=2, slice [2:8] -> indices 2,3,4,5,6,7 (6 items)
-                # e.g. n=5, trim=1, slice [1:4] -> indices 1,2,3 (3 items)
-                
-                # Ensure we don't trim everything (shouldn't happen with logic above if n > 2)
-                if trim_count > 0:
-                    filtered_times = sorted_times[trim_count : n - trim_count]
-                    if filtered_times:
-                        times = filtered_times
-
-            avg_time = sum(times) / len(times)
-            
-            # Use the size from the first successful run (should be constant)
-            file_size = successful_runs[0].file_size_bytes
+            # Simple average (could add outlier removal here if needed)
+            avg_time = sum(r.elapsed_seconds for r in successful) / len(successful)
+            file_size = successful[0].file_size_bytes
             
             final_results.append(BenchmarkResult(
-                tool=name,
-                success=True,
-                elapsed_seconds=avg_time,
-                file_size_bytes=file_size,
-                iter_results=times
+                successful[0].tool, True, avg_time, file_size, iter_results=[r.elapsed_seconds for r in successful]
             ))
 
-        # Print results
         print_results(final_results)
+        print_histogram(final_results)
 
-        
     finally:
-        # Cleanup
-        print("Cleaning up temp directory...")
+        print("\n🧹 Cleaning up...")
         shutil.rmtree(temp_dir, ignore_errors=True)
-        print("  Done.")
-
 
 if __name__ == "__main__":
     main()

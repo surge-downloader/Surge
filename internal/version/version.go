@@ -18,9 +18,9 @@ const (
 
 // UpdateInfo contains information about an available update
 type UpdateInfo struct {
-	CurrentVersion string // The current version of Surge
-	LatestVersion  string // The latest version available on GitHub
-	ReleaseURL     string // URL to the GitHub release page
+	CurrentVersion  string // The current version of Surge
+	LatestVersion   string // The latest version available on GitHub
+	ReleaseURL      string // URL to the GitHub release page
 	UpdateAvailable bool   // Whether an update is available
 }
 
@@ -108,7 +108,7 @@ func isNewerVersion(latest, current string) bool {
 // parseVersion parses a semver string into [major, minor, patch]
 func parseVersion(version string) [3]int {
 	var parts [3]int
-	
+
 	// Split by '.' and parse each part
 	segments := strings.Split(version, ".")
 	for i := 0; i < len(segments) && i < 3; i++ {
@@ -119,6 +119,6 @@ func parseVersion(version string) [3]int {
 		}
 		fmt.Sscanf(numStr, "%d", &parts[i])
 	}
-	
+
 	return parts
 }

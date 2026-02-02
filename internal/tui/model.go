@@ -97,10 +97,11 @@ type RootModel struct {
 	historyCursor  int
 
 	// Duplicate detection
-	pendingURL      string // URL pending confirmation
-	pendingPath     string // Path pending confirmation
-	pendingFilename string // Filename pending confirmation
-	duplicateInfo   string // Info about the duplicate
+	pendingURL      string   // URL pending confirmation
+	pendingPath     string   // Path pending confirmation
+	pendingFilename string   // Filename pending confirmation
+	pendingMirrors  []string // Mirrors pending confirmation
+	duplicateInfo   string   // Info about the duplicate
 
 	// Graph Data
 	SpeedHistory           []float64 // Stores the last ~60 ticks of speed data
@@ -180,6 +181,11 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 	filenameInput.Width = InputWidth
 	filenameInput.Prompt = ""
 
+	mirrorsInput := textinput.New()
+	mirrorsInput.Placeholder = "http://mirror1.com, http://mirror2.com"
+	mirrorsInput.Width = InputWidth
+	mirrorsInput.Prompt = ""
+
 	pwd, _ := os.Getwd()
 
 	// Initialize file picker for directory selection - default to Downloads folder
@@ -232,6 +238,14 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 					dm.Elapsed = time.Duration(state.Elapsed)
 					dm.StartTime = time.Now().Add(-dm.Elapsed)
 				}
+				// Restore mirrors
+				if len(state.Mirrors) > 0 {
+					var mirrors []types.MirrorStatus
+					for _, u := range state.Mirrors {
+						mirrors = append(mirrors, types.MirrorStatus{URL: u, Active: true})
+					}
+					dm.state.SetMirrors(mirrors)
+				}
 			}
 
 			// Decide if we should resume based on status and settings
@@ -255,6 +269,16 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 					outputPath = settings.General.DefaultDownloadDir
 				}
 
+				// Re-use mirrors from state if available, otherwise just URL
+				var mirrorURLs []string
+				if ms := dm.state.GetMirrors(); len(ms) > 0 {
+					for _, m := range ms {
+						mirrorURLs = append(mirrorURLs, m.URL)
+					}
+				} else {
+					mirrorURLs = []string{entry.URL}
+				}
+
 				cfg := types.DownloadConfig{
 					URL:        entry.URL,
 					OutputPath: outputPath,
@@ -266,6 +290,7 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 					ProgressCh: progressChan,
 					State:      dm.state,
 					Runtime:    runtimeConfig,
+					Mirrors:    mirrorURLs,
 				}
 
 				pool.Add(cfg)
@@ -288,6 +313,16 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 			dm.Elapsed = time.Duration(entry.TimeTaken) * time.Millisecond
 			dm.Downloaded = entry.TotalSize
 			dm.progress.SetPercent(1.0)
+
+			// Populate mirrors for completed downloads
+			if len(entry.Mirrors) > 0 {
+				var mirrors []types.MirrorStatus
+				for _, u := range entry.Mirrors {
+					mirrors = append(mirrors, types.MirrorStatus{URL: u, Active: true})
+				}
+				dm.state.SetMirrors(mirrors)
+			}
+
 			downloads = append(downloads, dm)
 		}
 	}
@@ -313,7 +348,7 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 
 	m := RootModel{
 		downloads:             downloads,
-		inputs:                []textinput.Model{urlInput, pathInput, filenameInput},
+		inputs:                []textinput.Model{urlInput, mirrorsInput, pathInput, filenameInput},
 		state:                 DashboardState,
 		progressChan:          progressChan,
 		filepicker:            fp,

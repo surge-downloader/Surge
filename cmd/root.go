@@ -429,9 +429,10 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 // DownloadRequest represents a download request from the browser extension
 type DownloadRequest struct {
-	URL      string `json:"url"`
-	Filename string `json:"filename,omitempty"`
-	Path     string `json:"path,omitempty"`
+	URL      string   `json:"url"`
+	Filename string   `json:"filename,omitempty"`
+	Path     string   `json:"path,omitempty"`
+	Mirrors  []string `json:"mirrors,omitempty"`
 }
 
 func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir string) {
@@ -611,6 +612,13 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		Runtime: convertRuntimeConfig(settings.ToRuntimeConfig()),
 	}
 
+	// Handle implicit mirrors in URL if not explicitly provided
+	if len(req.Mirrors) == 0 && strings.Contains(req.URL, ",") {
+		cfg.URL, cfg.Mirrors = ParseURLArg(req.URL)
+	} else if len(req.Mirrors) > 0 {
+		cfg.Mirrors = req.Mirrors
+	}
+
 	// Add to pool
 	GlobalPool.Add(cfg)
 
@@ -631,9 +639,14 @@ func processDownloads(urls []string, outputDir string, port int) int {
 	successCount := 0
 
 	// If port > 0, we are sending to a remote server
+	// If port > 0, we are sending to a remote server
 	if port > 0 {
-		for _, url := range urls {
-			err := sendToServer(url, outputDir, port)
+		for _, arg := range urls {
+			url, mirrors := ParseURLArg(arg)
+			if url == "" {
+				continue
+			}
+			err := sendToServer(url, mirrors, outputDir, port)
 			if err != nil {
 				fmt.Printf("Error adding %s: %v\n", url, err)
 			} else {
@@ -654,8 +667,13 @@ func processDownloads(urls []string, outputDir string, port int) int {
 		settings = config.DefaultSettings()
 	}
 
-	for _, url := range urls {
+	for _, arg := range urls {
 		// Validation
+		if arg == "" {
+			continue
+		}
+
+		url, mirrors := ParseURLArg(arg)
 		if url == "" {
 			continue
 		}
@@ -684,6 +702,7 @@ func processDownloads(urls []string, outputDir string, port int) int {
 
 		cfg := types.DownloadConfig{
 			URL:        url,
+			Mirrors:    mirrors,
 			OutputPath: outPath,
 			ID:         downloadID,
 			Verbose:    false,

@@ -3,7 +3,6 @@ package concurrent
 import (
 	"time"
 
-	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
@@ -53,8 +52,8 @@ func (d *ConcurrentDownloader) checkWorkerHealth() {
 			isBelowThreshold := workerSpeed > 0 && workerSpeed < threshold*meanSpeed
 
 			if isBelowThreshold {
-				utils.Debug("Health: Worker %d slow (%.2f KB/s vs mean %.2f KB/s, min %.2f KB/s), cancelling",
-					workerID, workerSpeed/1024, meanSpeed/1024, float64(types.KB*100)/1024)
+				utils.Debug("Health: Worker %d slow (%.2f KB/s vs mean %.2f KB/s), cancelling",
+					workerID, workerSpeed/1024, meanSpeed/1024)
 				if active.Cancel != nil {
 					active.Cancel()
 				}

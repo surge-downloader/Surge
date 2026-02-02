@@ -26,6 +26,7 @@ Surge is designed for power users who prefer a keyboard-driven workflow. It feat
 Most browsers open a single connection for a download. Surge opens multiple (up to 32), splits the file, and downloads chunks in parallel. But we take it a step further:
 
 - **Smart "Work Stealing":** If a fast worker finishes its chunk, it doesn't sit idle. It "steals" work from slower workers to ensure the download finishes as fast as physics allows.
+- **Multiple Mirrors:** Download from multiple sources simultaneously. Surge distributes workers across all available mirrors and automatically handles failover.
 - **Slow Worker Restart:** We monitor mean speeds. If a worker is lagging (< 0.3x average), Surge kills it and restarts the connection to find a faster route.
 - **Daemon Architecture:** Surge runs a single background "engine." You can open 10 different terminal tabs and queue downloads; they all funnel into one efficient manager.
 - **Beautiful TUI:** Built with Bubble Tea & Lipgloss, it looks good while it works.
@@ -78,6 +79,9 @@ surge
 # Start TUI with downloads queued
 surge https://example.com/file1.zip https://example.com/file2.zip
 
+# Start with multiple mirrors (comma-separated or multiple arguments)
+surge https://mirror1.com/file.zip,https://mirror2.com/file.zip
+
 # Combine URLs and batch file
 surge https://example.com/file.zip --batch urls.txt
 
@@ -95,6 +99,9 @@ Great for servers, Raspberry Pis, or background processes.
 ```bash
 # Start the server
 surge server start
+
+# Start the server with a download
+surge server start https://url.com/file.zip,https://mirror1.com/file.zip,https://mirror2.com/file.zip
 
 # Start on a specific port with options
 surge server start --port 8090 --no-resume

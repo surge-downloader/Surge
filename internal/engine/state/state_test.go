@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/surge-downloader/surge/internal/engine/types"
@@ -528,5 +529,85 @@ func TestRemoveCompletedDownloads(t *testing.T) {
 	}
 	if downloads[0].ID != "rm-3" {
 		t.Errorf("Remaining download ID = %s, want 'rm-3'", downloads[0].ID)
+	}
+}
+
+func TestMirrorsPersistence(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer CloseDB()
+
+	testURL := "https://example.com/mirror-test.zip"
+	testDestPath := filepath.Join(tmpDir, "mirror-test.zip")
+	mirrors := []string{
+		"https://mirror1.example.com/file.zip",
+		"https://mirror2.example.com/file.zip",
+	}
+
+	// 1. Test DownloadState (Resume)
+	state := &types.DownloadState{
+		ID:         "mirror-state-id",
+		URL:        testURL,
+		DestPath:   testDestPath,
+		TotalSize:  1000,
+		Downloaded: 100,
+		Filename:   "mirror-test.zip",
+		Mirrors:    mirrors,
+	}
+
+	if err := SaveState(testURL, testDestPath, state); err != nil {
+		t.Fatalf("SaveState failed: %v", err)
+	}
+
+	loadedState, err := LoadState(testURL, testDestPath)
+	if err != nil {
+		t.Fatalf("LoadState failed: %v", err)
+	}
+
+	if len(loadedState.Mirrors) != 2 {
+		t.Errorf("Loaded mirrors count = %d, want 2", len(loadedState.Mirrors))
+	} else {
+		if loadedState.Mirrors[0] != mirrors[0] || loadedState.Mirrors[1] != mirrors[1] {
+			t.Errorf("Loaded mirrors mismatch: %v", loadedState.Mirrors)
+		}
+	}
+
+	// 2. Test DownloadEntry (Master List / Completed)
+	entry := types.DownloadEntry{
+		ID:          "mirror-entry-id",
+		URL:         testURL,
+		DestPath:    testDestPath + ".completed",
+		TotalSize:   1000,
+		Downloaded:  1000,
+		Status:      "completed",
+		Mirrors:     mirrors,
+		CompletedAt: time.Now().Unix(),
+	}
+
+	if err := AddToMasterList(entry); err != nil {
+		t.Fatalf("AddToMasterList failed: %v", err)
+	}
+
+	loadedEntries, err := LoadCompletedDownloads()
+	if err != nil {
+		t.Fatalf("LoadCompletedDownloads failed: %v", err)
+	}
+
+	foundVal := false
+	for _, e := range loadedEntries {
+		if e.ID == "mirror-entry-id" {
+			foundVal = true
+			if len(e.Mirrors) != 2 {
+				t.Errorf("Entry mirrors count = %d, want 2", len(e.Mirrors))
+			} else {
+				if e.Mirrors[0] != mirrors[0] || e.Mirrors[1] != mirrors[1] {
+					t.Errorf("Entry mirrors mismatch: %v", e.Mirrors)
+				}
+			}
+			break
+		}
+	}
+	if !foundVal {
+		t.Error("Completed download not found in list")
 	}
 }

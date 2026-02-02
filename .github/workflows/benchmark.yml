@@ -67,38 +67,50 @@ jobs:
       - name: Run Benchmark
         id: benchmark
         env:
-          # Use input if manual trigger, otherwise fallback to defaults
-          BENCH_URL: ${{ inputs.url || 'https://sin-speed.hetzner.com/1GB.bin' }}
-          BENCH_ITERATIONS: ${{ inputs.iterations || '5' }}
-          BASELINE_COMPARE: ${{ inputs.baseline || 'n' }}
+          # Use 'github.event.inputs' for manual triggers, default for others
+          BENCH_URL: ${{ github.event.inputs.url || 'https://sin-speed.hetzner.com/1GB.bin' }}
+          # On push/PR, we usually want 1 iteration to save time, 5 for manual
+          BENCH_ITERATIONS: ${{ github.event.inputs.iterations || '5' }}
+          # Default to 'y' for PRs to see regressions, 'n' for simple pushes
+          BASELINE_COMPARE: ${{ github.event.inputs.baseline || 'n' }}
 
         run: |
           cd current
           
-          # Conditionally set the baseline flag
-          BASELINE_FLAG=""
+          # 1. Build the command arguments dynamically
+          ARGS=""
+          
+          # Add URL (Positional argument in your script)
+          ARGS="$ARGS $BENCH_URL"
+          
+          # Add Iterations
+          ARGS="$ARGS -n $BENCH_ITERATIONS"
+          
+          # Add Baseline ONLY if requested
           if [[ "$BASELINE_COMPARE" == "y" ]]; then
-            BASELINE_FLAG="--surge-baseline ../surge-baseline"
+            echo "Comparing against baseline..."
+            ARGS="$ARGS --surge-baseline ../surge-baseline"
           fi
 
-          # Run benchmark using the variables
-          python3 benchmark.py "$BENCH_URL" \
-            --surge-exec ../surge-current \
-            $BASELINE_FLAG \
-            --aria2 \
-            --axel \
+          # 2. Run the command using the constructed ARGS
+          # We pass the current build as the executable
+          python3 benchmark.py \
+            $ARGS \
+            --surge \
             --speedtest \
-            -n "$BENCH_ITERATIONS" | tee benchmark_output.txt
+            --axel \
+            --aria2 \
+            | tee benchmark_output.txt
 
-          # Read file content into environment variable for next step
+          # 3. Save output to GITHUB_ENV for the next step (multiline safe)
           echo "BENCHMARK_RESULTS<<EOF" >> $GITHUB_ENV
           cat benchmark_output.txt >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-          # Write to Job Summary
+          # 4. Write to Job Summary (Markdown)
           echo "## 🚀 Benchmark Results" >> $GITHUB_STEP_SUMMARY
-          echo "URL: $BENCH_URL" >> $GITHUB_STEP_SUMMARY
-          echo "Iterations: $BENCH_ITERATIONS" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** $BENCH_URL" >> $GITHUB_STEP_SUMMARY
+          echo "**Iterations:** $BENCH_ITERATIONS" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           cat benchmark_output.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY

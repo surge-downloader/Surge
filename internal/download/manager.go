@@ -167,7 +167,7 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	if probe.SupportsRange && probe.FileSize > 0 {
 		utils.Debug("Using concurrent downloader")
 		d := concurrent.NewConcurrentDownloader(cfg.ID, cfg.ProgressCh, cfg.State, cfg.Runtime)
-		downloadErr = d.Download(ctx, cfg.URL, destPath, probe.FileSize, cfg.Verbose)
+		downloadErr = d.Download(ctx, cfg.URL, cfg.Mirrors, destPath, probe.FileSize, cfg.Verbose)
 	} else {
 		// Fallback to single-threaded downloader
 		utils.Debug("Using single-threaded downloader")
