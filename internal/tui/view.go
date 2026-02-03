@@ -177,13 +177,32 @@ func (m RootModel) View() string {
 	}
 
 	// --- RIGHT COLUMN HEIGHTS ---
+	// Split into 3 parts: Graph (top), Details (middle), Chunks (bottom)
 	graphHeight := availableHeight / 3
 	if graphHeight < 9 {
 		graphHeight = 9
 	}
-	detailHeight := availableHeight - graphHeight
-	if detailHeight < 10 {
-		detailHeight = 10
+
+	remainingHeight := availableHeight - graphHeight
+	detailHeight := remainingHeight / 2
+	if detailHeight < 8 {
+		detailHeight = 8
+	}
+
+	chunkHeight := remainingHeight - detailHeight
+	// ensure minimums
+	if chunkHeight < 6 {
+		chunkHeight = 6
+	}
+
+	// Recalculate if we overshot total height (adjust detail/chunk)
+	totalUsed := graphHeight + detailHeight + chunkHeight
+	if totalUsed > availableHeight {
+		// Reduce chunk height first
+		chunkHeight -= (totalUsed - availableHeight)
+		if chunkHeight < 0 {
+			chunkHeight = 0
+		}
 	}
 
 	// --- SECTION 1: HEADER & LOGO (Top Left) + LOG BOX (Top Right) ---
@@ -434,10 +453,11 @@ func (m RootModel) View() string {
 	}
 	listBox := renderBtopBox(leftTitle, PaneTitleStyle.Render(" Downloads "), listInner, leftWidth, listHeight, downloadsBorderColor)
 
-	// --- SECTION 4: DETAILS PANE (Bottom Right) ---
+	// --- SECTION 4: DETAILS PANE (Middle Right) ---
 	var detailContent string
-	if d := m.GetSelectedDownload(); d != nil {
-		detailContent = renderFocusedDetails(d, rightWidth-4)
+	selected := m.GetSelectedDownload()
+	if selected != nil {
+		detailContent = renderFocusedDetails(selected, rightWidth-4)
 	} else {
 		detailContent = lipgloss.Place(rightWidth-4, detailHeight-4, lipgloss.Center, lipgloss.Center,
 			lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("No Download Selected"))
@@ -445,13 +465,37 @@ func (m RootModel) View() string {
 
 	detailBox := renderBtopBox("", PaneTitleStyle.Render(" File Details "), detailContent, rightWidth, detailHeight, ColorGray)
 
+	// --- SECTION 5: CHUNK MAP PANE (Bottom Right) ---
+	var chunkContent string
+	if selected != nil {
+		// New chunk map component
+		chunks := selected.state.GetChunks()
+		chunkMap := components.NewChunkMapModel(chunks, rightWidth-4)
+		chunkContent = lipgloss.NewStyle().Padding(1, 2).Render(chunkMap.View())
+
+		// If no chunks (not initialized or small file), show message
+		if len(chunks) == 0 {
+			msg := "Chunk visualization not available"
+			if selected.done {
+				msg = "Download Complete"
+			}
+			chunkContent = lipgloss.Place(rightWidth-4, chunkHeight-2, lipgloss.Center, lipgloss.Center,
+				lipgloss.NewStyle().Foreground(ColorGray).Render(msg))
+		}
+	} else {
+		chunkContent = lipgloss.Place(rightWidth-4, chunkHeight-2, lipgloss.Center, lipgloss.Center,
+			lipgloss.NewStyle().Foreground(ColorGray).Render(""))
+	}
+
+	chunkBox := renderBtopBox("", PaneTitleStyle.Render(" File Map "), chunkContent, rightWidth, chunkHeight, ColorGray)
+
 	// --- ASSEMBLY ---
 
 	// Left Column
 	leftColumn := lipgloss.JoinVertical(lipgloss.Left, headerBox, listBox)
 
-	// Right Column
-	rightColumn := lipgloss.JoinVertical(lipgloss.Left, graphBox, detailBox)
+	// Right Column (Graph + Detail + Chunk)
+	rightColumn := lipgloss.JoinVertical(lipgloss.Left, graphBox, detailBox, chunkBox)
 
 	// Body
 	body := lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, rightColumn)
