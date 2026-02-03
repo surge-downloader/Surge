@@ -589,7 +589,7 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 	divider := lipgloss.NewStyle().
 		Foreground(ColorGray).
 		Width(contentWidth).
-		Render("\n" + strings.Repeat("─", contentWidth))
+		Render("\n" + strings.Repeat("─", contentWidth) + "\n")
 
 	// Padding Style for sections
 	sectionStyle := lipgloss.NewStyle().
@@ -621,8 +621,12 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 	}
 	d.progress.Width = progressWidth
 	progView := d.progress.ViewAs(pct)
+
+	progLabel := lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("Progress: ")
+	progContent := lipgloss.JoinVertical(lipgloss.Left, progLabel, progView)
+
 	// Progress bar has its own width handling usually, but let's wrap it to be sure
-	progSection := lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Center).Render(progView)
+	progSection := lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Center).Render(progContent)
 
 	// --- 4. Stats Grid Section ---
 	var speedStr, etaStr, sizeStr, timeStr string
@@ -691,11 +695,11 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 				errorCount++
 			}
 		}
-		mirrorInfo := lipgloss.JoinHorizontal(lipgloss.Left,
-			StatsLabelStyle.Render("Mirrors: "),
-			lipgloss.NewStyle().Foreground(ColorLightGray).Render(fmt.Sprintf("%d total (%d active, %d errors)", total, activeCount, errorCount)),
-		)
-		mirrorSection = sectionStyle.Render(mirrorInfo)
+		// More prominent Mirrors display
+		mirrorLabel := StatsLabelStyle.Render("Mirrors")
+		mirrorStats := lipgloss.NewStyle().Foreground(ColorLightGray).Render(fmt.Sprintf("%d Active / %d Total (%d Errors)", activeCount, total, errorCount))
+
+		mirrorSection = sectionStyle.Render(lipgloss.JoinVertical(lipgloss.Left, mirrorLabel, mirrorStats))
 	}
 
 	// --- 6. Error Section ---
