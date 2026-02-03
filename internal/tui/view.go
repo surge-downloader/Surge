@@ -517,7 +517,7 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 	}
 
 	// Consistent content width for centering
-	contentWidth := w - 6
+	contentWidth := w - 4
 
 	// Status Box
 	statusStr := getDownloadStatus(d)
@@ -529,243 +529,127 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 
 	statusBox := statusStyle.Render(statusStr)
 
-	// Section divider
-	divider := lipgloss.NewStyle().
-		Foreground(ColorGray).
-		Render(strings.Repeat("─", contentWidth))
+	// Compact File Info
+	// Line 1: Filename (Truncated)
+	// Line 2: Path (Truncated)
+	fileInfo := lipgloss.JoinVertical(lipgloss.Left,
+		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("File: "), StatsValueStyle.Render(truncateString(d.Filename, contentWidth-8))),
+		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Path: "), StatsValueStyle.Render(truncateString(d.Destination, contentWidth-8))),
+	)
 
-	// File info section - Status removed from here
-	fileInfoLines := []string{
-		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Filename:"), StatsValueStyle.Render(truncateString(d.Filename, contentWidth-14))),
-		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Filepath:"), StatsValueStyle.Render(truncateString(d.Destination, contentWidth-14))),
-	}
-
-	// Size display differs based on completed status
-	if d.done {
-		fileInfoLines = append(fileInfoLines,
-			lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Size:"), StatsValueStyle.Render(utils.ConvertBytesToHumanReadable(d.Total))),
-		)
-	} else {
-		fileInfoLines = append(fileInfoLines,
-			lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Size:"), StatsValueStyle.Render(fmt.Sprintf("%s / %s", utils.ConvertBytesToHumanReadable(d.Downloaded), utils.ConvertBytesToHumanReadable(d.Total)))),
-		)
-	}
-
-	fileInfo := lipgloss.JoinVertical(lipgloss.Left, fileInfoLines...)
-
-	// Mirrors/URL Section
-	// We replace specific URL section with a mirrors list if available
-	var sourceSection string
-
-	if d.state != nil && len(d.state.GetMirrors()) > 0 {
-		mirrors := d.state.GetMirrors()
-		var mirrorLines []string
-		mirrorLines = append(mirrorLines, StatsLabelStyle.Render("Mirrors:"))
-
-		for _, m := range mirrors {
-			icon := "✔"
-			color := ColorStateDone
-			if m.Error {
-				icon = "✖"
-				color = ColorStateError
-			}
-
-			line := lipgloss.JoinHorizontal(lipgloss.Left,
-				lipgloss.NewStyle().Foreground(color).PaddingRight(1).Render(icon),
-				lipgloss.NewStyle().Foreground(ColorLightGray).Render(truncateString(m.URL, contentWidth-16)),
-			)
-			mirrorLines = append(mirrorLines, line)
-		}
-		sourceSection = lipgloss.JoinVertical(lipgloss.Left, mirrorLines...)
-	} else {
-		// Fallback to simple URL line if no mirrors info available
-		sourceSection = lipgloss.JoinHorizontal(lipgloss.Left,
-			StatsLabelStyle.Render("URL:"),
-			lipgloss.NewStyle().Foreground(ColorLightGray).Render(truncateString(d.URL, contentWidth-14)),
-		)
-	}
-
-	IDSection := lipgloss.JoinHorizontal(lipgloss.Left,
-		StatsLabelStyle.Render("ID:"),
+	// ID - Always visible
+	idInfo := lipgloss.JoinHorizontal(lipgloss.Left,
+		StatsLabelStyle.Render("ID:   "),
 		lipgloss.NewStyle().Foreground(ColorLightGray).Render(d.ID),
 	)
 
-	// For errored downloads, show error details
-	if d.err != nil {
-		errorStyle := lipgloss.NewStyle().Foreground(ColorStateError).Width(contentWidth - 4)
-		errorLabel := lipgloss.NewStyle().Foreground(ColorStateError).Bold(true).Render("Error Details")
-
-		// Word wrap the error message
-		errMsg := d.err.Error()
-
-		errorSection := lipgloss.JoinVertical(lipgloss.Left,
-			errorLabel,
-			"",
-			errorStyle.Render(errMsg),
-		)
-
-		content := lipgloss.JoinVertical(lipgloss.Left,
-			statusBox,
-			"",
-			fileInfo,
-			"",
-			divider,
-			"",
-			errorSection,
-			"",
-			divider,
-			"",
-			sourceSection,
-			IDSection,
-		)
-
-		return lipgloss.NewStyle().
-			Padding(0, 2).
-			Render(content)
-	}
-
-	// For completed downloads, show simplified view
-	if d.done {
-		// Calculate average speed for completed download
-		var avgSpeedStr string
-		if d.Elapsed.Seconds() > 0 {
-			avgSpeed := float64(d.Total) / d.Elapsed.Seconds()
-			avgSpeedStr = fmt.Sprintf("%.2f MB/s", avgSpeed/Megabyte)
-		} else {
-			avgSpeedStr = "N/A"
-		}
-
-		statsSection := lipgloss.JoinVertical(lipgloss.Left,
-			lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Time Taken:"), StatsValueStyle.Render(d.Elapsed.Round(time.Second).String())),
-			lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Avg Speed:"), StatsValueStyle.Render(avgSpeedStr)),
-		)
-
-		content := lipgloss.JoinVertical(lipgloss.Left,
-			statusBox,
-			"",
-			IDSection,
-			fileInfo,
-			"",
-			divider,
-			"",
-			statsSection,
-			"",
-			divider,
-			"",
-			sourceSection,
-		)
-
-		return lipgloss.NewStyle().
-			Padding(0, 2).
-			Render(content)
-	}
-
-	// For paused/queued downloads, show simplified view without ETA/Speed/Conns
-	if d.paused || d.Speed == 0 {
-		// Progress bar
-		progressWidth := w - 12
-		if progressWidth < 20 {
-			progressWidth = 20
-		}
-		d.progress.Width = progressWidth
-		progView := d.progress.ViewAs(pct)
-
-		progressLabel := lipgloss.NewStyle().
-			Foreground(ColorNeonCyan).
-			Bold(true).
-			Render("Progress")
-		progressSection := lipgloss.JoinVertical(lipgloss.Left,
-			progressLabel,
-			"",
-			lipgloss.NewStyle().MarginLeft(1).Render(progView),
-		)
-
-		// Elapsed time for paused downloads
-		elapsedSection := lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Elapsed:"), StatsValueStyle.Render(d.Elapsed.Round(time.Second).String()))
-
-		content := lipgloss.JoinVertical(lipgloss.Left,
-			statusBox,
-			"",
-			fileInfo,
-			divider,
-			"",
-			progressSection,
-			"",
-			divider,
-			"",
-			elapsedSection,
-			"",
-			divider,
-			"",
-			sourceSection,
-			IDSection,
-		)
-
-		return lipgloss.NewStyle().
-			Padding(0, 2).
-			Render(content)
-	}
-
-	// For active downloads, show full view with progress, ETA, speed, connections
-	// Progress bar with margins
-	progressWidth := w - 12
+	// Progress Section
+	progressWidth := w - 4
 	if progressWidth < 20 {
 		progressWidth = 20
 	}
 	d.progress.Width = progressWidth
 	progView := d.progress.ViewAs(pct)
 
-	progressLabel := lipgloss.NewStyle().
-		Foreground(ColorNeonCyan).
-		Bold(true).
-		Render("Progress")
-	progressSection := lipgloss.JoinVertical(lipgloss.Left,
-		progressLabel,
-		"",
-		lipgloss.NewStyle().MarginLeft(1).Render(progView),
-	)
+	// Stats Grid (2 Columns)
+	// Col 1: Size, Speed
+	// Col 2: ETA, Time
 
-	// Calculate ETA
-	var etaStr string
-	if d.Speed > 0 && d.Total > 0 {
-		remaining := d.Total - d.Downloaded
-		etaSeconds := float64(remaining) / d.Speed
-		etaDuration := time.Duration(etaSeconds) * time.Second
-		etaStr = etaDuration.Round(time.Second).String()
+	var speedStr, etaStr, sizeStr, timeStr string
+
+	// Size
+	if d.done {
+		sizeStr = utils.ConvertBytesToHumanReadable(d.Total)
 	} else {
-		etaStr = "∞"
+		sizeStr = fmt.Sprintf("%s / %s", utils.ConvertBytesToHumanReadable(d.Downloaded), utils.ConvertBytesToHumanReadable(d.Total))
 	}
 
-	// Stats section with ETA
-	statsSection := lipgloss.JoinVertical(lipgloss.Left,
-		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Speed:"), StatsValueStyle.Render(fmt.Sprintf("%.2f MB/s", d.Speed/Megabyte))),
-		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("ETA:"), StatsValueStyle.Render(etaStr)),
-		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Conns:"), StatsValueStyle.Render(fmt.Sprintf("%d", d.Connections))),
-		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Elapsed:"), StatsValueStyle.Render(d.Elapsed.Round(time.Second).String())),
+	// Speed & ETA
+	if d.done {
+		if d.Elapsed.Seconds() > 0 {
+			avgSpeed := float64(d.Total) / d.Elapsed.Seconds()
+			speedStr = fmt.Sprintf("%.2f MB/s (Avg)", avgSpeed/Megabyte)
+		} else {
+			speedStr = "N/A"
+		}
+		etaStr = "Done"
+	} else if d.paused || d.Speed == 0 {
+		speedStr = "Paused"
+		etaStr = "∞"
+	} else {
+		speedStr = fmt.Sprintf("%.2f MB/s", d.Speed/Megabyte)
+		if d.Total > 0 {
+			remaining := d.Total - d.Downloaded
+			etaSeconds := float64(remaining) / d.Speed
+			etaDuration := time.Duration(etaSeconds) * time.Second
+			etaStr = etaDuration.Round(time.Second).String()
+		} else {
+			etaStr = "∞"
+		}
+	}
+
+	timeStr = d.Elapsed.Round(time.Second).String()
+
+	// Stats Layout
+	colWidth := contentWidth / 2
+	leftCol := lipgloss.JoinVertical(lipgloss.Left,
+		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Size:"), StatsValueStyle.Render(sizeStr)),
+		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Speed:"), StatsValueStyle.Render(speedStr)),
+	)
+	rightCol := lipgloss.JoinVertical(lipgloss.Left,
+		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Time:"), StatsValueStyle.Render(timeStr)),
+		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("ETA:"), StatsValueStyle.Render(etaStr)),
 	)
 
-	// Combine all sections with status box at top
+	statsGrid := lipgloss.JoinHorizontal(lipgloss.Top,
+		lipgloss.NewStyle().Width(colWidth).Render(leftCol),
+		lipgloss.NewStyle().Width(colWidth).Render(rightCol),
+	)
+
+	// Mirrors (Compact)
+	var mirrorInfo string
+	if d.state != nil && len(d.state.GetMirrors()) > 0 {
+		activeCount := 0
+		errorCount := 0
+		total := len(d.state.GetMirrors())
+		for _, m := range d.state.GetMirrors() {
+			if m.Active {
+				activeCount++
+			}
+			if m.Error {
+				errorCount++
+			}
+		}
+		mirrorInfo = lipgloss.JoinHorizontal(lipgloss.Left,
+			StatsLabelStyle.Render("Mirrors: "),
+			lipgloss.NewStyle().Foreground(ColorLightGray).Render(fmt.Sprintf("%d total (%d active, %d errors)", total, activeCount, errorCount)),
+		)
+	}
+
+	// Error (if any)
+	var errorInfo string
+	if d.err != nil {
+		errorInfo = lipgloss.NewStyle().Foreground(ColorStateError).Render("Error: " + d.err.Error())
+	}
+
+	// Combine Compactly
+	// Uses much less vertical space than before
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		statusBox,
-		"",
+		"", // tiny gap
 		fileInfo,
-		divider,
+		idInfo,
 		"",
-		progressSection,
+		progView,
 		"",
-		divider,
-		"",
-		statsSection,
-		"",
-		divider,
-		"",
-		sourceSection,
-		IDSection,
+		statsGrid,
+		"", // tiny gap
+		mirrorInfo,
+		errorInfo,
 	)
 
-	// Wrap in a container with reduced padding
 	return lipgloss.NewStyle().
-		Padding(0, 2).
+		Padding(0, 1). // Reduced padding
 		Render(content)
 }
 
