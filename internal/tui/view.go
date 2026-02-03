@@ -212,8 +212,8 @@ func (m RootModel) View() string {
 		// 1. Not Done (Completed)
 		// 2. Not Queued (Speed > 0 OR Paused OR Has Chunks)
 
-		_, width := selected.state.GetBitmap()
-		hasChunks := selected.state != nil && width > 0
+		bitmap, width, _, _, _ := selected.state.GetBitmap()
+		hasChunks := selected.state != nil && len(bitmap) > 0 && width > 0
 		isQueued := !selected.paused && selected.Speed == 0 && !hasChunks
 
 		if !selected.done && !isQueued {
@@ -222,7 +222,7 @@ func (m RootModel) View() string {
 	}
 
 	if showChunkMap {
-		_, bitmapWidth := selected.state.GetBitmap()
+		_, bitmapWidth, _, _, _ := selected.state.GetBitmap()
 		// chunkMapWidth = rightWidth - 4 (box border) - 2 (inner padding) = rightWidth - 6
 		contentLines := components.CalculateHeight(bitmapWidth, rightWidth-6)
 		if contentLines > 0 {
@@ -541,8 +541,8 @@ func (m RootModel) View() string {
 		var chunkContent string
 		if selected != nil {
 			// New chunk map component
-			bitmap, bitmapWidth := selected.state.GetBitmap()
-			chunkMap := components.NewChunkMapModel(bitmap, bitmapWidth, rightWidth-6, selected.paused)
+			bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress := selected.state.GetBitmap()
+			chunkMap := components.NewChunkMapModel(bitmap, bitmapWidth, rightWidth-6, selected.paused, totalSize, chunkSize, chunkProgress)
 			chunkContent = lipgloss.NewStyle().Padding(1, 2).Render(chunkMap.View())
 
 			// If no chunks (not initialized or small file), show message

@@ -26,7 +26,7 @@ func TestChunkAccuracy(t *testing.T) {
 	// Calculate percentage
 	// Calculate visual percentage
 	activeCount := 0
-	bitmap, width := state.GetBitmap()
+	bitmap, width, _, _, _ := state.GetBitmap()
 
 	// Helpers to decode bitmap manually for test verification
 	getComp := func(idx int) bool {

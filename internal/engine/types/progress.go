@@ -375,15 +375,19 @@ func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
 }
 
 // GetBitmap returns a copy of the bitmap and metadata
-func (ps *ProgressState) GetBitmap() ([]byte, int) {
+func (ps *ProgressState) GetBitmap() ([]byte, int, int64, int64, []int64) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
 	if len(ps.ChunkBitmap) == 0 {
-		return nil, 0
+		return nil, 0, 0, 0, nil
 	}
 
 	result := make([]byte, len(ps.ChunkBitmap))
 	copy(result, ps.ChunkBitmap)
-	return result, ps.BitmapWidth
+
+	progressResult := make([]int64, len(ps.ChunkProgress))
+	copy(progressResult, ps.ChunkProgress)
+
+	return result, ps.BitmapWidth, ps.TotalSize, ps.ActualChunkSize, progressResult
 }

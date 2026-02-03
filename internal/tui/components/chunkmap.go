@@ -10,19 +10,25 @@ import (
 
 // ChunkMapModel visualizes download chunks as a grid using a bitmap
 type ChunkMapModel struct {
-	Bitmap      []byte
-	BitmapWidth int // Total number of chunks in bitmap
-	Width       int // UI render width (columns * 2)
-	Paused      bool
+	Bitmap          []byte
+	BitmapWidth     int // Total number of chunks in bitmap
+	Width           int // UI render width (columns * 2)
+	Paused          bool
+	TotalSize       int64
+	ActualChunkSize int64
+	ChunkProgress   []int64
 }
 
 // NewChunkMapModel creates a new chunk map visualization
-func NewChunkMapModel(bitmap []byte, bitmapWidth int, width int, paused bool) ChunkMapModel {
+func NewChunkMapModel(bitmap []byte, bitmapWidth int, width int, paused bool, totalSize int64, actualChunkSize int64, chunkProgress []int64) ChunkMapModel {
 	return ChunkMapModel{
-		Bitmap:      bitmap,
-		BitmapWidth: bitmapWidth,
-		Width:       width,
-		Paused:      paused,
+		Bitmap:          bitmap,
+		BitmapWidth:     bitmapWidth,
+		Width:           width,
+		Paused:          paused,
+		TotalSize:       totalSize,
+		ActualChunkSize: actualChunkSize,
+		ChunkProgress:   chunkProgress,
 	}
 }
 
@@ -53,65 +59,107 @@ func (m ChunkMapModel) View() string {
 	}
 
 	// Target 10 rows to maintain the "full grid" look requested
-	// 5 * Width is roughly 10 rows (since 1 row = Width / 2 blocks)
 	targetChunks := 10 * cols
 
 	// Downsample logic
 	visualChunks := make([]types.ChunkStatus, targetChunks)
-	sourceLen := m.BitmapWidth
+
+	// We calculate progress based on byte ranges of the visual blocks
+	bytesPerBlock := float64(m.TotalSize) / float64(targetChunks)
 
 	for i := 0; i < targetChunks; i++ {
-		// Map target index i to source range [start, end)
-		// Use float math for even distribution
-		start := int(float64(i) * float64(sourceLen) / float64(targetChunks))
-		end := int(float64(i+1) * float64(sourceLen) / float64(targetChunks))
-
-		// Ensure we cover at least one chunk (upsampling case)
-		if start == end {
-			end++
+		// Calculate byte range for this visual block
+		blockStartByte := int64(float64(i) * bytesPerBlock)
+		blockEndByte := int64(float64(i+1) * bytesPerBlock)
+		if blockEndByte > m.TotalSize {
+			blockEndByte = m.TotalSize
 		}
 
-		if end > sourceLen {
-			end = sourceLen
-		}
-		if start >= end {
-			start = end - 1
-			if start < 0 {
-				start = 0
-			}
+		blockSize := blockEndByte - blockStartByte
+		if blockSize <= 0 {
+			visualChunks[i] = types.ChunkPending
+			continue
 		}
 
-		// Determine status for this visual block based on source range
-		// Logic:
-		// - If all source blocks are Completed -> Completed
-		// - If ANY source block is Downloading -> Downloading (unless strict mode requested?)
-		// - MIXED Completed/Pending -> Show Pending (Gray) effectively.
-		//   (Old Logic: Showed Downloading which caused "Ghost Pinks")
+		// Find which source chunks overlap with this range
+		// chunkIndex = byteOffset / ActualChunkSize
+		startChunkIdx := int(blockStartByte / m.ActualChunkSize)
+		endChunkIdx := int((blockEndByte - 1) / m.ActualChunkSize)
 
+		if startChunkIdx < 0 {
+			startChunkIdx = 0
+		}
+		if endChunkIdx >= m.BitmapWidth {
+			endChunkIdx = m.BitmapWidth - 1
+		}
+
+		// Calculate total downloaded bytes within this visual block
+		var downloadedInBlock int64
 		allCompleted := true
-		anyDownloading := false
-		// anyCompleted := false // Unused now
 
-		for j := start; j < end; j++ {
-			s := m.getChunkState(j)
+		for cIdx := startChunkIdx; cIdx <= endChunkIdx; cIdx++ {
+			chunkStartByte := int64(cIdx) * m.ActualChunkSize
+			chunkEndByte := chunkStartByte + m.ActualChunkSize
+			// Clamp to TotalSize for the last chunk
+			// (Use m.TotalSize logic or implied CheckChunk logic, simpler to use logic)
 
-			if s != types.ChunkCompleted {
+			state := m.getChunkState(cIdx)
+			if state != types.ChunkCompleted {
 				allCompleted = false
 			}
-			// else { anyCompleted = true }
 
-			if s == types.ChunkDownloading {
-				anyDownloading = true
+			// Intersection of Chunk and VisualBlock
+			intersectStart := blockStartByte
+			if chunkStartByte > intersectStart {
+				intersectStart = chunkStartByte
+			}
+
+			intersectEnd := blockEndByte
+			if chunkEndByte < intersectEnd {
+				intersectEnd = chunkEndByte
+			}
+
+			overlap := intersectEnd - intersectStart
+			if overlap <= 0 {
+				continue
+			}
+
+			// Determine how many bytes of this chunk are downloaded
+			// Check simple state first
+			// state was already fetched above
+			if state == types.ChunkCompleted {
+				downloadedInBlock += overlap
+			} else if state == types.ChunkDownloading && len(m.ChunkProgress) > cIdx {
+				// Partial chunk logic
+				// We assume bytes assume filled from the start of the chunk
+				// downloadedBytes := m.ChunkProgress[cIdx]
+				// validRange: [chunkStartByte, chunkStartByte + downloadedBytes)
+
+				validEndByte := chunkStartByte + m.ChunkProgress[cIdx]
+
+				// Calculate overlap of [intersectStart, intersectEnd) with [chunkStartByte, validEndByte)
+				// Since chunkStartByte <= intersectStart (mostly), we focus on the end.
+
+				validIntersectEnd := intersectEnd
+				if validEndByte < validIntersectEnd {
+					validIntersectEnd = validEndByte
+				}
+
+				validOverlap := validIntersectEnd - intersectStart
+				if validOverlap > 0 {
+					downloadedInBlock += validOverlap
+				}
 			}
 		}
 
+		// Determine Status
 		if allCompleted {
 			visualChunks[i] = types.ChunkCompleted
-		} else if anyDownloading {
+		} else if downloadedInBlock > 0 {
+			// If we have ANY bytes in this visual block, it is "Downloading" (or Paused Partial)
+			// This creates the "granular progress" we want.
 			visualChunks[i] = types.ChunkDownloading
 		} else {
-			// Mixed Completed/Pending OR all Pending -> Render as Pending
-			// This removes the "Ghost Pink" effect where a mix of C and P was shown as D.
 			visualChunks[i] = types.ChunkPending
 		}
 	}

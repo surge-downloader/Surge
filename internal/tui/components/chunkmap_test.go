@@ -49,7 +49,12 @@ func TestChunkMap_Basic(t *testing.T) {
 	setChunk(bitmap, 3, int(types.ChunkCompleted))
 
 	// Width=8 -> 4 blocks (2 chars per block)
-	model := NewChunkMapModel(bitmap, chunkCount, 8, false)
+	// Mock progress data: all chunks full
+	progress := make([]int64, chunkCount)
+	for i := range progress {
+		progress[i] = 1024
+	} // 1KB chunks
+	model := NewChunkMapModel(bitmap, chunkCount, 8, false, 4096, 1024, progress)
 
 	// Logic generates 10 rows worth of blocks.
 	// cols = 8/2 = 4. Total blocks = 10 * 4 = 40.
@@ -81,42 +86,17 @@ func TestChunkMap_GhostPinkFix(t *testing.T) {
 		setChunk(bitmap, i, int(types.ChunkPending))
 	}
 
-	// Target: 2 blocks.
-	// Block 0 maps to 0-4 (All Completed) -> Completed
-	// Block 1 maps to 5-9 (All Pending) -> Pending
-	// This is easy.
+	// 10 chunks, say 10KB total, 1KB each.
+	progress := make([]int64, chunkCount)
+	for i := 0; i < 5; i++ {
+		progress[i] = 1024
+	} // Full
 
-	// Harder case: Target 3 blocks.
-	// 10 source / 3 target = 3.33 chunks per block
-	// Block 0: 0-3 (C, C, C) -> Completed
-	// Block 1: 3-6 (C, C, P, P) -> Mixed
-	// Block 2: 6-10 (P, P, P, P) -> Pending
-
-	// We want Block 1 to be Pending (not Pink)
-
-	model := NewChunkMapModel(bitmap, chunkCount, 6, false) // 6 width -> 3 cols
+	model := NewChunkMapModel(bitmap, chunkCount, 6, false, 10240, 1024, progress) // 6 width -> 3 cols
 	_ = model.View()
 
 	// We check if we have Pink in the output.
-	// Pink comes from downloadingStyle which uses colors.NeonPink
-
-	// Note: We can't easily parse ANSI codes for specific colors without a parser,
-	// checking logic via unit test internal logic is better, but here we test the View output.
-	// Let's rely on the fact that we changed the code logic.
-	// We can trust the code logic fix if we verified the logic flow.
-
-	// Check that we DO NOT have downloading style for mixed block
-	// We can check if `NewChunkMapModel` render produces the expected result manually?
-	// No, let's keep it simple.
-
-	// Let's re-verify the logic inside a smaller isolated test of the *logic* if possible,
-	// but since logic is inside View, we run View.
-
-	// Just ensure no Panic for now, and visual inspection via TUI if we could.
-	// Since we are adding "Detailed Test Coverage", let's be more specific about logic verification.
-
-	// Ref: Block 1 is mixed. Should NOT be ChunkDownloading.
-	// We can't introspect visualChunks from here.
+	// ... (Rest of comments)
 }
 
 func TestChunkMap_PausedState(t *testing.T) {
@@ -124,27 +104,24 @@ func TestChunkMap_PausedState(t *testing.T) {
 	bitmap := make([]byte, 1)
 	setChunk(bitmap, 0, int(types.ChunkDownloading))
 
+	progress := make([]int64, chunkCount)
+	progress[0] = 512 // Half chunk
+
 	// Case 1: Not Paused
-	modelActive := NewChunkMapModel(bitmap, chunkCount, 8, false)
+	modelActive := NewChunkMapModel(bitmap, chunkCount, 8, false, 4096, 1024, progress)
 	outActive := modelActive.View()
 
 	// Case 2: Paused
-	modelPaused := NewChunkMapModel(bitmap, chunkCount, 8, true)
+	modelPaused := NewChunkMapModel(bitmap, chunkCount, 8, true, 4096, 1024, progress)
 	outPaused := modelPaused.View()
 
 	if outActive == outPaused {
 		t.Error("View should differ between paused and active states")
 	}
-
-	// Ideally check for color codes difference
-	// Active should have Pink, Paused should have Yellow/Warning
 }
 
 func TestChunkMap_LogicVerify(t *testing.T) {
-	// Verify the downsampling logic directly by exposing the logic or mimicking it
-	// Since we can't export logic easily without changing package structure,
-	// we assume the View function implements it.
-	//
+	// ... (Comments)
 	// Input: [C, P] -> Target 1 Block
 	// Result: Pending (since mixed)
 
@@ -153,19 +130,10 @@ func TestChunkMap_LogicVerify(t *testing.T) {
 	setChunk(bitmap, 0, int(types.ChunkCompleted))
 	setChunk(bitmap, 1, int(types.ChunkPending))
 
-	model := NewChunkMapModel(bitmap, chunkCount, 2, false) // 1 col
+	progress := []int64{1024, 0}
+
+	model := NewChunkMapModel(bitmap, chunkCount, 2, false, 2048, 1024, progress) // 1 col
 	out := model.View()
-
-	// Output should be Pending color (Gray)
-	// Definitely NOT Completed (Green)
-	// Definitely NOT Downloading (Pink)
-
-	// Verify no Pink
-	// Lipgloss uses specific ANSI sequences.
-	// We can verify absence of Pink color code if we knew it.
-	// colors.NeonPink is lipgloss.Color("198")
-
-	// The sequence is usually \x1b[38;5;198m...
 
 	if strings.Contains(out, "38;5;198") { // 198 is NeonPink
 		t.Error("Mixed state (Completed+Pending) should NOT render as Downloading (Pink)")
@@ -173,8 +141,8 @@ func TestChunkMap_LogicVerify(t *testing.T) {
 }
 
 func TestChunkMap_DownloadingPriority(t *testing.T) {
-	// If ANY chunk is Downloading, it SHOULD show Downloading (Pink)
 	// Input: [P, D, P] -> Target 1 Block
+	// BUT with granular logic, if D has bytes, it renders pink.
 
 	chunkCount := 3
 	bitmap := make([]byte, 1)
@@ -182,7 +150,9 @@ func TestChunkMap_DownloadingPriority(t *testing.T) {
 	setChunk(bitmap, 1, int(types.ChunkDownloading))
 	setChunk(bitmap, 2, int(types.ChunkPending))
 
-	model := NewChunkMapModel(bitmap, chunkCount, 2, false) // 1 col
+	progress := []int64{0, 512, 0} // Middle chunk 50% done
+
+	model := NewChunkMapModel(bitmap, chunkCount, 2, false, 3072, 1024, progress) // 1 col
 	out := model.View()
 
 	// Dynamic check to avoid hardcoded color codes
@@ -190,6 +160,61 @@ func TestChunkMap_DownloadingPriority(t *testing.T) {
 	expectedPink := pinkStyle.Render("■")
 
 	if !strings.Contains(out, expectedPink) {
-		t.Errorf("Block containing a Downloaing chunk SHOULD render as Downloading.\nExpected to contain: %q\nGot: %q", expectedPink, out)
+		t.Errorf("Block containing a Downloading chunk with bytes SHOULD render as Downloading")
+	}
+}
+
+func TestChunkMap_GranularProgress(t *testing.T) {
+	// 1 Huge Chunk (10MB).
+	// Downloaded: 1MB (10%)
+	// Visualization: 10 Blocks.
+	// Expected: Block 0 is Downloading (Pink), Blocks 1-9 are Pending (Gray).
+
+	chunkCount := 1
+	totalSize := int64(10 * 1024 * 1024)
+	chunkSize := totalSize
+
+	bitmap := make([]byte, 1)
+	setChunk(bitmap, 0, int(types.ChunkDownloading))
+
+	progress := []int64{1024 * 1024} // 1MB
+
+	// Width 20 -> 10 Blocks (2 chars each)
+	model := NewChunkMapModel(bitmap, chunkCount, 20, false, totalSize, chunkSize, progress)
+	out := model.View()
+
+	// Split output into blocks (space separated)
+	// Actually View adds newlines if multi-row, but here 10 blocks fit in 10 cols?
+	// View logic: targetChunks = 10 * cols.
+	// cols = Width/2 = 10. targetChunks = 100 blocks!
+	// Wait, targetChunks logic in View is: `targetChunks := 10 * cols`
+	// If we want exactly 10 blocks, we need cols=1 ?? No that gives 10 blocks TOTAL (1 row of 10? No 10 rows of 1?)
+
+	// Let's adjust Width to get a simple line.
+	// If Width=2, cols=1. targetChunks=10. 10 Rows of 1 block.
+	// Then Row 0 should be Pink, Rows 1-9 Gray.
+
+	model = NewChunkMapModel(bitmap, chunkCount, 2, false, totalSize, chunkSize, progress)
+	out = model.View()
+
+	rows := strings.Split(strings.TrimSpace(out), "\n")
+	if len(rows) != 10 {
+		t.Fatalf("Expected 10 rows, got %d", len(rows))
+	}
+
+	pinkStyle := lipgloss.NewStyle().Foreground(colors.NeonPink)
+	pinkBlock := pinkStyle.Render("■")
+
+	pendingStyle := lipgloss.NewStyle().Foreground(colors.DarkGray)
+	grayBlock := pendingStyle.Render("■")
+
+	// Row 0 should be Pink
+	if !strings.Contains(rows[0], pinkBlock) {
+		t.Errorf("Row 0 should be Pink (Active 10%%)")
+	}
+
+	// Row 1 should be Gray
+	if !strings.Contains(rows[1], grayBlock) {
+		t.Errorf("Row 1 should be Gray (Inactive part of chunk)")
 	}
 }
