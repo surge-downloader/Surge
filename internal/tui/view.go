@@ -205,8 +205,22 @@ func (m RootModel) View() string {
 	// Calculate Chunk Map Needs
 	chunkMapHeight := 0
 	chunkMapNeeded := 0
+	showChunkMap := false
 
 	if selected != nil {
+		// Show Chunk Map only if:
+		// 1. Not Done (Completed)
+		// 2. Not Queued (Speed > 0 OR Paused OR Has Chunks)
+
+		hasChunks := selected.state != nil && len(selected.state.GetChunks()) > 0
+		isQueued := !selected.paused && selected.Speed == 0 && !hasChunks
+
+		if !selected.done && !isQueued {
+			showChunkMap = true
+		}
+	}
+
+	if showChunkMap {
 		chunks := selected.state.GetChunks()
 		// chunkMapWidth = rightWidth - 4 (box border) - 2 (inner padding) = rightWidth - 6
 		contentLines := components.CalculateHeight(len(chunks), rightWidth-6)
@@ -217,8 +231,6 @@ func (m RootModel) View() string {
 			// Minimum for message "Chunk visualization not available"
 			chunkMapNeeded = 6
 		}
-	} else {
-		chunkMapNeeded = 6 // Default placeholder height
 	}
 
 	// Define Minimum Graph Height
@@ -506,28 +518,25 @@ func (m RootModel) View() string {
 	detailBox := renderBtopBox("", PaneTitleStyle.Render(" File Details "), detailContent, rightWidth, detailHeight, ColorGray)
 
 	// --- SECTION 5: CHUNK MAP PANE (Bottom Right) ---
-	var chunkContent string
-	if selected != nil {
-		// New chunk map component
-		chunks := selected.state.GetChunks()
-		chunkMap := components.NewChunkMapModel(chunks, rightWidth-6)
-		chunkContent = lipgloss.NewStyle().Padding(1, 2).Render(chunkMap.View())
+	var chunkBox string
+	if showChunkMap {
+		var chunkContent string
+		if selected != nil {
+			// New chunk map component
+			chunks := selected.state.GetChunks()
+			chunkMap := components.NewChunkMapModel(chunks, rightWidth-6)
+			chunkContent = lipgloss.NewStyle().Padding(1, 2).Render(chunkMap.View())
 
-		// If no chunks (not initialized or small file), show message
-		if len(chunks) == 0 {
-			msg := "Chunk visualization not available"
-			if selected.done {
-				msg = "Download Complete"
+			// If no chunks (not initialized or small file), show message
+			if len(chunks) == 0 {
+				msg := "Chunk visualization not available"
+				chunkContent = lipgloss.Place(rightWidth-4, chunkMapHeight-2, lipgloss.Center, lipgloss.Center,
+					lipgloss.NewStyle().Foreground(ColorGray).Render(msg))
 			}
-			chunkContent = lipgloss.Place(rightWidth-4, chunkMapHeight-2, lipgloss.Center, lipgloss.Center,
-				lipgloss.NewStyle().Foreground(ColorGray).Render(msg))
 		}
-	} else {
-		chunkContent = lipgloss.Place(rightWidth-4, chunkMapHeight-2, lipgloss.Center, lipgloss.Center,
-			lipgloss.NewStyle().Foreground(ColorGray).Render(""))
-	}
 
-	chunkBox := renderBtopBox("", PaneTitleStyle.Render(" File Map "), chunkContent, rightWidth, chunkMapHeight, ColorGray)
+		chunkBox = renderBtopBox("", PaneTitleStyle.Render(" File Map "), chunkContent, rightWidth, chunkMapHeight, ColorGray)
+	}
 
 	// --- ASSEMBLY ---
 
