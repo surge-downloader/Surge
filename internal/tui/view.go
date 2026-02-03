@@ -552,7 +552,7 @@ func (m RootModel) View() string {
 			}
 		}
 
-		chunkBox = renderBtopBox("", PaneTitleStyle.Render(" File Map "), chunkContent, rightWidth, chunkMapHeight, ColorGray)
+		chunkBox = renderBtopBox("", PaneTitleStyle.Render(" Chunk Map "), chunkContent, rightWidth, chunkMapHeight, ColorGray)
 	}
 
 	// --- ASSEMBLY ---
@@ -585,7 +585,18 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 	// Consistent content width for centering
 	contentWidth := w - 4
 
-	// Status Box
+	// Separator Style
+	divider := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Width(contentWidth).
+		Render("\n" + strings.Repeat("─", contentWidth))
+
+	// Padding Style for sections
+	sectionStyle := lipgloss.NewStyle().
+		Width(contentWidth).
+		Padding(0, 1)
+
+	// --- 1. Status Section ---
 	statusStr := getDownloadStatus(d)
 	statusStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -595,32 +606,25 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 
 	statusBox := statusStyle.Render(statusStr)
 
-	// Compact File Info
-	// Line 1: Filename (Truncated)
-	// Line 2: Path (Truncated)
-	fileInfo := lipgloss.JoinVertical(lipgloss.Left,
+	// --- 2. File Information Section ---
+	fileInfoContent := lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("File: "), StatsValueStyle.Render(truncateString(d.Filename, contentWidth-8))),
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("Path: "), StatsValueStyle.Render(truncateString(d.Destination, contentWidth-8))),
+		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Render("ID:   "), lipgloss.NewStyle().Foreground(ColorLightGray).Render(d.ID)),
 	)
+	fileSection := sectionStyle.Render(fileInfoContent)
 
-	// ID - Always visible
-	idInfo := lipgloss.JoinHorizontal(lipgloss.Left,
-		StatsLabelStyle.Render("ID:   "),
-		lipgloss.NewStyle().Foreground(ColorLightGray).Render(d.ID),
-	)
-
-	// Progress Section
+	// --- 3. Progress Section ---
 	progressWidth := w - 4
 	if progressWidth < 20 {
 		progressWidth = 20
 	}
 	d.progress.Width = progressWidth
 	progView := d.progress.ViewAs(pct)
+	// Progress bar has its own width handling usually, but let's wrap it to be sure
+	progSection := lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Center).Render(progView)
 
-	// Stats Grid (2 Columns)
-	// Col 1: Size, Speed
-	// Col 2: ETA, Time
-
+	// --- 4. Stats Grid Section ---
 	var speedStr, etaStr, sizeStr, timeStr string
 
 	// Size
@@ -657,7 +661,7 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 	timeStr = d.Elapsed.Round(time.Second).String()
 
 	// Stats Layout
-	colWidth := contentWidth / 2
+	colWidth := (contentWidth - 4) / 2
 	leftCol := lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Size:"), StatsValueStyle.Render(sizeStr)),
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Speed:"), StatsValueStyle.Render(speedStr)),
@@ -667,13 +671,14 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("ETA:"), StatsValueStyle.Render(etaStr)),
 	)
 
-	statsGrid := lipgloss.JoinHorizontal(lipgloss.Top,
+	statsContent := lipgloss.JoinHorizontal(lipgloss.Top,
 		lipgloss.NewStyle().Width(colWidth).Render(leftCol),
 		lipgloss.NewStyle().Width(colWidth).Render(rightCol),
 	)
+	statsSection := sectionStyle.Render(statsContent)
 
-	// Mirrors (Compact)
-	var mirrorInfo string
+	// --- 5. Mirrors Section ---
+	var mirrorSection string
 	if d.state != nil && len(d.state.GetMirrors()) > 0 {
 		activeCount := 0
 		errorCount := 0
@@ -686,36 +691,45 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 				errorCount++
 			}
 		}
-		mirrorInfo = lipgloss.JoinHorizontal(lipgloss.Left,
+		mirrorInfo := lipgloss.JoinHorizontal(lipgloss.Left,
 			StatsLabelStyle.Render("Mirrors: "),
 			lipgloss.NewStyle().Foreground(ColorLightGray).Render(fmt.Sprintf("%d total (%d active, %d errors)", total, activeCount, errorCount)),
 		)
+		mirrorSection = sectionStyle.Render(mirrorInfo)
 	}
 
-	// Error (if any)
-	var errorInfo string
+	// --- 6. Error Section ---
+	var errorSection string
 	if d.err != nil {
-		errorInfo = lipgloss.NewStyle().Foreground(ColorStateError).Render("Error: " + d.err.Error())
+		errorSection = sectionStyle.Copy().
+			Render(lipgloss.NewStyle().Foreground(ColorStateError).Render("Error: " + d.err.Error()))
 	}
 
-	// Combine Compactly
-	// Uses much less vertical space than before
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		statusBox,
-		"", // tiny gap
-		fileInfo,
-		idInfo,
-		"",
-		progView,
-		"",
-		statsGrid,
-		"", // tiny gap
-		mirrorInfo,
-		errorInfo,
-	)
+	// Combine with Dividers
+	// Use explicit calls to insert divider only where needed
+	var parts []string
+
+	parts = append(parts, statusBox)
+	parts = append(parts, fileSection)
+	parts = append(parts, divider)
+	parts = append(parts, progSection)
+	parts = append(parts, divider)
+	parts = append(parts, statsSection)
+
+	if mirrorSection != "" {
+		parts = append(parts, divider)
+		parts = append(parts, mirrorSection)
+	}
+
+	if errorSection != "" {
+		parts = append(parts, divider)
+		parts = append(parts, errorSection)
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	return lipgloss.NewStyle().
-		Padding(1, 2). // Increased padding
+		Padding(1, 2). // Outer padding
 		Render(content)
 }
 
