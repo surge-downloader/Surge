@@ -26,6 +26,7 @@ type ProgressState struct {
 
 	// Chunk Visualization
 	Chunks          []ChunkStatus // Grid of chunks for TUI
+	ChunkProgress   []int64       // Bytes downloaded per chunk
 	VisualChunkSize int64         // Size of each visualization chunk
 
 	mu sync.Mutex // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed, Mirrors
@@ -166,6 +167,7 @@ func (ps *ProgressState) InitChunks(totalSize int64) {
 
 	ps.VisualChunkSize = chunkSize
 	ps.Chunks = make([]ChunkStatus, numChunks)
+	ps.ChunkProgress = make([]int64, numChunks)
 }
 
 // UpdateChunkStatus updates the status of chunks covering the given range
@@ -193,13 +195,46 @@ func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkSta
 	}
 
 	for i := startIdx; i <= endIdx; i++ {
-		// State transition rules:
-		// Pending -> Downloading -> Completed
-		// Don't revert Completed to Downloading/Pending
-		// Don't revert Downloading to Pending
-		current := ps.Chunks[i]
-		if status > current {
-			ps.Chunks[i] = status
+		// Calculate chunk boundaries
+		chunkStart := int64(i) * ps.VisualChunkSize
+		chunkEnd := chunkStart + ps.VisualChunkSize
+		if chunkEnd > ps.TotalSize {
+			chunkEnd = ps.TotalSize
+		}
+
+		// Calculate overlap
+		rangeStart := offset
+		if rangeStart < chunkStart {
+			rangeStart = chunkStart
+		}
+		rangeEnd := offset + length
+		if rangeEnd > chunkEnd {
+			rangeEnd = chunkEnd
+		}
+
+		overlap := rangeEnd - rangeStart
+		if overlap < 0 {
+			overlap = 0
+		}
+
+		// Logic for ChunkCompleted (accumulate bytes)
+		if status == ChunkCompleted {
+			ps.ChunkProgress[i] += overlap
+			if ps.ChunkProgress[i] >= (chunkEnd - chunkStart) {
+				ps.Chunks[i] = ChunkCompleted
+			} else {
+				// Partial progress logic:
+				// If we have some progress, make sure it shows as downloading
+				if ps.Chunks[i] == ChunkPending {
+					ps.Chunks[i] = ChunkDownloading
+				}
+			}
+		} else if status == ChunkDownloading {
+			// For 'Downloading' status updates (starts of tasks),
+			// just ensure it lights up as downloading if not already done
+			if ps.Chunks[i] != ChunkCompleted {
+				ps.Chunks[i] = ChunkDownloading
+			}
 		}
 	}
 }

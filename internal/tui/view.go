@@ -161,8 +161,8 @@ func (m RootModel) View() string {
 
 	// === MAIN DASHBOARD LAYOUT ===
 
-	footerHeight := 1                          // Footer is just one line of text
-	availableHeight := m.height - footerHeight // maximized height
+	footerHeight := 1                              // Footer is just one line of text
+	availableHeight := m.height - 1 - footerHeight // maximized height with 1 line margin
 	if availableHeight < 10 {
 		availableHeight = 10 // Minimum safe height
 	}
