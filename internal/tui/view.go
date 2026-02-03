@@ -161,8 +161,12 @@ func (m RootModel) View() string {
 
 	// === MAIN DASHBOARD LAYOUT ===
 
-	availableHeight := m.height - 2 // Margin
-	availableWidth := m.width - 4   // Margin
+	footerHeight := 1                              // Footer is just one line of text
+	availableHeight := m.height - 2 - footerHeight // Margin (top/bottom) + footer
+	if availableHeight < 10 {
+		availableHeight = 10 // Minimum safe height
+	}
+	availableWidth := m.width - 4 // Margin
 
 	// Column Widths
 	leftWidth := int(float64(availableWidth) * ListWidthRatio)
@@ -183,24 +187,29 @@ func (m RootModel) View() string {
 		graphHeight = 9
 	}
 
-	remainingHeight := availableHeight - graphHeight
-	detailHeight := remainingHeight / 2
-	if detailHeight < 8 {
-		detailHeight = 8
+	// Pre-calculate Detail Content to determine exact height needed
+	var detailContent string
+	selected := m.GetSelectedDownload()
+	if selected != nil {
+		detailContent = renderFocusedDetails(selected, rightWidth-4)
+	} else {
+		// Default Placeholder
+		detailContent = lipgloss.Place(rightWidth-4, 8, lipgloss.Center, lipgloss.Center,
+			lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("No Download Selected"))
 	}
 
-	chunkHeight := remainingHeight - detailHeight
-	// ensure minimums
+	// Exact height from content + borders
+	detailHeight := lipgloss.Height(detailContent) + 2
+
+	chunkHeight := availableHeight - graphHeight - detailHeight
+
+	// Ensure minimum chunk height by stealing from graph if necessary
 	if chunkHeight < 6 {
-		chunkHeight = 6
-	}
-
-	// Recalculate if we overshot total height (adjust detail/chunk)
-	totalUsed := graphHeight + detailHeight + chunkHeight
-	if totalUsed > availableHeight {
-		// Reduce chunk height first
-		chunkHeight -= (totalUsed - availableHeight)
-		if chunkHeight < 0 {
+		deficit := 6 - chunkHeight
+		if graphHeight-deficit >= 5 {
+			graphHeight -= deficit
+			chunkHeight = 6
+		} else if chunkHeight < 0 {
 			chunkHeight = 0
 		}
 	}
@@ -454,14 +463,7 @@ func (m RootModel) View() string {
 	listBox := renderBtopBox(leftTitle, PaneTitleStyle.Render(" Downloads "), listInner, leftWidth, listHeight, downloadsBorderColor)
 
 	// --- SECTION 4: DETAILS PANE (Middle Right) ---
-	var detailContent string
-	selected := m.GetSelectedDownload()
-	if selected != nil {
-		detailContent = renderFocusedDetails(selected, rightWidth-4)
-	} else {
-		detailContent = lipgloss.Place(rightWidth-4, detailHeight-4, lipgloss.Center, lipgloss.Center,
-			lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("No Download Selected"))
-	}
+	// detailContent and selected are already calculated in the layout section
 
 	detailBox := renderBtopBox("", PaneTitleStyle.Render(" File Details "), detailContent, rightWidth, detailHeight, ColorGray)
 
