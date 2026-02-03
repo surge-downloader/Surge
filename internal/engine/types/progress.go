@@ -23,7 +23,12 @@ type ProgressState struct {
 	SavedElapsed      time.Duration // Time spent in previous sessions
 
 	Mirrors []MirrorStatus // Status of each mirror
-	mu      sync.Mutex     // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed, Mirrors
+
+	// Chunk Visualization
+	Chunks          []ChunkStatus // Grid of chunks for TUI
+	VisualChunkSize int64         // Size of each visualization chunk
+
+	mu sync.Mutex // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed, Mirrors
 }
 
 type MirrorStatus struct {
@@ -126,4 +131,89 @@ func (ps *ProgressState) GetMirrors() []MirrorStatus {
 	mirrors := make([]MirrorStatus, len(ps.Mirrors))
 	copy(mirrors, ps.Mirrors)
 	return mirrors
+}
+
+// ChunkStatus represents the status of a visualization chunk
+type ChunkStatus int
+
+const (
+	ChunkPending     ChunkStatus = iota
+	ChunkDownloading             // Active
+	ChunkCompleted
+)
+
+// InitChunks initializes the chunk map for visualization
+// Target is around 200 chunks for the TUI grid
+func (ps *ProgressState) InitChunks(totalSize int64) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	// If already initialized and size matches, don't reset (resume case handled elsewhere)
+	if len(ps.Chunks) > 0 && ps.TotalSize == totalSize {
+		return
+	}
+
+	targetChunks := 200
+	chunkSize := totalSize / int64(targetChunks)
+	if chunkSize < 1024*1024 { // Minimum 1MB per block to avoid too much noise for small files
+		chunkSize = 1024 * 1024
+	}
+
+	numChunks := int(totalSize / chunkSize)
+	if totalSize%chunkSize != 0 {
+		numChunks++
+	}
+
+	ps.VisualChunkSize = chunkSize
+	ps.Chunks = make([]ChunkStatus, numChunks)
+}
+
+// UpdateChunkStatus updates the status of chunks covering the given range
+func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkStatus) {
+	// Fast path check without lock
+	if ps.VisualChunkSize == 0 {
+		return
+	}
+
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	if ps.VisualChunkSize == 0 || len(ps.Chunks) == 0 {
+		return
+	}
+
+	startIdx := int(offset / ps.VisualChunkSize)
+	endIdx := int((offset + length - 1) / ps.VisualChunkSize)
+
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	if endIdx >= len(ps.Chunks) {
+		endIdx = len(ps.Chunks) - 1
+	}
+
+	for i := startIdx; i <= endIdx; i++ {
+		// State transition rules:
+		// Pending -> Downloading -> Completed
+		// Don't revert Completed to Downloading/Pending
+		// Don't revert Downloading to Pending
+		current := ps.Chunks[i]
+		if status > current {
+			ps.Chunks[i] = status
+		}
+	}
+}
+
+// GetChunks returns a copy of the current chunk statuses
+func (ps *ProgressState) GetChunks() []ChunkStatus {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	if len(ps.Chunks) == 0 {
+		return nil
+	}
+
+	result := make([]ChunkStatus, len(ps.Chunks))
+	copy(result, ps.Chunks)
+	return result
 }

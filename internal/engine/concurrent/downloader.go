@@ -234,6 +234,11 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 			utils.ConvertBytesToHumanReadable(chunkSize))
 	}
 
+	// Initialize chunk visualization
+	if d.State != nil {
+		d.State.InitChunks(fileSize)
+	}
+
 	// Create and preallocate output file with .surge suffix
 	outFile, err := os.OpenFile(workingPath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -280,7 +285,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	defer cancelBalancer()
 
 	go func() {
-		ticker := time.NewTicker(50 * time.Millisecond)
+		ticker := time.NewTicker(200 * time.Millisecond)
 		defer ticker.Stop()
 
 		for {

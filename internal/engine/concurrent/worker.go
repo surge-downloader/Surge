@@ -75,6 +75,11 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 			d.activeTasks[id] = activeTask
 			d.activeMu.Unlock()
 
+			// Update chunk status to Downloading
+			if d.State != nil {
+				d.State.UpdateChunkStatus(task.Offset, task.Length, types.ChunkDownloading)
+			}
+
 			taskStart := time.Now()
 			lastErr = d.downloadTask(taskCtx, currentURL, file, activeTask, buf, verbose, client, totalSize)
 
@@ -263,6 +268,11 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 			atomic.StoreInt64(&activeTask.CurrentOffset, offset)
 			atomic.AddInt64(&activeTask.WindowBytes, int64(readSoFar))
 			atomic.StoreInt64(&activeTask.LastActivity, now.UnixNano())
+
+			// Update chunk status for the written part
+			if d.State != nil {
+				d.State.UpdateChunkStatus(oldOffset, int64(readSoFar), types.ChunkCompleted)
+			}
 
 			// Update EMA speed using sliding window (2 second window)
 			windowElapsed := now.Sub(activeTask.WindowStart).Seconds()
