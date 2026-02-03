@@ -441,23 +441,32 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 
 		// Calculate total elapsed time
 		var totalElapsed time.Duration
+		var chunkBitmap []byte
+		var actualChunkSize int64
+
 		if d.State != nil {
 			totalElapsed = d.State.SavedElapsed + time.Since(startTime)
+			// Get persisted bitmap data
+			bitmap, _, _, chunkSize, _ := d.State.GetBitmap()
+			chunkBitmap = bitmap
+			actualChunkSize = chunkSize
 		} else {
 			totalElapsed = time.Since(startTime)
 		}
 
 		// Save state for resume (use computed value for consistency)
 		s := &types.DownloadState{
-			URL:        d.URL,
-			ID:         d.ID,
-			DestPath:   destPath,
-			TotalSize:  fileSize,
-			Downloaded: computedDownloaded,
-			Tasks:      remainingTasks,
-			Filename:   filepath.Base(destPath),
-			Elapsed:    totalElapsed.Nanoseconds(),
-			Mirrors:    candidateMirrors,
+			URL:             d.URL,
+			ID:              d.ID,
+			DestPath:        destPath,
+			TotalSize:       fileSize,
+			Downloaded:      computedDownloaded,
+			Tasks:           remainingTasks,
+			Filename:        filepath.Base(destPath),
+			Elapsed:         totalElapsed.Nanoseconds(),
+			Mirrors:         candidateMirrors,
+			ChunkBitmap:     chunkBitmap,
+			ActualChunkSize: actualChunkSize,
 		}
 		if err := state.SaveState(d.URL, destPath, s); err != nil {
 			utils.Debug("Failed to save pause state: %v", err)

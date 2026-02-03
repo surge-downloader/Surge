@@ -543,7 +543,7 @@ func (m RootModel) View() string {
 			// New chunk map component
 			bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress := selected.state.GetBitmap()
 			chunkMap := components.NewChunkMapModel(bitmap, bitmapWidth, rightWidth-6, selected.paused, totalSize, chunkSize, chunkProgress)
-			chunkContent = lipgloss.NewStyle().Padding(1, 2).Render(chunkMap.View())
+			chunkContent = lipgloss.NewStyle().Padding(0, 2, 1, 2).Render(chunkMap.View())
 
 			// If no chunks (not initialized or small file), show message
 			if bitmapWidth == 0 {
