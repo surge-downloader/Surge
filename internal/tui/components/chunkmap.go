@@ -13,14 +13,16 @@ type ChunkMapModel struct {
 	Bitmap      []byte
 	BitmapWidth int // Total number of chunks in bitmap
 	Width       int // UI render width (columns * 2)
+	Paused      bool
 }
 
 // NewChunkMapModel creates a new chunk map visualization
-func NewChunkMapModel(bitmap []byte, bitmapWidth int, width int) ChunkMapModel {
+func NewChunkMapModel(bitmap []byte, bitmapWidth int, width int, paused bool) ChunkMapModel {
 	return ChunkMapModel{
 		Bitmap:      bitmap,
 		BitmapWidth: bitmapWidth,
 		Width:       width,
+		Paused:      paused,
 	}
 }
 
@@ -52,8 +54,6 @@ func (m ChunkMapModel) View() string {
 
 	// Target 10 rows to maintain the "full grid" look requested
 	// 5 * Width is roughly 10 rows (since 1 row = Width / 2 blocks)
-	// targetChunks := 5 * m.Width
-	// More precisely: 10 * cols
 	targetChunks := 10 * cols
 
 	// Downsample logic
@@ -65,6 +65,12 @@ func (m ChunkMapModel) View() string {
 		// Use float math for even distribution
 		start := int(float64(i) * float64(sourceLen) / float64(targetChunks))
 		end := int(float64(i+1) * float64(sourceLen) / float64(targetChunks))
+
+		// Ensure we cover at least one chunk (upsampling case)
+		if start == end {
+			end++
+		}
+
 		if end > sourceLen {
 			end = sourceLen
 		}
@@ -78,23 +84,22 @@ func (m ChunkMapModel) View() string {
 		// Determine status for this visual block based on source range
 		// Logic:
 		// - If all source blocks are Completed -> Completed
-		// - If any source block is Downloading/Pending -> Active/Pending logic
-		// - Optimistic: If any is Downloading, show Downloading.
-		// - If mixed Completed/Pending (no Downloading), show Downloading (active region).
-		// - Only show Pending if ALL are Pending.
+		// - If ANY source block is Downloading -> Downloading (unless strict mode requested?)
+		// - MIXED Completed/Pending -> Show Pending (Gray) effectively.
+		//   (Old Logic: Showed Downloading which caused "Ghost Pinks")
 
 		allCompleted := true
 		anyDownloading := false
-		anyCompleted := false
+		// anyCompleted := false // Unused now
 
 		for j := start; j < end; j++ {
 			s := m.getChunkState(j)
 
 			if s != types.ChunkCompleted {
 				allCompleted = false
-			} else {
-				anyCompleted = true
 			}
+			// else { anyCompleted = true }
+
 			if s == types.ChunkDownloading {
 				anyDownloading = true
 			}
@@ -104,10 +109,9 @@ func (m ChunkMapModel) View() string {
 			visualChunks[i] = types.ChunkCompleted
 		} else if anyDownloading {
 			visualChunks[i] = types.ChunkDownloading
-		} else if anyCompleted {
-			// Mixed Completed/Pending -> Treat as Downloading (active region)
-			visualChunks[i] = types.ChunkDownloading
 		} else {
+			// Mixed Completed/Pending OR all Pending -> Render as Pending
+			// This removes the "Ghost Pink" effect where a mix of C and P was shown as D.
 			visualChunks[i] = types.ChunkPending
 		}
 	}
@@ -117,6 +121,7 @@ func (m ChunkMapModel) View() string {
 	// Styles
 	pendingStyle := lipgloss.NewStyle().Foreground(colors.DarkGray)           // Dark gray
 	downloadingStyle := lipgloss.NewStyle().Foreground(colors.NeonPink)       // Neon Pink
+	pausedStyle := lipgloss.NewStyle().Foreground(colors.StatePaused)         // Yellow/Gold for paused Partial
 	completedStyle := lipgloss.NewStyle().Foreground(colors.StateDownloading) // Neon Green / Cyan
 
 	block := "■"
@@ -132,7 +137,11 @@ func (m ChunkMapModel) View() string {
 		case types.ChunkCompleted:
 			s.WriteString(completedStyle.Render(block))
 		case types.ChunkDownloading:
-			s.WriteString(downloadingStyle.Render(block))
+			if m.Paused {
+				s.WriteString(pausedStyle.Render(block))
+			} else {
+				s.WriteString(downloadingStyle.Render(block))
+			}
 		default: // ChunkPending
 			s.WriteString(pendingStyle.Render(block))
 		}
