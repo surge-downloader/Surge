@@ -5,31 +5,41 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/tui/colors"
 )
 
-// ChunkMapModel visualizes download chunks as a grid
+// ChunkMapModel visualizes download chunks as a grid using a bitmap
 type ChunkMapModel struct {
-	Chunks []types.ChunkStatus
-	Width  int
-	Height int
+	Bitmap      []byte
+	BitmapWidth int // Total number of chunks in bitmap
+	Width       int // UI render width (columns * 2)
 }
 
 // NewChunkMapModel creates a new chunk map visualization
-func NewChunkMapModel(chunks []types.ChunkStatus, width int) ChunkMapModel {
+func NewChunkMapModel(bitmap []byte, bitmapWidth int, width int) ChunkMapModel {
 	return ChunkMapModel{
-		Chunks: chunks,
-		Width:  width,
+		Bitmap:      bitmap,
+		BitmapWidth: bitmapWidth,
+		Width:       width,
 	}
 }
 
-// UpdateChunks updates the chunk data
-func (m *ChunkMapModel) UpdateChunks(chunks []types.ChunkStatus) {
-	m.Chunks = chunks
+func (m ChunkMapModel) getChunkState(index int) types.ChunkStatus {
+	if index < 0 || index >= m.BitmapWidth {
+		return types.ChunkPending
+	}
+	byteIndex := index / 4
+	bitOffset := (index % 4) * 2
+	if byteIndex >= len(m.Bitmap) {
+		return types.ChunkPending
+	}
+	val := (m.Bitmap[byteIndex] >> bitOffset) & 3
+	return types.ChunkStatus(val)
 }
 
 // View renders the chunk grid
 func (m ChunkMapModel) View() string {
-	if len(m.Chunks) == 0 {
+	if m.BitmapWidth == 0 || len(m.Bitmap) == 0 {
 		return ""
 	}
 
@@ -40,17 +50,78 @@ func (m ChunkMapModel) View() string {
 		cols = 1
 	}
 
+	// Target 10 rows to maintain the "full grid" look requested
+	// 5 * Width is roughly 10 rows (since 1 row = Width / 2 blocks)
+	// targetChunks := 5 * m.Width
+	// More precisely: 10 * cols
+	targetChunks := 10 * cols
+
+	// Downsample logic
+	visualChunks := make([]types.ChunkStatus, targetChunks)
+	sourceLen := m.BitmapWidth
+
+	for i := 0; i < targetChunks; i++ {
+		// Map target index i to source range [start, end)
+		// Use float math for even distribution
+		start := int(float64(i) * float64(sourceLen) / float64(targetChunks))
+		end := int(float64(i+1) * float64(sourceLen) / float64(targetChunks))
+		if end > sourceLen {
+			end = sourceLen
+		}
+		if start >= end {
+			start = end - 1
+			if start < 0 {
+				start = 0
+			}
+		}
+
+		// Determine status for this visual block based on source range
+		// Logic:
+		// - If all source blocks are Completed -> Completed
+		// - If any source block is Downloading/Pending -> Active/Pending logic
+		// - Optimistic: If any is Downloading, show Downloading.
+		// - If mixed Completed/Pending (no Downloading), show Downloading (active region).
+		// - Only show Pending if ALL are Pending.
+
+		allCompleted := true
+		anyDownloading := false
+		anyCompleted := false
+
+		for j := start; j < end; j++ {
+			s := m.getChunkState(j)
+
+			if s != types.ChunkCompleted {
+				allCompleted = false
+			} else {
+				anyCompleted = true
+			}
+			if s == types.ChunkDownloading {
+				anyDownloading = true
+			}
+		}
+
+		if allCompleted {
+			visualChunks[i] = types.ChunkCompleted
+		} else if anyDownloading {
+			visualChunks[i] = types.ChunkDownloading
+		} else if anyCompleted {
+			// Mixed Completed/Pending -> Treat as Downloading (active region)
+			visualChunks[i] = types.ChunkDownloading
+		} else {
+			visualChunks[i] = types.ChunkPending
+		}
+	}
+
 	var s strings.Builder
 
 	// Styles
-	pendingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("237"))     // Dark gray
-	downloadingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("213")) // Neon Pink
-	completedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("82"))    // Neon Green / Cyan (using bright green for high contrast)
-	// Alternatively use Cyan "14" or "206"
+	pendingStyle := lipgloss.NewStyle().Foreground(colors.DarkGray)     // Dark gray
+	downloadingStyle := lipgloss.NewStyle().Foreground(colors.NeonPink) // Neon Pink
+	completedStyle := lipgloss.NewStyle().Foreground(colors.NeonCyan)   // Neon Green / Cyan
 
 	block := "■"
 
-	for i, status := range m.Chunks {
+	for i, status := range visualChunks {
 		if i > 0 && i%cols == 0 {
 			s.WriteRune('\n')
 		} else if i > 0 {
@@ -75,10 +146,5 @@ func CalculateHeight(count int, width int) int {
 	if count == 0 {
 		return 0
 	}
-	cols := width / 2
-	if cols < 1 {
-		cols = 1
-	}
-	// ceil(count / cols)
-	return (count + cols - 1) / cols
+	return 5
 }

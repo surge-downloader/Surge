@@ -77,8 +77,11 @@ func initDB() error {
 	}
 
 	// Migration: Add mirrors column if not exists
-	// Valid for SQLite
 	_, _ = db.Exec("ALTER TABLE downloads ADD COLUMN mirrors TEXT")
+
+	// Migration: Add chunk bitmap columns
+	_, _ = db.Exec("ALTER TABLE downloads ADD COLUMN chunk_bitmap BLOB")
+	_, _ = db.Exec("ALTER TABLE downloads ADD COLUMN actual_chunk_size INTEGER")
 
 	return nil
 }

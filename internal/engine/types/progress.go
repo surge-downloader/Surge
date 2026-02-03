@@ -24,10 +24,10 @@ type ProgressState struct {
 
 	Mirrors []MirrorStatus // Status of each mirror
 
-	// Chunk Visualization
-	Chunks          []ChunkStatus // Grid of chunks for TUI
-	ChunkProgress   []int64       // Bytes downloaded per chunk
-	VisualChunkSize int64         // Size of each visualization chunk
+	// Chunk Visualization (Bitmap)
+	ChunkBitmap     []byte // 2 bits per chunk
+	ActualChunkSize int64  // Size of each actual chunk in bytes
+	BitmapWidth     int    // Number of chunks tracked
 
 	mu sync.Mutex // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed, Mirrors
 }
@@ -138,117 +138,112 @@ func (ps *ProgressState) GetMirrors() []MirrorStatus {
 type ChunkStatus int
 
 const (
-	ChunkPending     ChunkStatus = iota
-	ChunkDownloading             // Active
-	ChunkCompleted
+	ChunkPending     ChunkStatus = 0 // 00
+	ChunkDownloading ChunkStatus = 1 // 01
+	ChunkCompleted   ChunkStatus = 2 // 10 (Bit 2 set)
 )
 
-// InitChunks initializes the chunk map for visualization
-// Target is around 200 chunks for the TUI grid
-func (ps *ProgressState) InitChunks(totalSize int64) {
+// InitBitmap initializes the chunk bitmap
+func (ps *ProgressState) InitBitmap(totalSize int64, chunkSize int64) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	// If already initialized and size matches, don't reset (resume case handled elsewhere)
-	if len(ps.Chunks) > 0 && ps.TotalSize == totalSize {
+	// If already initialized with same parameters, skip
+	if len(ps.ChunkBitmap) > 0 && ps.TotalSize == totalSize && ps.ActualChunkSize == chunkSize {
 		return
 	}
 
-	targetChunks := 200
-	chunkSize := totalSize / int64(targetChunks)
-	if chunkSize < 1024*1024 { // Minimum 1MB per block to avoid too much noise for small files
-		chunkSize = 1024 * 1024
+	if chunkSize <= 0 {
+		return
 	}
 
-	numChunks := int(totalSize / chunkSize)
-	if totalSize%chunkSize != 0 {
-		numChunks++
-	}
+	numChunks := int((totalSize + chunkSize - 1) / chunkSize)
 
-	ps.VisualChunkSize = chunkSize
-	ps.Chunks = make([]ChunkStatus, numChunks)
-	ps.ChunkProgress = make([]int64, numChunks)
+	// 2 bits per chunk. 4 chunks per byte.
+	// Bytes needed = ceil(numChunks / 4)
+	bytesNeeded := (numChunks + 3) / 4
+
+	ps.ActualChunkSize = chunkSize
+	ps.BitmapWidth = numChunks
+	ps.ChunkBitmap = make([]byte, bytesNeeded)
 }
 
-// UpdateChunkStatus updates the status of chunks covering the given range
-func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkStatus) {
-	// Fast path check without lock
-	if ps.VisualChunkSize == 0 {
+// SetChunkState sets the 2-bit state for a specific chunk index
+// State: 0=Pending, 1=Downloading, 2=Completed
+func (ps *ProgressState) SetChunkState(index int, status ChunkStatus) {
+	if index < 0 || index >= ps.BitmapWidth {
 		return
 	}
 
+	byteIndex := index / 4
+	bitOffset := (index % 4) * 2
+
+	// Clear 2 bits at offset
+	mask := byte(3 << bitOffset) // 00000011 shifted
+	ps.ChunkBitmap[byteIndex] &= ^mask
+
+	// Set new value
+	val := byte(status) << bitOffset
+	ps.ChunkBitmap[byteIndex] |= val
+}
+
+// GetChunkState gets the 2-bit state for a specific chunk index
+func (ps *ProgressState) GetChunkState(index int) ChunkStatus {
+	if index < 0 || index >= ps.BitmapWidth {
+		return ChunkPending
+	}
+
+	byteIndex := index / 4
+	bitOffset := (index % 4) * 2
+
+	val := (ps.ChunkBitmap[byteIndex] >> bitOffset) & 3
+	return ChunkStatus(val)
+}
+
+// UpdateChunkStatus updates the bitmap based on byte range
+func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkStatus) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	if ps.VisualChunkSize == 0 || len(ps.Chunks) == 0 {
+	if ps.ActualChunkSize == 0 || len(ps.ChunkBitmap) == 0 {
 		return
 	}
 
-	startIdx := int(offset / ps.VisualChunkSize)
-	endIdx := int((offset + length - 1) / ps.VisualChunkSize)
+	startIdx := int(offset / ps.ActualChunkSize)
+	endIdx := int((offset + length - 1) / ps.ActualChunkSize)
 
 	if startIdx < 0 {
 		startIdx = 0
 	}
-	if endIdx >= len(ps.Chunks) {
-		endIdx = len(ps.Chunks) - 1
+	if endIdx >= ps.BitmapWidth {
+		endIdx = ps.BitmapWidth - 1
 	}
 
 	for i := startIdx; i <= endIdx; i++ {
-		// Calculate chunk boundaries
-		chunkStart := int64(i) * ps.VisualChunkSize
-		chunkEnd := chunkStart + ps.VisualChunkSize
-		if chunkEnd > ps.TotalSize {
-			chunkEnd = ps.TotalSize
-		}
+		// Only upgrade status (Pending -> Downloading -> Completed)
+		// Or if we are setting Downloading, don't overwrite Completed
+		current := ps.GetChunkState(i)
 
-		// Calculate overlap
-		rangeStart := offset
-		if rangeStart < chunkStart {
-			rangeStart = chunkStart
-		}
-		rangeEnd := offset + length
-		if rangeEnd > chunkEnd {
-			rangeEnd = chunkEnd
-		}
-
-		overlap := rangeEnd - rangeStart
-		if overlap < 0 {
-			overlap = 0
-		}
-
-		// Logic for ChunkCompleted (accumulate bytes)
 		if status == ChunkCompleted {
-			ps.ChunkProgress[i] += overlap
-			if ps.ChunkProgress[i] >= (chunkEnd - chunkStart) {
-				ps.Chunks[i] = ChunkCompleted
-			} else {
-				// Partial progress logic:
-				// If we have some progress, make sure it shows as downloading
-				if ps.Chunks[i] == ChunkPending {
-					ps.Chunks[i] = ChunkDownloading
-				}
-			}
+			ps.SetChunkState(i, ChunkCompleted)
 		} else if status == ChunkDownloading {
-			// For 'Downloading' status updates (starts of tasks),
-			// just ensure it lights up as downloading if not already done
-			if ps.Chunks[i] != ChunkCompleted {
-				ps.Chunks[i] = ChunkDownloading
+			if current != ChunkCompleted {
+				ps.SetChunkState(i, ChunkDownloading)
 			}
 		}
 	}
 }
 
-// GetChunks returns a copy of the current chunk statuses
-func (ps *ProgressState) GetChunks() []ChunkStatus {
+// GetBitmap returns a copy of the bitmap and metadata
+func (ps *ProgressState) GetBitmap() ([]byte, int) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	if len(ps.Chunks) == 0 {
-		return nil
+	if len(ps.ChunkBitmap) == 0 {
+		return nil, 0
 	}
 
-	result := make([]ChunkStatus, len(ps.Chunks))
-	copy(result, ps.Chunks)
-	return result
+	result := make([]byte, len(ps.ChunkBitmap))
+	copy(result, ps.ChunkBitmap)
+	return result, ps.BitmapWidth
 }

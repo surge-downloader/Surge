@@ -236,7 +236,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 
 	// Initialize chunk visualization
 	if d.State != nil {
-		d.State.InitChunks(fileSize)
+		d.State.InitBitmap(fileSize, chunkSize)
 	}
 
 	// Create and preallocate output file with .surge suffix
