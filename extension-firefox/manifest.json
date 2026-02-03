@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Surge",
-  "version": "1.1.0",
+  "version": "0.4.4",
   "description": "Integrate with Surge Download Manager. Intercepts downloads to accelerate them using Surge's high-performance engine.",
   "permissions": [
     "downloads",

@@ -576,26 +576,43 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		shouldPrompt := settings.General.ExtensionPrompt || (settings.General.WarnOnDuplicate && isDuplicate)
 
 		// Only prompt if we have a UI running (serverProgram != nil)
-		if shouldPrompt && serverProgram != nil {
-			utils.Debug("Requesting TUI confirmation for: %s (Duplicate: %v)", req.URL, isDuplicate)
+		if shouldPrompt {
+			if serverProgram != nil {
+				utils.Debug("Requesting TUI confirmation for: %s (Duplicate: %v)", req.URL, isDuplicate)
 
-			// Send request to TUI
-			GlobalProgressCh <- events.DownloadRequestMsg{
-				ID:       downloadID,
-				URL:      req.URL,
-				Filename: req.Filename,
-				Path:     outPath, // Use the path we resolved (default or requested)
+				// Send request to TUI
+				GlobalProgressCh <- events.DownloadRequestMsg{
+					ID:       downloadID,
+					URL:      req.URL,
+					Filename: req.Filename,
+					Path:     outPath, // Use the path we resolved (default or requested)
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				// Return 202 Accepted to indicate it's pending approval
+				w.WriteHeader(http.StatusAccepted)
+				json.NewEncoder(w).Encode(map[string]string{
+					"status":  "pending_approval",
+					"message": "Download request sent to TUI for confirmation",
+					"id":      downloadID, // ID might change if user modifies it, but useful for tracking
+				})
+				return
+			} else {
+				// Headless mode: If WarnOnDuplicate is true, we should reject it because we can't warn
+				// If ExtensionPrompt is true, we should definitely reject it because we can't prompt
+				// If it's just a duplicate and WarnOnDuplicate is true, we reject.
+				// If WarnOnDuplicate is false, we allow it (fallthrough).
+
+				if settings.General.ExtensionPrompt || (settings.General.WarnOnDuplicate && isDuplicate) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusConflict)
+					json.NewEncoder(w).Encode(map[string]string{
+						"status":  "error",
+						"message": "Download rejected: Duplicate download or approval required (Headless mode)",
+					})
+					return
+				}
 			}
-
-			w.Header().Set("Content-Type", "application/json")
-			// Return 202 Accepted to indicate it's pending approval
-			w.WriteHeader(http.StatusAccepted)
-			json.NewEncoder(w).Encode(map[string]string{
-				"status":  "pending_approval",
-				"message": "Download request sent to TUI for confirmation",
-				"id":      downloadID, // ID might change if user modifies it, but useful for tracking
-			})
-			return
 		}
 	}
 

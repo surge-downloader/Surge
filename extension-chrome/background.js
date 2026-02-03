@@ -108,8 +108,18 @@ function isFreshDownload(downloadItem) {
     return true;
 }
 
+const processedIds = new Set();
+
 // Listen for downloads
 chrome.downloads.onCreated.addListener(async (downloadItem) => {
+    // Prevent duplicate events for the same download ID
+    if (processedIds.has(downloadItem.id)) {
+        return;
+    }
+    processedIds.add(downloadItem.id);
+    // Cleanup ID after 1 minute
+    setTimeout(() => processedIds.delete(downloadItem.id), 60000);
+
     console.log("[Surge] Download detected:", downloadItem.url);
 
     // Check if interception is enabled
