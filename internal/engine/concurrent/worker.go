@@ -203,6 +203,30 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
+	// Batching State
+	var pendingBytes int64
+	var pendingStart int64 = -1
+	lastUpdate := time.Now()
+	const batchSizeThreshold = 256 * 1024 // 256KB
+	const batchTimeThreshold = 100 * time.Millisecond
+
+	// Helper to flush pending updates to global state
+	flushUpdates := func() {
+		if pendingBytes > 0 && d.State != nil {
+			// Update Chunk Map (Global Lock)
+			d.State.UpdateChunkStatus(pendingStart, pendingBytes, types.ChunkCompleted)
+
+			// Update Downloaded Counter (Atomic)
+			d.State.Downloaded.Add(pendingBytes)
+
+			pendingBytes = 0
+			pendingStart = -1
+			lastUpdate = time.Now()
+		}
+	}
+	// Ensure we flush whatever we have on exit
+	defer flushUpdates()
+
 	// Read and write at offset
 	offset := task.Offset
 	for {
@@ -263,18 +287,32 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 			}
 
 			now := time.Now()
-			oldOffset := offset
+			// oldOffset := offset // Unused since we use batch logic now, but logically here
+			rangeStart := offset // Start of this write
 			offset += int64(readSoFar)
 			atomic.StoreInt64(&activeTask.CurrentOffset, offset)
 			atomic.AddInt64(&activeTask.WindowBytes, int64(readSoFar))
 			atomic.StoreInt64(&activeTask.LastActivity, now.UnixNano())
 
-			// Update chunk status for the written part
-			if d.State != nil {
-				d.State.UpdateChunkStatus(oldOffset, int64(readSoFar), types.ChunkCompleted)
+			// --- BATCHING LOGIC START ---
+
+			// Calculate effective contribution (clamping to StopAt is done above via readSoFar truncation)
+			// So readSoFar is exactly what we wrote and what we "own"
+
+			if pendingStart == -1 {
+				pendingStart = rangeStart
+			}
+			pendingBytes += int64(readSoFar)
+
+			// Check thresholds
+			if pendingBytes >= batchSizeThreshold || now.Sub(lastUpdate) >= batchTimeThreshold {
+				flushUpdates()
 			}
 
+			// --- BATCHING LOGIC END ---
+
 			// Update EMA speed using sliding window (2 second window)
+			// This relies on WindowBytes which is updated atomically above, so independent of batching
 			windowElapsed := now.Sub(activeTask.WindowStart).Seconds()
 			if windowElapsed >= 2.0 {
 				windowBytes := atomic.SwapInt64(&activeTask.WindowBytes, 0)
@@ -290,20 +328,6 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 				activeTask.SpeedMu.Unlock()
 
 				activeTask.WindowStart = now // Reset window
-			}
-
-			// Update progress via shared state, clamping to StopAt boundary
-			// to avoid double-counting bytes when work is stolen
-			if d.State != nil {
-				currentStopAt := atomic.LoadInt64(&activeTask.StopAt)
-				effectiveEnd := offset
-				if effectiveEnd > currentStopAt {
-					effectiveEnd = currentStopAt
-				}
-				contributed := effectiveEnd - oldOffset
-				if contributed > 0 {
-					d.State.Downloaded.Add(contributed)
-				}
 			}
 		}
 
