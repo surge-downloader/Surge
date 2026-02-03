@@ -166,6 +166,25 @@ func (ps *ProgressState) InitBitmap(totalSize int64, chunkSize int64) {
 	ps.ActualChunkSize = chunkSize
 	ps.BitmapWidth = numChunks
 	ps.ChunkBitmap = make([]byte, bytesNeeded)
+	ps.BitmapWidth = numChunks
+	ps.ChunkBitmap = make([]byte, bytesNeeded)
+}
+
+// RestoreBitmap restores the chunk bitmap from saved state
+func (ps *ProgressState) RestoreBitmap(bitmap []byte, actualChunkSize int64) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	if len(bitmap) == 0 || actualChunkSize <= 0 {
+		return
+	}
+
+	ps.ChunkBitmap = bitmap
+	ps.ActualChunkSize = actualChunkSize
+
+	// Recalculate width
+	numChunks := int((ps.TotalSize + ps.ActualChunkSize - 1) / ps.ActualChunkSize)
+	ps.BitmapWidth = numChunks
 }
 
 // SetChunkState sets the 2-bit state for a specific chunk index

@@ -3,8 +3,6 @@ package components
 import (
 	"strings"
 	"testing"
-
-	"github.com/surge-downloader/surge/internal/engine/types"
 )
 
 func TestChunkMapResampling(t *testing.T) {
@@ -53,74 +51,4 @@ func TestChunkMapResampling(t *testing.T) {
 	model2 := NewChunkMapModel(bitmap2, 2, 2)
 	out2 := model2.View()
 	_ = out2
-}
-
-func TestResampleLogic(t *testing.T) {
-	// Skip detailed logic verification since we moved it into internal private methods of ChunkMapModel
-	// or we can test public View
-}
-
-// Helper duplicating the logic for test
-func ResampleChunks(source []types.ChunkStatus, targetChunks int) []types.ChunkStatus {
-	visualChunks := make([]types.ChunkStatus, targetChunks)
-	sourceLen := len(source)
-
-	for i := 0; i < targetChunks; i++ {
-		start := int(float64(i) * float64(sourceLen) / float64(targetChunks))
-		end := int(float64(i+1) * float64(sourceLen) / float64(targetChunks))
-		if end > sourceLen {
-			end = sourceLen
-		}
-
-		// The BUG FIX logic we want to verify:
-		// If upsamping (start == end), ensure we pick at least one
-		if start >= end {
-			// Center sampling strategy
-			center := int((float64(i) + 0.5) * float64(sourceLen) / float64(targetChunks))
-			start = center
-			end = center + 1
-		}
-
-		allCompleted := true
-		anyDownloading := false
-		anyCompleted := false
-
-		// Safety check
-		if start < 0 {
-			start = 0
-		}
-		if end > sourceLen {
-			end = sourceLen
-		}
-
-		loopCount := 0
-		for j := start; j < end; j++ {
-			loopCount++
-			s := source[j]
-			if s != types.ChunkCompleted {
-				allCompleted = false
-			} else {
-				anyCompleted = true
-			}
-			if s == types.ChunkDownloading {
-				anyDownloading = true
-			}
-		}
-
-		// If empty loop (should not happen with fix), defaults to allCompleted=true which is BAD
-		if loopCount == 0 {
-			allCompleted = false // Fail safe
-		}
-
-		if allCompleted && loopCount > 0 {
-			visualChunks[i] = types.ChunkCompleted
-		} else if anyDownloading {
-			visualChunks[i] = types.ChunkDownloading
-		} else if anyCompleted {
-			visualChunks[i] = types.ChunkDownloading
-		} else {
-			visualChunks[i] = types.ChunkPending
-		}
-	}
-	return visualChunks
 }

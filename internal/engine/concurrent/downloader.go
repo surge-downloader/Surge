@@ -260,6 +260,12 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 			d.State.SetSavedElapsed(time.Duration(savedState.Elapsed))
 			// Fix speed spike: sync session start so we don't count previous bytes as new speed
 			d.State.SyncSessionStart()
+
+			// RESTORE CHUNK BITMAP if available
+			if len(savedState.ChunkBitmap) > 0 && savedState.ActualChunkSize > 0 {
+				d.State.RestoreBitmap(savedState.ChunkBitmap, savedState.ActualChunkSize)
+				utils.Debug("Restored chunk map: size %d", savedState.ActualChunkSize)
+			}
 		}
 		utils.Debug("Resuming from saved state: %d tasks, %d bytes downloaded", len(tasks), savedState.Downloaded)
 	} else {
