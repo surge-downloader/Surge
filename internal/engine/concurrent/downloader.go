@@ -264,6 +264,10 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 			// RESTORE CHUNK BITMAP if available
 			if len(savedState.ChunkBitmap) > 0 && savedState.ActualChunkSize > 0 {
 				d.State.RestoreBitmap(savedState.ChunkBitmap, savedState.ActualChunkSize)
+
+				// Reconstruct internal progress from remaining tasks to ensure partial chunks are handled correctly
+				d.State.RecalculateProgress(savedState.Tasks)
+
 				utils.Debug("Restored chunk map: size %d", savedState.ActualChunkSize)
 			}
 		}

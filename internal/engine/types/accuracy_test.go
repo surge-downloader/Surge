@@ -85,3 +85,35 @@ func TestRestoreBitmap(t *testing.T) {
 		t.Errorf("Expected chunk 1 to be pending")
 	}
 }
+
+func TestRecalculateProgress(t *testing.T) {
+	// 30MB total, 10MB chunks -> 3 chunks
+	state := types.NewProgressState("test-recalc", 30*1024*1024)
+	chunkSize := int64(10 * 1024 * 1024)
+	state.InitBitmap(30*1024*1024, chunkSize)
+
+	// Simulate remaining tasks (Resume scenario)
+	// Chunk 0: Missing first 5MB (Offset 0, Len 5MB) -> 5MB downloaded
+	// Chunk 1: Missing all 10MB (Offset 10MB, Len 10MB) -> 0MB downloaded
+	// Chunk 2: Missing nothing -> 10MB downloaded
+
+	tasks := []types.Task{
+		{Offset: 0, Length: 5 * 1024 * 1024},
+		{Offset: 10 * 1024 * 1024, Length: 10 * 1024 * 1024},
+	}
+
+	state.RecalculateProgress(tasks)
+
+	// Verify Chunk 0 (Partial -> Downloading)
+	if state.GetChunkState(0) != types.ChunkDownloading {
+		t.Errorf("Expected Chunk 0 to be Downloading (Partial), got %v", state.GetChunkState(0))
+	}
+	// Verify Chunk 1 (Empty -> Pending)
+	if state.GetChunkState(1) != types.ChunkPending {
+		t.Errorf("Expected Chunk 1 to be Pending (Empty), got %v", state.GetChunkState(1))
+	}
+	// Verify Chunk 2 (Full -> Completed)
+	if state.GetChunkState(2) != types.ChunkCompleted {
+		t.Errorf("Expected Chunk 2 to be Completed (Full), got %v", state.GetChunkState(2))
+	}
+}

@@ -25,9 +25,11 @@ type ProgressState struct {
 	Mirrors []MirrorStatus // Status of each mirror
 
 	// Chunk Visualization (Bitmap)
-	ChunkBitmap     []byte // 2 bits per chunk
-	ActualChunkSize int64  // Size of each actual chunk in bytes
-	BitmapWidth     int    // Number of chunks tracked
+	// Chunk Visualization (Bitmap)
+	ChunkBitmap     []byte  // 2 bits per chunk
+	ChunkProgress   []int64 // Bytes downloaded per chunk (runtime only, not persisted)
+	ActualChunkSize int64   // Size of each actual chunk in bytes
+	BitmapWidth     int     // Number of chunks tracked
 
 	mu sync.Mutex // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed, Mirrors
 }
@@ -166,8 +168,7 @@ func (ps *ProgressState) InitBitmap(totalSize int64, chunkSize int64) {
 	ps.ActualChunkSize = chunkSize
 	ps.BitmapWidth = numChunks
 	ps.ChunkBitmap = make([]byte, bytesNeeded)
-	ps.BitmapWidth = numChunks
-	ps.ChunkBitmap = make([]byte, bytesNeeded)
+	ps.ChunkProgress = make([]int64, numChunks)
 }
 
 // RestoreBitmap restores the chunk bitmap from saved state
@@ -185,6 +186,11 @@ func (ps *ProgressState) RestoreBitmap(bitmap []byte, actualChunkSize int64) {
 	// Recalculate width
 	numChunks := int((ps.TotalSize + ps.ActualChunkSize - 1) / ps.ActualChunkSize)
 	ps.BitmapWidth = numChunks
+
+	// Re-initialize progress tracking (will be filled by RecalculateProgress)
+	if len(ps.ChunkProgress) != numChunks {
+		ps.ChunkProgress = make([]int64, numChunks)
+	}
 }
 
 // SetChunkState sets the 2-bit state for a specific chunk index
@@ -228,6 +234,11 @@ func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkSta
 		return
 	}
 
+	// Lazily init progress array if missing
+	if len(ps.ChunkProgress) != ps.BitmapWidth {
+		ps.ChunkProgress = make([]int64, ps.BitmapWidth)
+	}
+
 	startIdx := int(offset / ps.ActualChunkSize)
 	endIdx := int((offset + length - 1) / ps.ActualChunkSize)
 
@@ -239,16 +250,126 @@ func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkSta
 	}
 
 	for i := startIdx; i <= endIdx; i++ {
-		// Only upgrade status (Pending -> Downloading -> Completed)
-		// Or if we are setting Downloading, don't overwrite Completed
-		current := ps.GetChunkState(i)
+		// Calculate precise overlap with this chunk
+		chunkStart := int64(i) * ps.ActualChunkSize
+		chunkEnd := chunkStart + ps.ActualChunkSize
+		if chunkEnd > ps.TotalSize {
+			chunkEnd = ps.TotalSize
+		}
+
+		updateStart := offset
+		if updateStart < chunkStart {
+			updateStart = chunkStart
+		}
+
+		updateEnd := offset + length
+		if updateEnd > chunkEnd {
+			updateEnd = chunkEnd
+		}
+
+		overlap := updateEnd - updateStart
+		if overlap < 0 {
+			overlap = 0
+		}
 
 		if status == ChunkCompleted {
-			ps.SetChunkState(i, ChunkCompleted)
+			// Accumulate bytes
+			ps.ChunkProgress[i] += overlap
+			if ps.ChunkProgress[i] >= (chunkEnd - chunkStart) {
+				ps.ChunkProgress[i] = chunkEnd - chunkStart // clamp
+				ps.SetChunkState(i, ChunkCompleted)
+			} else {
+				// Partial progress -> Downloading
+				if ps.GetChunkState(i) != ChunkCompleted {
+					ps.SetChunkState(i, ChunkDownloading)
+				}
+			}
 		} else if status == ChunkDownloading {
+			current := ps.GetChunkState(i)
 			if current != ChunkCompleted {
 				ps.SetChunkState(i, ChunkDownloading)
 			}
+		}
+	}
+}
+
+// RecalculateProgress reconstructs ChunkProgress from remaining tasks (for resume)
+func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	if ps.ActualChunkSize == 0 || ps.BitmapWidth == 0 {
+		return
+	}
+
+	// 1. Assume everything is downloaded initially
+	ps.ChunkProgress = make([]int64, ps.BitmapWidth)
+	for i := 0; i < ps.BitmapWidth; i++ {
+		chunkStart := int64(i) * ps.ActualChunkSize
+		chunkEnd := chunkStart + ps.ActualChunkSize
+		if chunkEnd > ps.TotalSize {
+			chunkEnd = ps.TotalSize
+		}
+		ps.ChunkProgress[i] = chunkEnd - chunkStart
+	}
+
+	// 2. Subtract remaining tasks
+	for _, task := range remainingTasks {
+		offset := task.Offset
+		length := task.Length
+
+		startIdx := int(offset / ps.ActualChunkSize)
+		endIdx := int((offset + length - 1) / ps.ActualChunkSize)
+
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		if endIdx >= ps.BitmapWidth {
+			endIdx = ps.BitmapWidth - 1
+		}
+
+		for i := startIdx; i <= endIdx; i++ {
+			chunkStart := int64(i) * ps.ActualChunkSize
+			chunkEnd := chunkStart + ps.ActualChunkSize
+			if chunkEnd > ps.TotalSize {
+				chunkEnd = ps.TotalSize
+			}
+
+			taskStart := offset
+			if taskStart < chunkStart {
+				taskStart = chunkStart
+			}
+
+			taskEnd := offset + length
+			if taskEnd > chunkEnd {
+				taskEnd = chunkEnd
+			}
+
+			overlap := taskEnd - taskStart
+			if overlap > 0 {
+				ps.ChunkProgress[i] -= overlap
+			}
+		}
+	}
+
+	// 3. Update Bitmap based on calculated progress
+	for i := 0; i < ps.BitmapWidth; i++ {
+		chunkStart := int64(i) * ps.ActualChunkSize
+		chunkEnd := chunkStart + ps.ActualChunkSize
+		if chunkEnd > ps.TotalSize {
+			chunkEnd = ps.TotalSize
+		}
+		chunkSize := chunkEnd - chunkStart
+
+		if ps.ChunkProgress[i] >= chunkSize {
+			ps.ChunkProgress[i] = chunkSize // clamp
+			ps.SetChunkState(i, ChunkCompleted)
+		} else if ps.ChunkProgress[i] > 0 {
+			// Even if saved bitmap said Pending, if we have bytes, it's actually partial
+			ps.SetChunkState(i, ChunkDownloading)
+		} else {
+			ps.ChunkProgress[i] = 0 // clamp
+			ps.SetChunkState(i, ChunkPending)
 		}
 	}
 }

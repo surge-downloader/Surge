@@ -115,9 +115,9 @@ func (m ChunkMapModel) View() string {
 	var s strings.Builder
 
 	// Styles
-	pendingStyle := lipgloss.NewStyle().Foreground(colors.DarkGray)     // Dark gray
-	downloadingStyle := lipgloss.NewStyle().Foreground(colors.NeonPink) // Neon Pink
-	completedStyle := lipgloss.NewStyle().Foreground(colors.NeonCyan)   // Neon Green / Cyan
+	pendingStyle := lipgloss.NewStyle().Foreground(colors.DarkGray)           // Dark gray
+	downloadingStyle := lipgloss.NewStyle().Foreground(colors.NeonPink)       // Neon Pink
+	completedStyle := lipgloss.NewStyle().Foreground(colors.StateDownloading) // Neon Green / Cyan
 
 	block := "■"
 
