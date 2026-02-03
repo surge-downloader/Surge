@@ -162,7 +162,7 @@ func (m RootModel) View() string {
 	// === MAIN DASHBOARD LAYOUT ===
 
 	footerHeight := 1                              // Footer is just one line of text
-	availableHeight := m.height - 2 - footerHeight // Margin (top/bottom) + footer
+	availableHeight := m.height - 3 - footerHeight // Increased margin to prevent scroll/breakage
 	if availableHeight < 10 {
 		availableHeight = 10 // Minimum safe height
 	}
@@ -206,11 +206,19 @@ func (m RootModel) View() string {
 	// Ensure minimum chunk height by stealing from graph if necessary
 	if chunkHeight < 6 {
 		deficit := 6 - chunkHeight
+		// Try to steal from graph
 		if graphHeight-deficit >= 5 {
 			graphHeight -= deficit
 			chunkHeight = 6
-		} else if chunkHeight < 0 {
-			chunkHeight = 0
+		} else {
+			// If we can't maintain min graph height, allow small chunk height
+			// but ensure at least 2 for border rendering validity
+			if chunkHeight < 2 {
+				chunkHeight = 2
+			}
+			// If pushing chunkHeight to 2 makes us overflow, we have to shrink something else?
+			// But here we accept a slight alignment mismatch if terminal is extremely small.
+			// In fullscreen this branch shouldn't trigger.
 		}
 	}
 
@@ -472,7 +480,7 @@ func (m RootModel) View() string {
 	if selected != nil {
 		// New chunk map component
 		chunks := selected.state.GetChunks()
-		chunkMap := components.NewChunkMapModel(chunks, rightWidth-4)
+		chunkMap := components.NewChunkMapModel(chunks, rightWidth-6)
 		chunkContent = lipgloss.NewStyle().Padding(1, 2).Render(chunkMap.View())
 
 		// If no chunks (not initialized or small file), show message
