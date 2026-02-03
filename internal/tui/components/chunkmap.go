@@ -69,3 +69,16 @@ func (m ChunkMapModel) View() string {
 
 	return s.String()
 }
+
+// CalculateHeight returns the number of lines needed to render the chunks
+func CalculateHeight(count int, width int) int {
+	if count == 0 {
+		return 0
+	}
+	cols := width / 2
+	if cols < 1 {
+		cols = 1
+	}
+	// ceil(count / cols)
+	return (count + cols - 1) / cols
+}

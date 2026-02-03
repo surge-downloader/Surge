@@ -181,11 +181,9 @@ func (m RootModel) View() string {
 	}
 
 	// --- RIGHT COLUMN HEIGHTS ---
-	// Split into 3 parts: Graph (top), Details (middle), Chunks (bottom)
-	graphHeight := availableHeight / 3
-	if graphHeight < 9 {
-		graphHeight = 9
-	}
+	// Priority 1: Details (Fixed content + Padding)
+	// Priority 2: ChunkMap (Dynamic / Exact needed)
+	// Priority 3: Graph (Remainder)
 
 	// Pre-calculate Detail Content to determine exact height needed
 	var detailContent string
@@ -201,26 +199,58 @@ func (m RootModel) View() string {
 	// Exact height from content + borders
 	detailHeight := lipgloss.Height(detailContent) + 2
 
-	chunkHeight := availableHeight - graphHeight - detailHeight
+	// Calculate Available Height for Rest
+	remainingHeight := availableHeight - detailHeight
 
-	// Ensure minimum chunk height by stealing from graph if necessary
-	if chunkHeight < 6 {
-		deficit := 6 - chunkHeight
-		// Try to steal from graph
-		if graphHeight-deficit >= 5 {
-			graphHeight -= deficit
-			chunkHeight = 6
+	// Calculate Chunk Map Needs
+	chunkMapHeight := 0
+	chunkMapNeeded := 0
+
+	if selected != nil {
+		chunks := selected.state.GetChunks()
+		// chunkMapWidth = rightWidth - 4 (box border) - 2 (inner padding) = rightWidth - 6
+		contentLines := components.CalculateHeight(len(chunks), rightWidth-6)
+		if contentLines > 0 {
+			// +2 for border, +2 for padding
+			chunkMapNeeded = contentLines + 4
 		} else {
-			// If we can't maintain min graph height, allow small chunk height
-			// but ensure at least 2 for border rendering validity
-			if chunkHeight < 2 {
-				chunkHeight = 2
+			// Minimum for message "Chunk visualization not available"
+			chunkMapNeeded = 6
+		}
+	} else {
+		chunkMapNeeded = 6 // Default placeholder height
+	}
+
+	// Define Minimum Graph Height
+	minGraphHeight := 9
+	var graphHeight int
+
+	// Determine Layout
+	if remainingHeight-chunkMapNeeded >= minGraphHeight {
+		// Sufficient space for everything
+		chunkMapHeight = chunkMapNeeded
+		graphHeight = remainingHeight - chunkMapHeight
+	} else {
+		// Not enough space, prioritize Graph Min Height, then squeeze ChunkMap
+		graphHeight = minGraphHeight
+		chunkMapHeight = remainingHeight - graphHeight
+
+		// If ChunkMap gets squeezed too much, we might need to squeeze Graph purely to survive
+		if chunkMapHeight < 4 {
+			// Check if we can start eating into Graph's minimum?
+			// Let's enforce a hard floor for ChunkMap
+			chunkMapHeight = 4
+			graphHeight = remainingHeight - chunkMapHeight
+			// If graphHeight becomes negative, the whole UI is too small,
+			// renderBtopBox will handle truncation, but visual will be broken.
+			if graphHeight < 2 {
+				graphHeight = 2
 			}
-			// If pushing chunkHeight to 2 makes us overflow, we have to shrink something else?
-			// But here we accept a slight alignment mismatch if terminal is extremely small.
-			// In fullscreen this branch shouldn't trigger.
 		}
 	}
+
+	// Recalculate Graph Area for rendering usage later
+	// graphHeight is now set vertically.
 
 	// --- SECTION 1: HEADER & LOGO (Top Left) + LOG BOX (Top Right) ---
 	logoText := `
@@ -489,15 +519,15 @@ func (m RootModel) View() string {
 			if selected.done {
 				msg = "Download Complete"
 			}
-			chunkContent = lipgloss.Place(rightWidth-4, chunkHeight-2, lipgloss.Center, lipgloss.Center,
+			chunkContent = lipgloss.Place(rightWidth-4, chunkMapHeight-2, lipgloss.Center, lipgloss.Center,
 				lipgloss.NewStyle().Foreground(ColorGray).Render(msg))
 		}
 	} else {
-		chunkContent = lipgloss.Place(rightWidth-4, chunkHeight-2, lipgloss.Center, lipgloss.Center,
+		chunkContent = lipgloss.Place(rightWidth-4, chunkMapHeight-2, lipgloss.Center, lipgloss.Center,
 			lipgloss.NewStyle().Foreground(ColorGray).Render(""))
 	}
 
-	chunkBox := renderBtopBox("", PaneTitleStyle.Render(" File Map "), chunkContent, rightWidth, chunkHeight, ColorGray)
+	chunkBox := renderBtopBox("", PaneTitleStyle.Render(" File Map "), chunkContent, rightWidth, chunkMapHeight, ColorGray)
 
 	// --- ASSEMBLY ---
 
@@ -659,7 +689,7 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 	)
 
 	return lipgloss.NewStyle().
-		Padding(0, 1). // Reduced padding
+		Padding(1, 2). // Increased padding
 		Render(content)
 }
 
