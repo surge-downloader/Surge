@@ -161,8 +161,8 @@ func (m RootModel) View() string {
 
 	// === MAIN DASHBOARD LAYOUT ===
 
-	footerHeight := 1                              // Footer is just one line of text
-	availableHeight := m.height - 3 - footerHeight // Increased margin to prevent scroll/breakage
+	footerHeight := 1                          // Footer is just one line of text
+	availableHeight := m.height - footerHeight // maximized height
 	if availableHeight < 10 {
 		availableHeight = 10 // Minimum safe height
 	}
@@ -241,7 +241,24 @@ func (m RootModel) View() string {
 	if remainingHeight-chunkMapNeeded >= minGraphHeight {
 		// Sufficient space for everything
 		chunkMapHeight = chunkMapNeeded
-		graphHeight = remainingHeight - chunkMapHeight
+		if !showChunkMap {
+			// User wants 4:6 ratio for Graph:Details
+			targetGraphHeight := int(float64(availableHeight) * 0.4)
+			targetDetailHeight := availableHeight - targetGraphHeight
+
+			// Ensure Graph meets minimum
+			if targetGraphHeight < minGraphHeight {
+				targetGraphHeight = minGraphHeight
+				targetDetailHeight = availableHeight - targetGraphHeight
+			}
+
+			// Assign
+			graphHeight = targetGraphHeight
+			detailHeight = targetDetailHeight
+			chunkMapHeight = 0
+		} else {
+			graphHeight = remainingHeight - chunkMapHeight
+		}
 	} else {
 		// Not enough space, prioritize Graph Min Height, then squeeze ChunkMap
 		graphHeight = minGraphHeight
