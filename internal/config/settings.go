@@ -44,8 +44,6 @@ type ConnectionSettings struct {
 // ChunkSettings contains download chunk configuration.
 type ChunkSettings struct {
 	MinChunkSize     int64 `json:"min_chunk_size"`
-	MaxChunkSize     int64 `json:"max_chunk_size"`
-	TargetChunkSize  int64 `json:"target_chunk_size"`
 	WorkerBufferSize int   `json:"worker_buffer_size"`
 }
 
@@ -80,15 +78,11 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 			{Key: "theme", Label: "App Theme", Description: "UI Theme (System, Light, Dark).", Type: "int"},
 			{Key: "log_retention_count", Label: "Log Retention Count", Description: "Number of recent log files to keep.", Type: "int"},
 		},
-		"Connections": {
+		"Network": {
 			{Key: "max_connections_per_host", Label: "Max Connections/Host", Description: "Maximum concurrent connections per host (1-64).", Type: "int"},
 			{Key: "max_global_connections", Label: "Max Global Connections", Description: "Maximum total concurrent connections across all downloads.", Type: "int"},
 			{Key: "user_agent", Label: "User Agent", Description: "Custom User-Agent string for HTTP requests. Leave empty for default.", Type: "string"},
-		},
-		"Chunks": {
 			{Key: "min_chunk_size", Label: "Min Chunk Size", Description: "Minimum download chunk size in MB (e.g., 2).", Type: "int64"},
-			{Key: "max_chunk_size", Label: "Max Chunk Size", Description: "Maximum download chunk size in MB (e.g., 16).", Type: "int64"},
-			{Key: "target_chunk_size", Label: "Target Chunk Size", Description: "Preferred chunk size in MB when splitting downloads.", Type: "int64"},
 			{Key: "worker_buffer_size", Label: "Worker Buffer Size", Description: "I/O buffer size per worker in KB (e.g., 512).", Type: "int"},
 		},
 		"Performance": {
@@ -103,7 +97,7 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 
 // CategoryOrder returns the order of categories for UI tabs.
 func CategoryOrder() []string {
-	return []string{"General", "Connections", "Chunks", "Performance"}
+	return []string{"General", "Network", "Performance"}
 }
 
 const (
@@ -134,8 +128,6 @@ func DefaultSettings() *Settings {
 		},
 		Chunks: ChunkSettings{
 			MinChunkSize:     2 * MB,
-			MaxChunkSize:     16 * MB,
-			TargetChunkSize:  8 * MB,
 			WorkerBufferSize: 512 * KB,
 		},
 		Performance: PerformanceSettings{
@@ -204,8 +196,6 @@ type RuntimeConfig struct {
 	MaxGlobalConnections  int
 	UserAgent             string
 	MinChunkSize          int64
-	MaxChunkSize          int64
-	TargetChunkSize       int64
 	WorkerBufferSize      int
 	MaxTaskRetries        int
 	SlowWorkerThreshold   float64
@@ -221,8 +211,6 @@ func (s *Settings) ToRuntimeConfig() *RuntimeConfig {
 		MaxGlobalConnections:  s.Connections.MaxGlobalConnections,
 		UserAgent:             s.Connections.UserAgent,
 		MinChunkSize:          s.Chunks.MinChunkSize,
-		MaxChunkSize:          s.Chunks.MaxChunkSize,
-		TargetChunkSize:       s.Chunks.TargetChunkSize,
 		WorkerBufferSize:      s.Chunks.WorkerBufferSize,
 		MaxTaskRetries:        s.Performance.MaxTaskRetries,
 		SlowWorkerThreshold:   s.Performance.SlowWorkerThreshold,

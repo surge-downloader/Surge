@@ -221,14 +221,11 @@ func (m RootModel) getSettingsValues(category string) map[string]interface{} {
 		values["theme"] = m.Settings.General.Theme
 		values["log_retention_count"] = m.Settings.General.LogRetentionCount
 
-	case "Connections":
+	case "Network":
 		values["max_connections_per_host"] = m.Settings.Connections.MaxConnectionsPerHost
 		values["max_global_connections"] = m.Settings.Connections.MaxGlobalConnections
 		values["user_agent"] = m.Settings.Connections.UserAgent
-	case "Chunks":
 		values["min_chunk_size"] = m.Settings.Chunks.MinChunkSize
-		values["max_chunk_size"] = m.Settings.Chunks.MaxChunkSize
-		values["target_chunk_size"] = m.Settings.Chunks.TargetChunkSize
 		values["worker_buffer_size"] = m.Settings.Chunks.WorkerBufferSize
 	case "Performance":
 		values["max_task_retries"] = m.Settings.Performance.MaxTaskRetries
@@ -257,10 +254,13 @@ func (m *RootModel) setSettingValue(category, key, value string) error {
 	switch category {
 	case "General":
 		return m.setGeneralSetting(key, value, meta.Type)
-	case "Connections":
-		return m.setConnectionsSetting(key, value, meta.Type)
-	case "Chunks":
-		return m.setChunksSetting(key, value, meta.Type)
+	case "Network":
+		// Dispatch to appropriate setter based on key
+		if key == "min_chunk_size" || key == "worker_buffer_size" {
+			return m.setChunksSetting(key, value, meta.Type)
+		} else {
+			return m.setConnectionsSetting(key, value, meta.Type)
+		}
 	case "Performance":
 		return m.setPerformanceSetting(key, value, meta.Type)
 	}
@@ -347,14 +347,6 @@ func (m *RootModel) setChunksSetting(key, value, typ string) error {
 		// Parse as MB and convert to bytes
 		if v, err := strconv.ParseFloat(value, 64); err == nil {
 			m.Settings.Chunks.MinChunkSize = int64(v * 1024 * 1024)
-		}
-	case "max_chunk_size":
-		if v, err := strconv.ParseFloat(value, 64); err == nil {
-			m.Settings.Chunks.MaxChunkSize = int64(v * 1024 * 1024)
-		}
-	case "target_chunk_size":
-		if v, err := strconv.ParseFloat(value, 64); err == nil {
-			m.Settings.Chunks.TargetChunkSize = int64(v * 1024 * 1024)
 		}
 	case "worker_buffer_size":
 		// Keep buffer in KB
@@ -449,7 +441,7 @@ func (m RootModel) getSettingsCount() int {
 func (m RootModel) getSettingUnit() string {
 	key := m.getCurrentSettingKey()
 	switch key {
-	case "min_chunk_size", "max_chunk_size", "target_chunk_size":
+	case "min_chunk_size":
 		return " MB"
 	case "worker_buffer_size":
 		return " KB"
@@ -467,7 +459,7 @@ func (m RootModel) getSettingUnit() string {
 // formatSettingValueForEdit returns a plain value without units for editing
 func formatSettingValueForEdit(value interface{}, typ, key string) string {
 	switch key {
-	case "min_chunk_size", "max_chunk_size", "target_chunk_size":
+	case "min_chunk_size":
 		if v, ok := value.(int64); ok {
 			mb := float64(v) / (1024 * 1024)
 			return fmt.Sprintf("%.1f", mb)
@@ -583,7 +575,8 @@ func (m *RootModel) resetSettingToDefault(category, key string, defaults *config
 			m.Settings.General.LogRetentionCount = defaults.General.LogRetentionCount
 		}
 
-	case "Connections":
+	case "Network":
+		// Check both connections and chunks keys
 		switch key {
 		case "max_connections_per_host":
 			m.Settings.Connections.MaxConnectionsPerHost = defaults.Connections.MaxConnectionsPerHost
@@ -591,15 +584,8 @@ func (m *RootModel) resetSettingToDefault(category, key string, defaults *config
 			m.Settings.Connections.MaxGlobalConnections = defaults.Connections.MaxGlobalConnections
 		case "user_agent":
 			m.Settings.Connections.UserAgent = defaults.Connections.UserAgent
-		}
-	case "Chunks":
-		switch key {
 		case "min_chunk_size":
 			m.Settings.Chunks.MinChunkSize = defaults.Chunks.MinChunkSize
-		case "max_chunk_size":
-			m.Settings.Chunks.MaxChunkSize = defaults.Chunks.MaxChunkSize
-		case "target_chunk_size":
-			m.Settings.Chunks.TargetChunkSize = defaults.Chunks.TargetChunkSize
 		case "worker_buffer_size":
 			m.Settings.Chunks.WorkerBufferSize = defaults.Chunks.WorkerBufferSize
 		}

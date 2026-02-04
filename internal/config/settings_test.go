@@ -55,16 +55,7 @@ func TestDefaultSettings(t *testing.T) {
 		if settings.Chunks.MinChunkSize <= 0 {
 			t.Errorf("MinChunkSize should be positive, got: %d", settings.Chunks.MinChunkSize)
 		}
-		if settings.Chunks.MaxChunkSize <= 0 {
-			t.Errorf("MaxChunkSize should be positive, got: %d", settings.Chunks.MaxChunkSize)
-		}
-		if settings.Chunks.MinChunkSize > settings.Chunks.MaxChunkSize {
-			t.Error("MinChunkSize should not exceed MaxChunkSize")
-		}
-		if settings.Chunks.TargetChunkSize < settings.Chunks.MinChunkSize ||
-			settings.Chunks.TargetChunkSize > settings.Chunks.MaxChunkSize {
-			t.Error("TargetChunkSize should be between MinChunkSize and MaxChunkSize")
-		}
+
 		if settings.Chunks.WorkerBufferSize <= 0 {
 			t.Errorf("WorkerBufferSize should be positive, got: %d", settings.Chunks.WorkerBufferSize)
 		}
@@ -153,8 +144,6 @@ func TestSaveAndLoadSettings(t *testing.T) {
 		},
 		Chunks: ChunkSettings{
 			MinChunkSize:     1 * MB,
-			MaxChunkSize:     32 * MB,
-			TargetChunkSize:  16 * MB,
 			WorkerBufferSize: 256 * KB,
 		},
 		Performance: PerformanceSettings{
@@ -301,12 +290,6 @@ func TestToRuntimeConfig(t *testing.T) {
 	if runtime.MinChunkSize != settings.Chunks.MinChunkSize {
 		t.Error("MinChunkSize not correctly mapped")
 	}
-	if runtime.MaxChunkSize != settings.Chunks.MaxChunkSize {
-		t.Error("MaxChunkSize not correctly mapped")
-	}
-	if runtime.TargetChunkSize != settings.Chunks.TargetChunkSize {
-		t.Error("TargetChunkSize not correctly mapped")
-	}
 	if runtime.WorkerBufferSize != settings.Chunks.WorkerBufferSize {
 		t.Error("WorkerBufferSize not correctly mapped")
 	}
@@ -378,7 +361,7 @@ func TestCategoryOrder(t *testing.T) {
 	}
 
 	// Should have all expected categories
-	expectedCount := 4 // General, Connections, Chunks, Performance
+	expectedCount := 3 // General, Network, Performance
 	if len(order) != expectedCount {
 		t.Errorf("Expected %d categories, got %d", expectedCount, len(order))
 	}
@@ -512,8 +495,6 @@ func TestSaveAndLoadSettings_RoundTrip(t *testing.T) {
 		},
 		Chunks: ChunkSettings{
 			MinChunkSize:     1 * MB,
-			MaxChunkSize:     64 * MB,
-			TargetChunkSize:  32 * MB,
 			WorkerBufferSize: 1 * MB,
 		},
 		Performance: PerformanceSettings{
@@ -546,9 +527,6 @@ func TestSaveAndLoadSettings_RoundTrip(t *testing.T) {
 	}
 	if loaded.Connections.MaxGlobalConnections != original.Connections.MaxGlobalConnections {
 		t.Error("MaxGlobalConnections mismatch")
-	}
-	if loaded.Chunks.MaxChunkSize != original.Chunks.MaxChunkSize {
-		t.Error("MaxChunkSize mismatch")
 	}
 	if loaded.Performance.SlowWorkerGracePeriod != original.Performance.SlowWorkerGracePeriod {
 		t.Error("SlowWorkerGracePeriod mismatch")
