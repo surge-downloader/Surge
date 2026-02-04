@@ -69,6 +69,50 @@ func (d *ConcurrentDownloader) getInitialConnections(fileSize int64) int {
 	return maxConns
 }
 
+// cleanUpShadows cancels any other workers working on the same completed chunk
+func (d *ConcurrentDownloader) cleanUpShadows(completedOffset int64, winnerID int) {
+	d.activeMu.Lock()
+	defer d.activeMu.Unlock()
+
+	for id, at := range d.activeTasks {
+		// If it's a different worker but working on the same chunk offset
+		if id != winnerID && at.Task.Offset == completedOffset {
+			utils.Debug("EndGame: Worker %d won Chunk offset %d. Cancelling loser Worker %d.", winnerID, completedOffset, id)
+			if at.Cancel != nil {
+				at.Cancel()
+			}
+		}
+	}
+}
+
+// assignShadowWork assigns idle workers to shadow active tasks (End Game)
+func (d *ConcurrentDownloader) assignShadowWork(queue *TaskQueue) {
+	d.activeMu.Lock()
+	defer d.activeMu.Unlock()
+
+	// Count workers per offset
+	counts := make(map[int64]int)
+	for _, at := range d.activeTasks {
+		counts[at.Task.Offset]++
+	}
+
+	for _, at := range d.activeTasks {
+		// If this chunk has < 2 workers (i.e. only the original one)
+		if counts[at.Task.Offset] < 2 {
+			// Push duplicate task to queue
+			// Note: We shadow the ORIGINAL task range.
+			// The shadow worker will check existence on disk/offsets, but since we overwrite it's safe.
+			// The race is settled by cleanUpShadows.
+			queue.Push(at.Task)
+
+			utils.Debug("EndGame: Double assigning Chunk offset %d (Racing against original owner)", at.Task.Offset)
+
+			// Only assign one shadow per tick to prevent flooding queue
+			return
+		}
+	}
+}
+
 // ReportMirrorError marks a mirror as having an error in the state
 func (d *ConcurrentDownloader) ReportMirrorError(url string) {
 	if d.State == nil {
@@ -325,6 +369,9 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 						// Try to steal from an active worker
 						if d.StealWork(queue) {
 							didWork = true
+						} else {
+							// If stealing failed (chunks too small/balanced), try Shadowing (End Game)
+							d.assignShadowWork(queue)
 						}
 					}
 
