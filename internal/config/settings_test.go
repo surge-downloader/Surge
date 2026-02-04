@@ -48,6 +48,9 @@ func TestDefaultSettings(t *testing.T) {
 			t.Errorf("MaxGlobalConnections should be positive, got: %d", settings.Connections.MaxGlobalConnections)
 		}
 		// UserAgent can be empty (means use default)
+		if settings.Connections.SequentialDownload {
+			t.Error("SequentialDownload should be false by default")
+		}
 	})
 
 	// Verify Chunk settings
@@ -492,6 +495,7 @@ func TestSaveAndLoadSettings_RoundTrip(t *testing.T) {
 			MaxConnectionsPerHost: 64,
 			MaxGlobalConnections:  200,
 			UserAgent:             "RoundTripTest/1.0",
+			SequentialDownload:    true,
 		},
 		Chunks: ChunkSettings{
 			MinChunkSize:     1 * MB,
@@ -527,6 +531,9 @@ func TestSaveAndLoadSettings_RoundTrip(t *testing.T) {
 	}
 	if loaded.Connections.MaxGlobalConnections != original.Connections.MaxGlobalConnections {
 		t.Error("MaxGlobalConnections mismatch")
+	}
+	if loaded.Connections.SequentialDownload != original.Connections.SequentialDownload {
+		t.Error("SequentialDownload mismatch")
 	}
 	if loaded.Performance.SlowWorkerGracePeriod != original.Performance.SlowWorkerGracePeriod {
 		t.Error("SlowWorkerGracePeriod mismatch")

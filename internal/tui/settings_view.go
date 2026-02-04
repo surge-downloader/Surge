@@ -233,6 +233,7 @@ func (m RootModel) getSettingsValues(category string) map[string]interface{} {
 		values["max_connections_per_host"] = m.Settings.Connections.MaxConnectionsPerHost
 		values["max_global_connections"] = m.Settings.Connections.MaxGlobalConnections
 		values["user_agent"] = m.Settings.Connections.UserAgent
+		values["sequential_download"] = m.Settings.Connections.SequentialDownload
 		values["min_chunk_size"] = m.Settings.Chunks.MinChunkSize
 		values["worker_buffer_size"] = m.Settings.Chunks.WorkerBufferSize
 	case "Performance":
@@ -345,6 +346,15 @@ func (m *RootModel) setConnectionsSetting(key, value, typ string) error {
 		}
 	case "user_agent":
 		m.Settings.Connections.UserAgent = value
+	case "sequential_download":
+		// Toggle logic handled by generic bool toggle in Update, but just in case
+		if value == "" {
+			m.Settings.Connections.SequentialDownload = !m.Settings.Connections.SequentialDownload
+		} else {
+			// For programmatic setting if ever needed
+			b, _ := strconv.ParseBool(value)
+			m.Settings.Connections.SequentialDownload = b
+		}
 	}
 	return nil
 }
@@ -592,6 +602,8 @@ func (m *RootModel) resetSettingToDefault(category, key string, defaults *config
 			m.Settings.Connections.MaxGlobalConnections = defaults.Connections.MaxGlobalConnections
 		case "user_agent":
 			m.Settings.Connections.UserAgent = defaults.Connections.UserAgent
+		case "sequential_download":
+			m.Settings.Connections.SequentialDownload = defaults.Connections.SequentialDownload
 		case "min_chunk_size":
 			m.Settings.Chunks.MinChunkSize = defaults.Chunks.MinChunkSize
 		case "worker_buffer_size":
