@@ -66,6 +66,7 @@ type RuntimeConfig struct {
 	MaxConnectionsPerHost int
 	MaxGlobalConnections  int
 	UserAgent             string
+	SequentialDownload    bool
 	MinChunkSize          int64
 
 	WorkerBufferSize      int

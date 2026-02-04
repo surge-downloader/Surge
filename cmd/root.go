@@ -783,6 +783,7 @@ func convertRuntimeConfig(rc *config.RuntimeConfig) *types.RuntimeConfig {
 		MaxConnectionsPerHost: rc.MaxConnectionsPerHost,
 		MaxGlobalConnections:  rc.MaxGlobalConnections,
 		UserAgent:             rc.UserAgent,
+		SequentialDownload:    rc.SequentialDownload,
 		MinChunkSize:          rc.MinChunkSize,
 		WorkerBufferSize:      rc.WorkerBufferSize,
 		MaxTaskRetries:        rc.MaxTaskRetries,

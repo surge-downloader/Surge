@@ -215,7 +215,24 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 
 	// Determine connections and chunk size
 	numConns := d.getInitialConnections(fileSize)
-	chunkSize := d.calculateChunkSize(fileSize, numConns)
+
+	var chunkSize int64
+	if d.Runtime.SequentialDownload {
+		// Sequential mode: Use small fixed chunks (MinChunkSize) to ensure strict ordering
+		// This fills the queue with many small tasks [0-5MB, 5-10MB, ...] which key off FIFO
+		chunkSize = d.Runtime.GetMinChunkSize()
+		if chunkSize <= 0 {
+			chunkSize = 2 * 1024 * 1024 // Default 2MB if not configured
+		}
+		// Align to 4KB
+		chunkSize = (chunkSize / types.AlignSize) * types.AlignSize
+		if chunkSize == 0 {
+			chunkSize = types.AlignSize
+		}
+	} else {
+		// Parallel mode: Use large shards (fileSize / workers) to minimize overhead and maximize throughput
+		chunkSize = d.calculateChunkSize(fileSize, numConns)
+	}
 
 	// Create tuned HTTP client for concurrent downloads
 	client := d.newConcurrentClient(numConns)
