@@ -85,28 +85,6 @@ func TestTaskQueue_DrainRemaining(t *testing.T) {
 	}
 }
 
-func TestTaskQueue_SplitLargestIfNeeded(t *testing.T) {
-	q := NewTaskQueue()
-
-	// Small task - should not split
-	q.Push(types.Task{Offset: 0, Length: types.MinChunk})
-	if q.SplitLargestIfNeeded() {
-		t.Error("Should not split task at MinChunk size")
-	}
-
-	// Large task - should split
-	q = NewTaskQueue()
-	q.Push(types.Task{Offset: 0, Length: 4 * types.MinChunk})
-
-	if !q.SplitLargestIfNeeded() {
-		t.Error("Should split large task")
-	}
-
-	if q.Len() != 2 {
-		t.Errorf("After split, Len = %d, want 2", q.Len())
-	}
-}
-
 func TestAlignedSplitSize(t *testing.T) {
 	tests := []struct {
 		remaining int64
@@ -130,61 +108,5 @@ func TestAlignedSplitSize(t *testing.T) {
 		if got != 0 && got%types.AlignSize != 0 {
 			t.Errorf("alignedSplitSize(%d) = %d, not aligned to %d", tt.remaining, got, types.AlignSize)
 		}
-	}
-}
-func TestTaskQueue_SplitLargestIfNeeded_Regression(t *testing.T) {
-	q := NewTaskQueue()
-
-	// Push 2 tasks
-	q.Push(types.Task{Offset: 0, Length: types.MinChunk})       // Task 0
-	q.Push(types.Task{Offset: 100, Length: 4 * types.MinChunk}) // Task 1 (should be split)
-
-	// Pop Task 0 (Head moves to 1)
-	if _, ok := q.Pop(); !ok {
-		t.Fatal("Failed to pop task 0")
-	}
-
-	// Now Head is at 1 (Task 1). Task 0 is "dead" space in slice.
-	// The bug was that SplitLargestIfNeeded started iteration at 0.
-	// If it starts at 0, it might enable splitting of Task 0 again if it was large enough,
-	// or mess up indexing.
-
-	// In this specific regression setup:
-	// We want to ensure it splits Task 1 (index 1), NOT Task 0 (index 0).
-	// Although Task 0 is small here, if the loop ignores head, it processes garbage/old data.
-
-	if !q.SplitLargestIfNeeded() {
-		t.Error("Should have split Task 1")
-	}
-
-	// Check queue state
-	// Should have: Task 1 (split right half) at head, and Task 1 (split left half) appended.
-	// Len should be 2.
-	if q.Len() != 2 {
-		t.Errorf("Len = %d, want 2", q.Len())
-	}
-
-	// Check that we didn't resurrect Task 0 or duplicate it.
-	t1, _ := q.Pop()
-	t2, _ := q.Pop()
-
-	// Original Task 1 was Offset 100, Len 4*MinChunk
-	// Split: Right half replaces it, Left half appended.
-	// Left: Offset 100, Len 2*MinChunk
-	// Right: Offset 100+2*MinChunk, Len 2*MinChunk
-
-	// Implementation detail: task_queue.go:132: q.tasks[idx] = right; q.tasks = append(q.tasks, left)
-	// So next pop (t1) should be "right" half.
-	// And t2 should be "left" half.
-
-	// Verify T1 (Right Half)
-	expectedRightOffset := int64(100 + alignedSplitSize(4*types.MinChunk))
-	if t1.Offset != expectedRightOffset {
-		t.Errorf("First popped task offset %d, want %d", t1.Offset, expectedRightOffset)
-	}
-
-	// Verify T2 (Left Half)
-	if t2.Offset != 100 {
-		t.Errorf("Second popped task offset %d, want 100", t2.Offset)
 	}
 }

@@ -19,13 +19,9 @@ const (
 
 // Chunk size constants for concurrent downloads
 const (
-	MinChunk     = 2 * MB  // Minimum chunk size
-	MaxChunk     = 16 * MB // Maximum chunk size
-	TargetChunk  = 8 * MB  // Target chunk size
-	AlignSize    = 4 * KB  // Align chunks to 4KB for filesystem
+	MinChunk     = 2 * MB // Minimum chunk size
+	AlignSize    = 4 * KB // Align chunks to 4KB for filesystem
 	WorkerBuffer = 512 * KB
-
-	TasksPerWorker = 4 // Target tasks per connection
 )
 
 // Connection limits
@@ -70,9 +66,9 @@ type RuntimeConfig struct {
 	MaxConnectionsPerHost int
 	MaxGlobalConnections  int
 	UserAgent             string
+	SequentialDownload    bool
 	MinChunkSize          int64
-	MaxChunkSize          int64
-	TargetChunkSize       int64
+
 	WorkerBufferSize      int
 	MaxTaskRetries        int
 	SlowWorkerThreshold   float64
@@ -105,22 +101,6 @@ func (r *RuntimeConfig) GetMinChunkSize() int64 {
 	return r.MinChunkSize
 }
 
-// GetMaxChunkSize returns configured value or default
-func (r *RuntimeConfig) GetMaxChunkSize() int64 {
-	if r == nil || r.MaxChunkSize <= 0 {
-		return MaxChunk
-	}
-	return r.MaxChunkSize
-}
-
-// GetTargetChunkSize returns configured value or default
-func (r *RuntimeConfig) GetTargetChunkSize() int64 {
-	if r == nil || r.TargetChunkSize <= 0 {
-		return TargetChunk
-	}
-	return r.TargetChunkSize
-}
-
 // GetWorkerBufferSize returns configured value or default
 func (r *RuntimeConfig) GetWorkerBufferSize() int {
 	if r == nil || r.WorkerBufferSize <= 0 {
@@ -139,7 +119,6 @@ const (
 	SlowWorkerGrace     = 5 * time.Second // Grace period before checking speed
 	StallTimeout        = 5 * time.Second // Restart if no data for x seconds
 	SpeedEMAAlpha       = 0.3             // EMA smoothing factor
-	MinAbsoluteSpeed    = 100 * KB        // Don't cancel workers above this speed
 )
 
 // GetMaxTaskRetries returns configured value or default

@@ -51,23 +51,22 @@ func NewConcurrentDownloader(id string, progressCh chan<- any, progState *types.
 // getInitialConnections returns the starting number of connections based on file size
 func (d *ConcurrentDownloader) getInitialConnections(fileSize int64) int {
 	maxConns := d.Runtime.GetMaxConnectionsPerHost()
+	minChunk := d.Runtime.GetMinChunkSize()
 
-	var recConns int
-	switch {
-	case fileSize < 10*types.MB:
-		recConns = 1
-	case fileSize < 100*types.MB:
-		recConns = 4
-	case fileSize < 500*types.MB:
-		recConns = 16
-	default:
-		recConns = maxConns
+	if minChunk <= 0 {
+		return 1
 	}
 
-	if recConns > maxConns {
-		return maxConns
+	// Calculate how many chunks we can fit
+	possibleChunks := int(fileSize / minChunk)
+	if possibleChunks == 0 {
+		return 1
 	}
-	return recConns
+
+	if possibleChunks < maxConns {
+		return possibleChunks
+	}
+	return maxConns
 }
 
 // ReportMirrorError marks a mirror as having an error in the state
@@ -93,24 +92,18 @@ func (d *ConcurrentDownloader) ReportMirrorError(url string) {
 
 // calculateChunkSize determines optimal chunk size
 func (d *ConcurrentDownloader) calculateChunkSize(fileSize int64, numConns int) int64 {
-	targetChunks := int64(numConns * types.TasksPerWorker)
-	chunkSize := fileSize / targetChunks
-
-	// Clamp to min/max from config
-	minChunk := d.Runtime.GetMinChunkSize()
-	maxChunk := d.Runtime.GetMaxChunkSize()
-	targetChunk := d.Runtime.GetTargetChunkSize()
-
-	// If calculating produces something wild, prefer target
-	if chunkSize == 0 {
-		chunkSize = targetChunk
+	// Safety check
+	if numConns <= 0 {
+		return d.Runtime.GetMinChunkSize() // Fallback
 	}
+
+	chunkSize := fileSize / int64(numConns)
+
+	// Clamp to min from config (but not max - we want large chunks)
+	minChunk := d.Runtime.GetMinChunkSize()
 
 	if chunkSize < minChunk {
 		chunkSize = minChunk
-	}
-	if chunkSize > maxChunk {
-		chunkSize = maxChunk
 	}
 
 	// Align to 4KB
@@ -120,6 +113,26 @@ func (d *ConcurrentDownloader) calculateChunkSize(fileSize int64, numConns int) 
 	}
 
 	return chunkSize
+}
+
+// determineChunkSize decides the strategy (Sequential vs Parallel)
+func (d *ConcurrentDownloader) determineChunkSize(fileSize int64, numConns int) int64 {
+	if d.Runtime.SequentialDownload {
+		// Sequential mode: Use small fixed chunks (MinChunkSize) to ensure strict ordering
+		chunkSize := d.Runtime.GetMinChunkSize()
+		if chunkSize <= 0 {
+			chunkSize = 2 * 1024 * 1024 // Default 2MB if not configured
+		}
+		// Align to 4KB
+		chunkSize = (chunkSize / types.AlignSize) * types.AlignSize
+		if chunkSize == 0 {
+			chunkSize = types.AlignSize
+		}
+		return chunkSize
+	}
+
+	// Parallel mode: Use large shards
+	return d.calculateChunkSize(fileSize, numConns)
 }
 
 // createTasks generates initial task queue from file size and chunk size
@@ -221,8 +234,9 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	}
 
 	// Determine connections and chunk size
+	// Determine connections and chunk size
 	numConns := d.getInitialConnections(fileSize)
-	chunkSize := d.calculateChunkSize(fileSize, numConns)
+	chunkSize := d.determineChunkSize(fileSize, numConns)
 
 	// Create tuned HTTP client for concurrent downloads
 	client := d.newConcurrentClient(numConns)
@@ -307,10 +321,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 				// Continue splitting/stealing as long as we have idle workers and are making progress
 				for queue.IdleWorkers() > 0 {
 					didWork := false
-					if queue.SplitLargestIfNeeded() {
-						didWork = true
-						utils.Debug("Balancer: split largest task")
-					} else if queue.Len() == 0 {
+					if queue.Len() == 0 {
 						// Try to steal from an active worker
 						if d.StealWork(queue) {
 							didWork = true

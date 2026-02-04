@@ -59,7 +59,9 @@ func TestIntegration_MirrorResume(t *testing.T) {
 	// 3. Start Download with Mirror
 	ctx := context.Background()
 	progressCh := make(chan any, 100)
-	runtime := &types.RuntimeConfig{}
+	runtime := &types.RuntimeConfig{
+		MaxConnectionsPerHost: 4,
+	}
 	progState := types.NewProgressState(uuid.New().String(), fileSize)
 
 	filename := "mirrorfile.bin"
