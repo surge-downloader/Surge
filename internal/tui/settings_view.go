@@ -35,6 +35,14 @@ func (m RootModel) viewSettings() string {
 	categories := config.CategoryOrder()
 	metadata := config.GetSettingsMetadata()
 
+	// Safety: Ensure active tab is within bounds (handling reduced category count)
+	if m.SettingsActiveTab >= len(categories) {
+		m.SettingsActiveTab = len(categories) - 1
+	}
+	if m.SettingsActiveTab < 0 {
+		m.SettingsActiveTab = 0
+	}
+
 	// === TAB BAR ===
 	var tabs []components.Tab
 	for _, cat := range categories {
