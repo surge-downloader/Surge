@@ -429,10 +429,11 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 // DownloadRequest represents a download request from the browser extension
 type DownloadRequest struct {
-	URL      string   `json:"url"`
-	Filename string   `json:"filename,omitempty"`
-	Path     string   `json:"path,omitempty"`
-	Mirrors  []string `json:"mirrors,omitempty"`
+	URL                  string   `json:"url"`
+	Filename             string   `json:"filename,omitempty"`
+	Path                 string   `json:"path,omitempty"`
+	RelativeToDefaultDir bool     `json:"relative_to_default_dir,omitempty"`
+	Mirrors              []string `json:"mirrors,omitempty"`
 }
 
 func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir string) {
@@ -544,7 +545,19 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 
 	// Prepare output path
 	outPath := req.Path
-	if outPath == "" {
+	if req.RelativeToDefaultDir && req.Path != "" {
+		// Resolve relative to default download directory
+		baseDir := settings.General.DefaultDownloadDir
+		if baseDir == "" {
+			baseDir = defaultOutputDir
+		}
+		if baseDir == "" {
+			baseDir = "."
+		}
+		outPath = filepath.Join(baseDir, req.Path)
+		_ = os.MkdirAll(outPath, 0755)
+
+	} else if outPath == "" {
 		if defaultOutputDir != "" {
 			outPath = defaultOutputDir
 			_ = os.MkdirAll(outPath, 0755)

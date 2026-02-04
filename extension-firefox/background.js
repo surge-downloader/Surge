@@ -45,7 +45,7 @@ async function checkSurgeHealth() {
 }
 
 // Send download request to Surge
-async function sendToSurge(url, filename) {
+async function sendToSurge(url, filename, path) {
     const port = await findSurgePort();
     if (!port) {
         console.error("[Surge] No server found");
@@ -53,16 +53,22 @@ async function sendToSurge(url, filename) {
     }
 
     try {
+        const body = {
+            url: url,
+            filename: filename || "",
+            path: path || "",
+        };
+
+        if (path) {
+            body.relative_to_default_dir = true;
+        }
+
         const response = await fetch(`http://127.0.0.1:${port}/download`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-                url: url,
-                filename: filename || "",
-                path: "",
-            }),
+            body: JSON.stringify(body),
         });
 
         if (response.ok) {
@@ -156,14 +162,22 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
         chrome.downloads.cancel(downloadItem.id);
         chrome.downloads.erase({ id: downloadItem.id });
 
-        // Extract just the basename (Firefox compatibility)
-        const filenameOnly = downloadItem.filename
-            ? downloadItem.filename.split(/[/\\]/).pop()
-            : "";
+        // Extract directory and filename
+        let filenameOnly = "";
+        let directory = "";
+
+        if (downloadItem.filename) {
+            const parts = downloadItem.filename.split(/[/\\]/);
+            filenameOnly = parts.pop();
+            if (parts.length > 0) {
+                directory = parts.join("/");
+            }
+        }
 
         const success = await sendToSurge(
             downloadItem.url,
-            filenameOnly
+            filenameOnly,
+            directory
         );
 
         if (success) {
