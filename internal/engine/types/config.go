@@ -67,8 +67,7 @@ type RuntimeConfig struct {
 	MaxGlobalConnections  int
 	UserAgent             string
 	MinChunkSize          int64
-	MaxChunkSize          int64
-	TargetChunkSize       int64
+
 	WorkerBufferSize      int
 	MaxTaskRetries        int
 	SlowWorkerThreshold   float64
@@ -119,7 +118,6 @@ const (
 	SlowWorkerGrace     = 5 * time.Second // Grace period before checking speed
 	StallTimeout        = 5 * time.Second // Restart if no data for x seconds
 	SpeedEMAAlpha       = 0.3             // EMA smoothing factor
-	MinAbsoluteSpeed    = 100 * KB        // Don't cancel workers above this speed
 )
 
 // GetMaxTaskRetries returns configured value or default

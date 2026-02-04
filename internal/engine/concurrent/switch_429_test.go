@@ -89,7 +89,7 @@ func TestConcurrentDownloader_BackoffOnSingleMirror(t *testing.T) {
 		testutil.WithFileSize(fileSize),
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
-		testutil.WithFailOnNthRequest(2), // Fail 2nd request (Worker's 1st try)
+		testutil.WithFailOnNthRequest(1), // Fail 1st request (Worker's 1st try)
 	)
 	defer server.Close()
 

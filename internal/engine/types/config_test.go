@@ -18,12 +18,6 @@ func TestRuntimeConfig_Getters(t *testing.T) {
 		if got := r.GetMinChunkSize(); got != MinChunk {
 			t.Errorf("GetMinChunkSize = %d, want %d", got, MinChunk)
 		}
-		if got := r.GetMaxChunkSize(); got != MaxChunk {
-			t.Errorf("GetMaxChunkSize = %d, want %d", got, MaxChunk)
-		}
-		if got := r.GetTargetChunkSize(); got != TargetChunk {
-			t.Errorf("GetTargetChunkSize = %d, want %d", got, TargetChunk)
-		}
 		if got := r.GetWorkerBufferSize(); got != WorkerBuffer {
 			t.Errorf("GetWorkerBufferSize = %d, want %d", got, WorkerBuffer)
 		}
@@ -53,9 +47,7 @@ func TestRuntimeConfig_Getters(t *testing.T) {
 		if got := r.GetMinChunkSize(); got != MinChunk {
 			t.Errorf("GetMinChunkSize = %d, want %d", got, MinChunk)
 		}
-		if got := r.GetMaxChunkSize(); got != MaxChunk {
-			t.Errorf("GetMaxChunkSize = %d, want %d", got, MaxChunk)
-		}
+
 		if got := r.GetWorkerBufferSize(); got != WorkerBuffer {
 			t.Errorf("GetWorkerBufferSize = %d, want %d", got, WorkerBuffer)
 		}
@@ -66,8 +58,6 @@ func TestRuntimeConfig_Getters(t *testing.T) {
 			MaxConnectionsPerHost: 128,
 			UserAgent:             "CustomAgent/1.0",
 			MinChunkSize:          4 * MB,
-			MaxChunkSize:          32 * MB,
-			TargetChunkSize:       16 * MB,
 			WorkerBufferSize:      1 * MB,
 			MaxTaskRetries:        5,
 			SlowWorkerThreshold:   0.75,
@@ -85,12 +75,7 @@ func TestRuntimeConfig_Getters(t *testing.T) {
 		if got := r.GetMinChunkSize(); got != 4*MB {
 			t.Errorf("GetMinChunkSize = %d, want %d", got, 4*MB)
 		}
-		if got := r.GetMaxChunkSize(); got != 32*MB {
-			t.Errorf("GetMaxChunkSize = %d, want %d", got, 32*MB)
-		}
-		if got := r.GetTargetChunkSize(); got != 16*MB {
-			t.Errorf("GetTargetChunkSize = %d, want %d", got, 16*MB)
-		}
+
 		if got := r.GetWorkerBufferSize(); got != 1*MB {
 			t.Errorf("GetWorkerBufferSize = %d, want %d", got, 1*MB)
 		}
@@ -122,14 +107,6 @@ func TestSizeConstants(t *testing.T) {
 	}
 	if GB != 1024*MB {
 		t.Errorf("GB = %d, want %d", GB, 1024*MB)
-	}
-
-	// Verify chunk size constraints
-	if MinChunk > MaxChunk {
-		t.Errorf("MinChunk (%d) > MaxChunk (%d)", MinChunk, MaxChunk)
-	}
-	if TargetChunk < MinChunk || TargetChunk > MaxChunk {
-		t.Errorf("TargetChunk (%d) not in range [%d, %d]", TargetChunk, MinChunk, MaxChunk)
 	}
 
 	// Verify alignment

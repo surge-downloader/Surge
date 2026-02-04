@@ -69,8 +69,6 @@ func convertRuntimeConfig(rc *config.RuntimeConfig) *types.RuntimeConfig {
 		MaxGlobalConnections:  rc.MaxGlobalConnections,
 		UserAgent:             rc.UserAgent,
 		MinChunkSize:          rc.MinChunkSize,
-		MaxChunkSize:          rc.MaxChunkSize,
-		TargetChunkSize:       rc.TargetChunkSize,
 		WorkerBufferSize:      rc.WorkerBufferSize,
 		MaxTaskRetries:        rc.MaxTaskRetries,
 		SlowWorkerThreshold:   rc.SlowWorkerThreshold,

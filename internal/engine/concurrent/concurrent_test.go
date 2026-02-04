@@ -268,8 +268,6 @@ func TestConcurrentDownloader_SmallFile(t *testing.T) {
 	runtime := &types.RuntimeConfig{
 		MaxConnectionsPerHost: 4,
 		MinChunkSize:          16 * types.KB,
-		MaxChunkSize:          32 * types.KB,
-		TargetChunkSize:       16 * types.KB,
 		WorkerBufferSize:      8 * types.KB,
 		MaxTaskRetries:        3,
 	}
@@ -310,8 +308,6 @@ func TestConcurrentDownloader_MediumFile(t *testing.T) {
 	runtime := &types.RuntimeConfig{
 		MaxConnectionsPerHost: 8,
 		MinChunkSize:          64 * types.KB,
-		MaxChunkSize:          256 * types.KB,
-		TargetChunkSize:       128 * types.KB,
 		WorkerBufferSize:      32 * types.KB,
 		MaxTaskRetries:        3,
 	}
@@ -431,8 +427,6 @@ func TestConcurrentDownloader_RetryOnFailure(t *testing.T) {
 		MaxConnectionsPerHost: 2,
 		MaxTaskRetries:        10,            // Need more retries since each attempt only gets 20KB
 		MinChunkSize:          64 * types.KB, // Larger chunks to ensure failures occur
-		MaxChunkSize:          64 * types.KB,
-		TargetChunkSize:       64 * types.KB,
 	}
 
 	downloader := NewConcurrentDownloader("retry-id", nil, state, runtime)
@@ -464,7 +458,7 @@ func TestConcurrentDownloader_FailOnNthRequest(t *testing.T) {
 	server := testutil.NewMockServer(
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
-		testutil.WithFailOnNthRequest(2),
+		testutil.WithFailOnNthRequest(1),
 	)
 	defer server.Close()
 
