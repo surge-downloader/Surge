@@ -1,0 +1,49 @@
+name: Speed Benchmark vs Aria2
+
+on: [push, workflow_dispatch]
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      # 1. Install Go and Build Surge
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          
+      - name: Build Surge
+        run: go build -o surge main.go  # Adjust to your actual build command
+
+      # 2. Install Competitors (Aria2 & Hyperfine)
+      - name: Install Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y aria2 wget
+          # Install Hyperfine (The Benchmarker)
+          wget https://github.com/sharkdp/hyperfine/releases/download/v1.18.0/hyperfine_1.18.0_amd64.deb
+          sudo dpkg -i hyperfine_1.18.0_amd64.deb
+
+      # 3. Setup a Local Test Server (To test raw throughput, not internet speed)
+      # We create a 100MB file and serve it on localhost:8080
+      - name: Setup Local Server
+        run: |
+          dd if=/dev/urandom of=testfile.bin bs=1M count=100
+          python3 -m http.server 8080 &
+          sleep 3 # Give server time to spin up
+
+      # 4. The Showdown
+      # We compare Surge vs Wget vs Aria2 (maxed out)
+      - name: Run Benchmark
+        run: |
+          hyperfine --warmup 2 --runs 10 --export-markdown benchmark_results.md \
+            --prepare 'rm -f output.bin' \
+            "./surge http://localhost:8080/testfile.bin" \
+            "wget -O output.bin http://localhost:8080/testfile.bin" \
+            "aria2c -x 16 -s 16 -o output.bin http://localhost:8080/testfile.bin"
+
+      # 5. Post Results to Summary
+      - name: Write to Job Summary
+        run: cat benchmark_results.md >> $GITHUB_STEP_SUMMARY
