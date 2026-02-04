@@ -42,7 +42,7 @@ Enter
 Sleep 5s
 
 # --- Show Download Progress ---
-Sleep 10s
+Sleep 5s
 Screenshot assets/dashboard.png
 
 # --- Open Settings ---
@@ -51,8 +51,6 @@ Type "s"
 Sleep 1s
 
 # Navigate through settings tabs (Right Arrow)
-Right
-Sleep 800ms
 Right
 Sleep 800ms
 Screenshot assets/settings.png
