@@ -15,6 +15,7 @@ import tempfile
 import time
 import random
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List, Callable
@@ -94,27 +95,30 @@ def parse_go_duration(s: str) -> float:
         total += float(val) * multipliers.get(unit, 0)
     return total
 
+def print_box_header(title: str, width: int = 60):
+    print(f"┌{'─' * (width - 2)}┐")
+    print(f"│ {title:<{width - 4}} │")
+    print(f"└{'─' * (width - 2)}┘")
 
 # =============================================================================
 # SETUP & BUILD
 # =============================================================================
 def build_surge(project_dir: Path) -> bool:
-    print("  Building surge...")
+    print("  [>] Building surge...")
     output_name = f"surge{EXE_SUFFIX}"
     success, output = run_command(["go", "build", "-o", output_name, "."], cwd=str(project_dir))
     if not success:
-        print(f"    [X] Failed to build surge: {output.strip()}")
+        print(f"  [!] Failed to build surge: {output.strip()}")
         return False
-    print("    [OK] Surge built successfully")
+    print("  [+] Surge built successfully")
     return True
 
 
 def check_tool(name: str) -> bool:
     """Check if a tool is in the PATH."""
     if shutil.which(name):
-        print(f"    [OK] {name} found")
         return True
-    print(f"    [X] {name} not found")
+    print(f"  [!] {name} not found in PATH")
     return False
 
 
@@ -149,8 +153,7 @@ def benchmark_surge(executable: Path, url: str, output_dir: Path, label: str = "
         except ValueError:
             pass
 
-    # Find the downloaded file (ignoring the surge binary if it's there)
-    # Surge preserves original filenames, so we scan for the largest file.
+    # Find the downloaded file
     downloaded_files = [f for f in output_dir.iterdir() if f.is_file()]
     file_size = max((get_file_size(f) for f in downloaded_files), default=0)
     
@@ -221,9 +224,11 @@ def cmd_curl(binary: str, out: Path, url: str) -> List[str]:
 # REPORTING
 # =============================================================================
 def print_results(results: List[BenchmarkResult]):
-    print("\n" + "=" * 80)
-    print(f"  {'Tool':<20} │ {'Status':<8} │ {'Avg Time':<10} │ {'Avg Speed':<12} │ {'Size':<10}")
-    print(f"  {'─'*20}─┼─{'─'*8}─┼─{'─'*10}─┼─{'─'*12}─┼─{'─'*10}")
+    # Header
+    print("\n")
+    print("┌──────────────────────┬──────────┬──────────────┬──────────────┬──────────────┐")
+    print(f"│ {'Tool':<20} │ {'Status':<8} │ {'Avg Time':<12} │ {'Avg Speed':<12} │ {'Size':<12} │")
+    print("├──────────────────────┼──────────┼──────────────┼──────────────┼──────────────┤")
     
     for r in results:
         status = "OK" if r.success else "FAIL"
@@ -231,32 +236,39 @@ def print_results(results: List[BenchmarkResult]):
         speed_str = f"{r.speed_mbps:.2f} MB/s" if r.success and r.speed_mbps > 0 else "-"
         size_str = f"{r.file_size_bytes / MB:.1f} MB" if r.file_size_bytes > 0 else "-"
         
-        print(f"  {r.tool:<20} │ {status:<8} │ {time_str:<10} │ {speed_str:<12} │ {size_str:<10}")
+        print(f"│ {r.tool:<20} │ {status:<8} │ {time_str:<12} │ {speed_str:<12} │ {size_str:<12} │")
         
-        if not r.success and r.error:
-            print(f"    └─ Error: {r.error.strip()[:80]}...")
+    print("└──────────────────────┴──────────┴──────────────┴──────────────┴──────────────┘")
+
+    # Errors
+    failures = [r for r in results if not r.success and r.error]
+    if failures:
+        print("\n[ ERRORS ]")
+        for f in failures:
+            print(f"  > {f.tool}: {f.error.strip()[:80]}...")
 
     # Winner
     successful = [r for r in results if r.success and r.speed_mbps > 0]
     if successful:
         winner = max(successful, key=lambda r: r.speed_mbps)
-        print("-" * 80)
-        print(f"  🏆 WINNER: {winner.tool} @ {winner.speed_mbps:.2f} MB/s")
-    print("=" * 80 + "\n")
+        print(f"\n[ SUMMARY ]")
+        print(f"  Fastest: {winner.tool}")
+        print(f"  Speed:   {winner.speed_mbps:.2f} MB/s")
 
 
 def print_histogram(results: List[BenchmarkResult]):
     successful = sorted([r for r in results if r.success and r.speed_mbps > 0], 
-                       key=lambda r: r.speed_mbps, reverse=True)
+                        key=lambda r: r.speed_mbps, reverse=True)
     if not successful: return
 
-    print("  SPEED VISUALIZATION")
-    print("  " + "-" * 50)
+    print("\n[ SPEED VISUALIZATION ]")
     max_speed = successful[0].speed_mbps
+    width = 50
     
     for r in successful:
-        bar_len = int((r.speed_mbps / max_speed) * 40)
-        print(f"  {r.tool:<15} │ {'█' * bar_len:<40} {r.speed_mbps:.2f} MB/s")
+        bar_len = int((r.speed_mbps / max_speed) * width)
+        bar = "#" * bar_len
+        print(f"  {r.tool:<15} │ {bar:<{width}} {r.speed_mbps:.2f} MB/s")
     print()
 
 
@@ -285,9 +297,11 @@ def main():
     download_dir = temp_dir / "downloads"
     download_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n⚡ Surge Benchmark Suite")
-    print(f"   Temp Dir: {temp_dir}")
-    print("=" * 60)
+    print_box_header("SURGE BENCHMARK SUITE")
+    print(f"  Work Dir: {temp_dir}")
+    print(f"  Target:   {args.url[:60]}")
+    if len(args.url) > 60: print(f"            {args.url[60:]}")
+    print()
 
     # Determine tasks
     tasks = []
@@ -296,7 +310,7 @@ def main():
     surge_bin = None
     if args.surge_exec and args.surge_exec.exists():
         surge_bin = args.surge_exec.resolve()
-        print(f"  [OK] Using provided Surge: {surge_bin}")
+        print(f"  [+] Using provided Surge: {surge_bin.name}")
     elif shutil.which("go") and build_surge(project_dir):
         surge_bin = project_dir / f"surge{EXE_SUFFIX}"
     
@@ -348,17 +362,19 @@ def main():
 
     # Speedtest
     if args.speedtest and shutil.which("speedtest-cli"):
-        print("\nRunning network baseline...")
+        print("\n  [>] Running network baseline...")
         _, out = run_command(["speedtest-cli", "--simple"], timeout=60)
-        print(f"  {out.strip().replace('\n', ' | ')}")
+        for line in out.strip().split('\n'):
+            print(f"      {line}")
 
     # Execution Loop
-    print(f"\n🚀 Running {len(tasks)} benchmarks x {num_iterations} iterations...")
+    print(f"\n  [>] Running {len(tasks)} benchmarks x {num_iterations} iterations")
+    print("  " + "─" * 40)
+    
     raw_results = {i: [] for i in range(len(tasks))} # Store by task index
 
     try:
         for i in range(num_iterations):
-            print(f"\n  [Iteration {i+1}/{num_iterations}]")
             # Create a list of (index, task_func) and shuffle it
             indexed_tasks = list(enumerate(tasks))
             random.shuffle(indexed_tasks)
@@ -367,8 +383,12 @@ def main():
                 res = task_func()
                 raw_results[task_idx].append(res)
                 
-                status = f"{res.elapsed_seconds:.2f}s" if res.success else "FAIL"
-                print(f"    👉 {res.tool:<20} : {status}")
+                status_icon = "+" if res.success else "!"
+                status_txt = f"{res.elapsed_seconds:.2f}s" if res.success else "FAIL"
+                
+                # Print progress
+                sys.stdout.write(f"  [{status_icon}] {res.tool:<25} : {status_txt}\n")
+                
                 time.sleep(2) # Cooldown
 
         # Aggregate
@@ -381,7 +401,7 @@ def main():
                 final_results.append(BenchmarkResult(runs[0].tool, False, 0, 0, runs[-1].error))
                 continue
             
-            # Simple average (could add outlier removal here if needed)
+            # Simple average
             avg_time = sum(r.elapsed_seconds for r in successful) / len(successful)
             file_size = successful[0].file_size_bytes
             
@@ -393,8 +413,9 @@ def main():
         print_histogram(final_results)
 
     finally:
-        print("\n🧹 Cleaning up...")
+        print("  [>] Cleaning up...")
         shutil.rmtree(temp_dir, ignore_errors=True)
+        print("  [+] Done.")
 
 if __name__ == "__main__":
     main()
