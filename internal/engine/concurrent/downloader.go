@@ -115,6 +115,26 @@ func (d *ConcurrentDownloader) calculateChunkSize(fileSize int64, numConns int) 
 	return chunkSize
 }
 
+// determineChunkSize decides the strategy (Sequential vs Parallel)
+func (d *ConcurrentDownloader) determineChunkSize(fileSize int64, numConns int) int64 {
+	if d.Runtime.SequentialDownload {
+		// Sequential mode: Use small fixed chunks (MinChunkSize) to ensure strict ordering
+		chunkSize := d.Runtime.GetMinChunkSize()
+		if chunkSize <= 0 {
+			chunkSize = 2 * 1024 * 1024 // Default 2MB if not configured
+		}
+		// Align to 4KB
+		chunkSize = (chunkSize / types.AlignSize) * types.AlignSize
+		if chunkSize == 0 {
+			chunkSize = types.AlignSize
+		}
+		return chunkSize
+	}
+
+	// Parallel mode: Use large shards
+	return d.calculateChunkSize(fileSize, numConns)
+}
+
 // createTasks generates initial task queue from file size and chunk size
 func createTasks(fileSize, chunkSize int64) []types.Task {
 	if chunkSize <= 0 {
@@ -214,25 +234,9 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	}
 
 	// Determine connections and chunk size
+	// Determine connections and chunk size
 	numConns := d.getInitialConnections(fileSize)
-
-	var chunkSize int64
-	if d.Runtime.SequentialDownload {
-		// Sequential mode: Use small fixed chunks (MinChunkSize) to ensure strict ordering
-		// This fills the queue with many small tasks [0-5MB, 5-10MB, ...] which key off FIFO
-		chunkSize = d.Runtime.GetMinChunkSize()
-		if chunkSize <= 0 {
-			chunkSize = 2 * 1024 * 1024 // Default 2MB if not configured
-		}
-		// Align to 4KB
-		chunkSize = (chunkSize / types.AlignSize) * types.AlignSize
-		if chunkSize == 0 {
-			chunkSize = types.AlignSize
-		}
-	} else {
-		// Parallel mode: Use large shards (fileSize / workers) to minimize overhead and maximize throughput
-		chunkSize = d.calculateChunkSize(fileSize, numConns)
-	}
+	chunkSize := d.determineChunkSize(fileSize, numConns)
 
 	// Create tuned HTTP client for concurrent downloads
 	client := d.newConcurrentClient(numConns)
