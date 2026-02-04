@@ -93,24 +93,17 @@ func (d *ConcurrentDownloader) ReportMirrorError(url string) {
 
 // calculateChunkSize determines optimal chunk size
 func (d *ConcurrentDownloader) calculateChunkSize(fileSize int64, numConns int) int64 {
-	targetChunks := int64(numConns * types.TasksPerWorker)
-	chunkSize := fileSize / targetChunks
-
-	// Clamp to min/max from config
-	minChunk := d.Runtime.GetMinChunkSize()
-	maxChunk := d.Runtime.GetMaxChunkSize()
-	targetChunk := d.Runtime.GetTargetChunkSize()
-
-	// If calculating produces something wild, prefer target
-	if chunkSize == 0 {
-		chunkSize = targetChunk
+	if numConns <= 0 {
+		return d.Runtime.GetTargetChunkSize() // Fallback
 	}
+
+	chunkSize := fileSize / int64(numConns)
+
+	// Clamp to min from config (but not max - we want large chunks)
+	minChunk := d.Runtime.GetMinChunkSize()
 
 	if chunkSize < minChunk {
 		chunkSize = minChunk
-	}
-	if chunkSize > maxChunk {
-		chunkSize = maxChunk
 	}
 
 	// Align to 4KB
