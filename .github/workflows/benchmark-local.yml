@@ -40,7 +40,7 @@ jobs:
         run: |
           hyperfine --warmup 2 --runs 10 --export-markdown benchmark_results.md \
             --prepare 'rm -f output.bin' \
-            "./surge http://localhost:8080/testfile.bin" \
+            "./surge server start --exit-when-done http://localhost:8080/testfile.bin" \
             "wget -O output.bin http://localhost:8080/testfile.bin" \
             "aria2c -x 16 -s 16 -o output.bin http://localhost:8080/testfile.bin"
 
