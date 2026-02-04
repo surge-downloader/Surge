@@ -114,3 +114,11 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           cat benchmark_output.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+        
+      - name: Upload Surge Logs
+        if: always() # Run this even if the benchmark step fails
+        uses: actions/upload-artifact@v4
+        with:
+          name: surge-logs
+          path: ~/.config/surge/logs/
+          if-no-files-found: warn
