@@ -444,6 +444,7 @@ type DownloadRequest struct {
 	Path                 string   `json:"path,omitempty"`
 	RelativeToDefaultDir bool     `json:"relative_to_default_dir,omitempty"`
 	Mirrors              []string `json:"mirrors,omitempty"`
+	SkipDuplicateCheck   bool     `json:"skip_duplicate_check,omitempty"` // Extension already confirmed duplicate
 }
 
 func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir string) {
@@ -542,7 +543,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	// 	req.Path = "."
 	// }
 
-	utils.Debug("Received download request: URL=%s, Path=%s", req.URL, req.Path)
+	utils.Debug("Received download request: URL=%s, Path=%s, SkipDup=%v", req.URL, req.Path, req.SkipDuplicateCheck)
 
 	downloadID := uuid.New().String()
 
@@ -587,16 +588,17 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	// Check settings for extension prompt and duplicates
 	// settings already loaded above
 	if true {
-		// Check for duplicates
+		// Check for duplicates (skip if extension already confirmed)
 		isDuplicate := false
-		if GlobalPool.HasDownload(req.URL) {
+		if !req.SkipDuplicateCheck && GlobalPool.HasDownload(req.URL) {
 			isDuplicate = true
 		}
 
 		// Logic for prompting:
 		// 1. If ExtensionPrompt is enabled
 		// 2. OR if WarnOnDuplicate is enabled AND it is a duplicate
-		shouldPrompt := settings.General.ExtensionPrompt || (settings.General.WarnOnDuplicate && isDuplicate)
+		// Note: Skip ALL prompts if extension already confirmed (SkipDuplicateCheck)
+		shouldPrompt := !req.SkipDuplicateCheck && (settings.General.ExtensionPrompt || (settings.General.WarnOnDuplicate && isDuplicate))
 
 		// Only prompt if we have a UI running (serverProgram != nil)
 		if shouldPrompt {

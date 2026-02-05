@@ -124,7 +124,7 @@ async function fetchDownloadList() {
 
 // === Download Sending ===
 
-async function sendToSurge(url, filename, absolutePath) {
+async function sendToSurge(url, filename, absolutePath, skipDuplicateCheck = false) {
   const port = await findSurgePort();
   if (!port) {
     console.error('[Surge] No server found');
@@ -140,6 +140,11 @@ async function sendToSurge(url, filename, absolutePath) {
     // Use absolute path directly if provided
     if (absolutePath) {
       body.path = absolutePath;
+    }
+
+    // Skip TUI duplicate check if extension already confirmed
+    if (skipDuplicateCheck) {
+      body.skip_duplicate_check = true;
     }
 
     const response = await fetch(`http://127.0.0.1:${port}/download`, {
@@ -524,7 +529,8 @@ browser.runtime.onMessage.addListener((message, sender) => {
             const result = await sendToSurge(
               pending.url,
               pending.filename,
-              pending.directory
+              pending.directory,
+              true // Skip TUI duplicate check - already confirmed in extension
             );
             
             if (result.success) {
