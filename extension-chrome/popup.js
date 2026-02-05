@@ -137,6 +137,39 @@ function createDownloadItem(dl) {
   const item = document.createElement('div');
   item.className = 'download-item';
   item.dataset.id = dl.id;
+  
+  // Initial structure
+  item.innerHTML = `
+    <div class="download-header" data-toggle>
+      <div class="download-main">
+        <span class="filename" title=""></span>
+        <div class="download-quick-stats">
+          <span class="speed-compact"></span>
+          <span class="eta-compact"></span>
+          <span class="progress-compact"></span>
+        </div>
+      </div>
+      <div class="download-header-right">
+        <span class="status-tag"></span>
+        <span class="expand-icon">▶</span>
+      </div>
+    </div>
+    <div class="download-details">
+      <div class="progress-container">
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: 0%"></div>
+        </div>
+        <div class="progress-text">
+          <span class="size"></span>
+          <span class="progress-percent"></span>
+        </div>
+      </div>
+      <div class="download-actions">
+        <!-- Buttons injected dynamically -->
+      </div>
+    </div>
+  `;
+  
   updateDownloadItem(item, dl);
   return item;
 }
@@ -145,42 +178,89 @@ function updateDownloadItem(item, dl) {
   const progress = dl.progress || 0;
   const status = dl.status || 'queued';
   const isExpanded = item.classList.contains('expanded');
+
+  // 1. Update text content only if changed (optional optimization, but simple assignment is fast)
+  const els = {
+    filename: item.querySelector('.filename'),
+    speed: item.querySelector('.speed-compact'),
+    eta: item.querySelector('.eta-compact'),
+    progCompact: item.querySelector('.progress-compact'),
+    status: item.querySelector('.status-tag'),
+    icon: item.querySelector('.expand-icon'),
+    fill: item.querySelector('.progress-fill'),
+    size: item.querySelector('.size'),
+    progPercent: item.querySelector('.progress-percent'),
+    actions: item.querySelector('.download-actions')
+  };
+
+  // Safe checks in case DOM is malformed
+  if (!els.filename) return; 
+
+  // Filename
+  const fname = dl.filename || dl.url;
+  const shortName = truncate(dl.filename || extractFilename(dl.url), 28);
+  if (els.filename.textContent !== shortName) {
+    els.filename.textContent = shortName;
+    els.filename.title = escapeHtml(fname);
+  }
+
+  // Stats
+  els.speed.textContent = formatSpeed(dl.speed);
+  els.eta.textContent = formatETA(dl.eta);
+  els.progCompact.textContent = progress.toFixed(0) + '%';
   
-  item.innerHTML = `
-    <div class="download-header" data-toggle>
-      <div class="download-main">
-        <span class="filename" title="${escapeHtml(dl.filename || dl.url)}">${truncate(dl.filename || extractFilename(dl.url), 28)}</span>
-        <div class="download-quick-stats">
-          <span class="speed-compact">${formatSpeed(dl.speed)}</span>
-          <span class="eta-compact">${formatETA(dl.eta)}</span>
-          <span class="progress-compact">${progress.toFixed(0)}%</span>
-        </div>
-      </div>
-      <div class="download-header-right">
-        <span class="status-tag ${status}">${status}</span>
-        <span class="expand-icon">${isExpanded ? '▼' : '▶'}</span>
-      </div>
-    </div>
-    <div class="download-details">
-      <div class="progress-container">
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: ${progress}%"></div>
-        </div>
-        <div class="progress-text">
-          <span class="size">${formatSize(dl.downloaded)} / ${formatSize(dl.total_size)}</span>
-          <span class="progress-percent">${progress.toFixed(1)}%</span>
-        </div>
-      </div>
-      <div class="download-actions">
-        ${status === 'downloading' ? 
-          '<button class="action-btn pause" title="Pause">⏸</button>' :
-          status === 'paused' || status === 'queued' ? 
-          '<button class="action-btn resume" title="Resume">▶</button>' : ''}
-        ${status !== 'completed' ? 
-          '<button class="action-btn cancel" title="Cancel">✕</button>' : ''}
-      </div>
-    </div>
-  `;
+  // Status
+  els.status.className = `status-tag ${status}`;
+  els.status.textContent = status;
+  
+  // Icon
+  els.icon.textContent = isExpanded ? '▼' : '▶';
+
+  // Progress Bar
+  els.fill.style.width = `${progress}%`;
+  
+  // Details
+  els.size.textContent = `${formatSize(dl.downloaded)} / ${formatSize(dl.total_size)}`;
+  els.progPercent.textContent = progress.toFixed(1) + '%';
+
+  // Actions - Only update if status implies different buttons
+  // To avoid replacing active buttons (which loses 'disabled' state), we check if the current buttons match the desired state.
+  // A simple heuristic: check the first button's class.
+  let desiredButtons = '';
+  if (status === 'downloading') {
+    desiredButtons = '<button class="action-btn pause" title="Pause">⏸</button>';
+  } else if (status === 'paused' || status === 'queued') {
+    desiredButtons = '<button class="action-btn resume" title="Resume">▶</button>';
+  }
+  
+  if (status !== 'completed') {
+    desiredButtons += '<button class="action-btn cancel" title="Cancel">✕</button>';
+  }
+
+  // Compare simple string content (ignoring dynamic props like disabled) is tricky.
+  // Instead: check context. 
+  // If we have a pause button and need a pause button, DO NOTHING.
+  // If we have a resume button and need a resume button, DO NOTHING.
+  
+  const currentFirstBtn = els.actions.querySelector('.action-btn:first-child');
+  let currentType = 'none';
+  if (currentFirstBtn) {
+    if (currentFirstBtn.classList.contains('pause')) currentType = 'pause';
+    else if (currentFirstBtn.classList.contains('resume')) currentType = 'resume';
+  }
+
+  let desiredType = 'none';
+  if (status === 'downloading') desiredType = 'pause';
+  else if (status === 'paused' || status === 'queued') desiredType = 'resume';
+
+  // If type mismatch, OR if we track completion (cancel button availability), we rebuild.
+  // Completion removes cancel button.
+  const hasCancel = !!els.actions.querySelector('.cancel');
+  const needsCancel = status !== 'completed';
+
+  if (currentType !== desiredType || hasCancel !== needsCancel) {
+     els.actions.innerHTML = desiredButtons;
+  }
 }
 
 // === Utility Functions ===
