@@ -5,7 +5,7 @@ const DEFAULT_PORT = 8080;
 const MAX_PORT_SCAN = 100;
 const INTERCEPT_ENABLED_KEY = 'interceptEnabled';
 const SEEN_DOWNLOADS_KEY = 'seenDownloads';
-const DEDUP_WINDOW_MS = 300000; // 5 minutes
+const DEDUP_WINDOW_MS = 5000; // 5 seconds - catch duplicate events, allow intentional re-downloads
 
 // === State ===
 let cachedPort = null;
