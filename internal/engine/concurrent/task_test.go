@@ -142,3 +142,34 @@ func TestActiveTask_WindowTracking(t *testing.T) {
 		t.Errorf("WindowBytes after swap = %d, want 0", at.WindowBytes)
 	}
 }
+
+func TestActiveTask_GetSpeed_Decay(t *testing.T) {
+	now := time.Now()
+	at := &ActiveTask{
+		Speed:        1000.0,
+		LastActivity: now.UnixNano(),
+	}
+
+	// Case 1: No decay (fresh)
+	if speed := at.GetSpeed(); speed != 1000.0 {
+		t.Errorf("Fresh speed = %f, want 1000.0", speed)
+	}
+
+	// Case 2: Decay (5 seconds old)
+	// Threshold is 2s. Decay factor should be 2/5 = 0.4
+	// Speed should be 1000 * 0.4 = 400
+	at.LastActivity = now.Add(-5 * time.Second).UnixNano()
+
+	speed := at.GetSpeed()
+	if speed < 399.0 || speed > 401.0 {
+		t.Errorf("Decayed speed = %f, want ~400.0", speed)
+	}
+
+	// Case 3: Extreme decay (20 seconds old)
+	// Factor 2/20 = 0.1, Speed = 100
+	at.LastActivity = now.Add(-20 * time.Second).UnixNano()
+	speed = at.GetSpeed()
+	if speed < 99.0 || speed > 101.0 {
+		t.Errorf("Extreme decayed speed = %f, want ~100.0", speed)
+	}
+}

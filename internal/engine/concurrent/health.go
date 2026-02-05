@@ -29,7 +29,26 @@ func (d *ConcurrentDownloader) checkWorkerHealth() {
 
 	var meanSpeed float64
 	if speedCount > 0 {
-		meanSpeed = totalSpeed / float64(speedCount)
+		// If we have very few workers (e.g. 1), meanSpeed is just that worker's speed,
+		// so "workerSpeed < mean * threshold" will never trigger.
+		// Fallback to GLOBAL session speed in this case.
+		if speedCount < 2 && d.State != nil {
+			downloaded, _, _, sessionElapsed, _, sessionStartBytes := d.State.GetProgress()
+			elapsedSeconds := sessionElapsed.Seconds()
+			if elapsedSeconds > 5.0 { // Ensure we have some history
+				globalSpeed := float64(downloaded-sessionStartBytes) / elapsedSeconds
+				if globalSpeed > 0 {
+					meanSpeed = globalSpeed
+				} else {
+					// Edge case: no global progress yet? use local
+					meanSpeed = totalSpeed / float64(speedCount)
+				}
+			} else {
+				meanSpeed = totalSpeed / float64(speedCount)
+			}
+		} else {
+			meanSpeed = totalSpeed / float64(speedCount)
+		}
 	}
 
 	// Second pass: check for slow workers

@@ -47,11 +47,29 @@ func (at *ActiveTask) RemainingTask() *types.Task {
 	return &types.Task{Offset: current, Length: stopAt - current}
 }
 
-// GetSpeed returns the current EMA-smoothed speed
+// GetSpeed returns the current EMA-smoothed speed, decaying if stalled
 func (at *ActiveTask) GetSpeed() float64 {
 	at.SpeedMu.Lock()
-	defer at.SpeedMu.Unlock()
-	return at.Speed
+	speed := at.Speed
+	at.SpeedMu.Unlock()
+
+	// Check for stall
+	lastActivity := atomic.LoadInt64(&at.LastActivity)
+	if lastActivity == 0 {
+		return speed
+	}
+
+	since := time.Since(time.Unix(0, lastActivity))
+	const decayThreshold = 2 * time.Second
+
+	// If we haven't heard from the worker in > 2s, decay the speed
+	// effectively: Speed = Speed * (Threshold / TimeSinceLastActivity)
+	if since > decayThreshold {
+		decayFactor := float64(decayThreshold) / float64(since)
+		speed *= decayFactor
+	}
+
+	return speed
 }
 
 // alignedSplitSize calculates a split size that is half of remaining, aligned to AlignSize
