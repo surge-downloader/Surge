@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	DefaultPollInterval = 150 * time.Millisecond
+	DefaultPollInterval = 500 * time.Millisecond
 	SpeedSmoothingAlpha = 0.3 // EMA smoothing factor
 )
 
