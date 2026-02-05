@@ -1,7 +1,6 @@
 package concurrent
 
 import (
-	"sync/atomic"
 	"time"
 
 	"github.com/surge-downloader/surge/internal/utils"
@@ -17,8 +16,6 @@ func (d *ConcurrentDownloader) checkWorkerHealth() {
 	}
 
 	now := time.Now()
-	stallTimeout := d.Runtime.GetStallTimeout()
-	gracePeriod := d.Runtime.GetSlowWorkerGracePeriod()
 
 	// First pass: calculate mean speed
 	var totalSpeed float64
@@ -38,43 +35,21 @@ func (d *ConcurrentDownloader) checkWorkerHealth() {
 	// Second pass: check for slow workers
 	for workerID, active := range d.activeTasks {
 
-		// ---------------------------------------------------------
-		// CHECK 1: The Hard Stall (The "Zombie" Killer)
-		// ---------------------------------------------------------
-		// If the worker hasn't written a single byte for > StallTimeout (5s),
-		// it is dead. Kill it immediately. Speed is irrelevant here.
-		lastActivityNano := atomic.LoadInt64(&active.LastActivity)
-		lastActivity := time.Unix(0, lastActivityNano)
-		timeSinceLastActivity := now.Sub(lastActivity)
-
-		if timeSinceLastActivity > stallTimeout {
-			utils.Debug("Health: Worker %d stalled. No activity for %v. Cancelling.",
-				workerID, timeSinceLastActivity)
-
-			if active.Cancel != nil {
-				active.Cancel()
-			}
-			continue
-		}
-
-		// ---------------------------------------------------------
-		// CHECK 2: The Relative Slowness (The "Straggler" Killer)
-		// ---------------------------------------------------------
+		// timeSinceActivity := now.Sub(lastTime)
 		taskDuration := now.Sub(active.StartTime)
 
-		// SKIP if in grace period
+		// Skip workers that are still in their grace period
+		gracePeriod := d.Runtime.GetSlowWorkerGracePeriod()
 		if taskDuration < gracePeriod {
 			continue
 		}
 
-		// Only run this if we have a valid global baseline
+		// Check for slow worker
+		// Only cancel if: below threshold
 		if meanSpeed > 0 {
 			workerSpeed := active.GetSpeed()
-
-			// BUG FIX: Removed "workerSpeed > 0".
-			// If speed is 0 (and not caught by stall check yet), it IS below threshold.
 			threshold := d.Runtime.GetSlowWorkerThreshold()
-			isBelowThreshold := workerSpeed < threshold*meanSpeed
+			isBelowThreshold := workerSpeed > 0 && workerSpeed < threshold*meanSpeed
 
 			if isBelowThreshold {
 				utils.Debug("Health: Worker %d slow (%.2f KB/s vs mean %.2f KB/s), cancelling",

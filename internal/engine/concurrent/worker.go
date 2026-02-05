@@ -142,9 +142,6 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 				if current < task.Offset+task.Length && current >= stopAt {
 					// We were stopped early this is expected success for the partial work
 					// The stolen part is already in the queue
-				} else {
-					// Full completion of the assigned task range
-					d.cleanUpShadows(task.Offset, id)
 				}
 				break
 			}
