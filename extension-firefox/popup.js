@@ -1,10 +1,16 @@
 // Surge Extension - Popup Script (Firefox)
 // Handles UI rendering and communication with background script
+// Also supports standalone testing via direct HTTP calls
+
+const SURGE_API_BASE = 'http://127.0.0.1:8080';
 
 // === State ===
 let downloads = new Map();
 let serverConnected = false;
 let pollInterval = null;
+
+// Detect if running in extension context
+const isExtensionContext = typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendMessage;
 
 // === DOM Elements ===
 const downloadsList = document.getElementById('downloadsList');
@@ -14,6 +20,51 @@ const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const serverStatus = document.getElementById('serverStatus');
 const interceptToggle = document.getElementById('interceptToggle');
+
+// === API Wrapper (works in extension and standalone modes) ===
+
+async function apiCall(action, params = {}) {
+  if (isExtensionContext) {
+    // Extension mode: use background script
+    return browser.runtime.sendMessage({ type: action, ...params });
+  } else {
+    // Standalone mode: direct HTTP calls
+    try {
+      switch (action) {
+        case 'getDownloads': {
+          const response = await fetch(`${SURGE_API_BASE}/list`);
+          if (response.ok) {
+            const downloads = await response.json();
+            return { connected: true, downloads };
+          }
+          return { connected: false, downloads: [] };
+        }
+        case 'getStatus':
+          return { enabled: true };
+        case 'pauseDownload': {
+          const response = await fetch(`${SURGE_API_BASE}/pause?id=${params.id}`, { method: 'POST' });
+          return { success: response.ok };
+        }
+        case 'resumeDownload': {
+          const response = await fetch(`${SURGE_API_BASE}/resume?id=${params.id}`, { method: 'POST' });
+          return { success: response.ok };
+        }
+        case 'cancelDownload': {
+          const response = await fetch(`${SURGE_API_BASE}/delete?id=${params.id}`, { method: 'DELETE' });
+          return { success: response.ok };
+        }
+        default:
+          return {};
+      }
+    } catch (error) {
+      console.error('[Surge Popup] API call failed:', error);
+      if (action === 'getDownloads') {
+        return { connected: false, downloads: [] };
+      }
+      return { success: false, error: error.message };
+    }
+  }
+}
 
 // === Rendering ===
 
@@ -182,11 +233,11 @@ function updateServerStatus(connected) {
   }
 }
 
-// === Communication with Background ===
+// === Communication with Backend ===
 
 async function fetchDownloads() {
   try {
-    const response = await browser.runtime.sendMessage({ type: 'getDownloads' });
+    const response = await apiCall('getDownloads');
     if (response) {
       updateServerStatus(response.connected);
       if (response.downloads) {
@@ -210,50 +261,55 @@ downloadsList.addEventListener('click', async (e) => {
   
   const id = item.dataset.id;
   btn.disabled = true;
+  btn.style.opacity = '0.5';
   
   try {
     if (btn.classList.contains('pause')) {
-      await browser.runtime.sendMessage({ type: 'pauseDownload', id });
+      await apiCall('pauseDownload', { id });
     } else if (btn.classList.contains('resume')) {
-      await browser.runtime.sendMessage({ type: 'resumeDownload', id });
+      await apiCall('resumeDownload', { id });
     } else if (btn.classList.contains('cancel')) {
-      await browser.runtime.sendMessage({ type: 'cancelDownload', id });
+      await apiCall('cancelDownload', { id });
     }
     await fetchDownloads();
   } catch (error) {
     console.error('[Surge Popup] Action error:', error);
   } finally {
     btn.disabled = false;
+    btn.style.opacity = '1';
   }
 });
 
 interceptToggle.addEventListener('change', async () => {
-  try {
-    await browser.runtime.sendMessage({ 
-      type: 'setStatus', 
-      enabled: interceptToggle.checked 
-    });
-  } catch (error) {
-    console.error('[Surge Popup] Toggle error:', error);
+  if (isExtensionContext) {
+    try {
+      await apiCall('setStatus', { enabled: interceptToggle.checked });
+    } catch (error) {
+      console.error('[Surge Popup] Toggle error:', error);
+    }
   }
 });
 
-browser.runtime.onMessage.addListener((message) => {
-  if (message.type === 'downloadsUpdate') {
-    downloads.clear();
-    message.downloads.forEach(dl => downloads.set(dl.id, dl));
-    renderDownloads();
-  }
-  if (message.type === 'serverStatus') {
-    updateServerStatus(message.connected);
-  }
-});
+if (isExtensionContext) {
+  browser.runtime.onMessage.addListener((message) => {
+    if (message.type === 'downloadsUpdate') {
+      downloads.clear();
+      message.downloads.forEach(dl => downloads.set(dl.id, dl));
+      renderDownloads();
+    }
+    if (message.type === 'serverStatus') {
+      updateServerStatus(message.connected);
+    }
+  });
+}
 
 // === Initialization ===
 
 async function init() {
+  console.log('[Surge Popup] Initializing...', isExtensionContext ? '(extension mode)' : '(standalone mode)');
+  
   try {
-    const response = await browser.runtime.sendMessage({ type: 'getStatus' });
+    const response = await apiCall('getStatus');
     if (response) {
       interceptToggle.checked = response.enabled !== false;
     }
