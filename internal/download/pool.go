@@ -114,21 +114,21 @@ func (p *WorkerPool) GetAll() []types.DownloadConfig {
 	return configs
 }
 
-// Pause pauses a specific download by ID
-func (p *WorkerPool) Pause(downloadID string) {
+// Pause pauses a specific download by ID. Returns true if found and pause initiated (or already paused), false otherwise.
+func (p *WorkerPool) Pause(downloadID string) bool {
 	p.mu.RLock()
 	ad, exists := p.downloads[downloadID]
 	p.mu.RUnlock()
 
 	if !exists || ad == nil {
-		return
+		return false
 	}
 
 	// Set paused flag and cancel context
 	if ad.config.State != nil {
 		// Idempotency: If already pausing or paused, do nothing
 		if ad.config.State.IsPausing() || ad.config.State.IsPaused() {
-			return
+			return true
 		}
 		ad.config.State.SetPausing(true) // Mark as transitioning to pause
 		ad.config.State.Pause()
@@ -146,6 +146,7 @@ func (p *WorkerPool) Pause(downloadID string) {
 			Downloaded: downloaded,
 		}
 	}
+	return true
 }
 
 // PauseAll pauses all active downloads (for graceful shutdown)
@@ -197,26 +198,26 @@ func (p *WorkerPool) Cancel(downloadID string) {
 	}
 }
 
-// Resume resumes a paused download by ID
-func (p *WorkerPool) Resume(downloadID string) {
+// Resume resumes a paused download by ID. Returns true if found and resumed (or already running), false otherwise.
+func (p *WorkerPool) Resume(downloadID string) bool {
 	p.mu.RLock()
 	ad, exists := p.downloads[downloadID]
 	p.mu.RUnlock()
 
 	if !exists || ad == nil {
-		return
+		return false
 	}
 
 	// Prevent race: Don't resume if still pausing
 	if ad.config.State != nil && ad.config.State.IsPausing() {
 		utils.Debug("Resume ignored: download %s is still pausing", downloadID)
-		return
+		return true // Considered "handled" even if ignored temporarily
 	}
 
 	// Idempotency: If already running (not paused), do nothing
 	if ad.config.State != nil && !ad.config.State.IsPaused() {
 		utils.Debug("Resume ignored: download %s is already running", downloadID)
-		return
+		return true
 	}
 
 	// Clear paused flag and reset session start to avoid speed spikes/dips checks
@@ -236,6 +237,7 @@ func (p *WorkerPool) Resume(downloadID string) {
 			Filename:   ad.config.Filename,
 		}
 	}
+	return true
 }
 
 func (p *WorkerPool) worker() {

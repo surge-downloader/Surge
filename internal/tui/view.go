@@ -769,6 +769,9 @@ func (m RootModel) CalculateStats() (active, queued, downloaded int) {
 }
 
 func truncateString(s string, i int) string {
+	if i <= 0 {
+		return ""
+	}
 	runes := []rune(s)
 	if len(runes) > i {
 		return string(runes[:i]) + "..."

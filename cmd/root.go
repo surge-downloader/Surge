@@ -281,13 +281,30 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 			http.Error(w, "Missing id parameter", http.StatusBadRequest)
 			return
 		}
-		if GlobalPool != nil {
-			GlobalPool.Pause(id)
+
+		if GlobalPool == nil {
+			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+			return
+		}
+
+		// Try to pause active download
+		if GlobalPool.Pause(id) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id})
-		} else {
-			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+			return
 		}
+
+		// Check if it exists in DB (Cold Pause)
+		// If it exists in DB but not in pool, it's effectively paused or done.
+		entry, err := state.GetDownload(id)
+		if err == nil && entry != nil {
+			// It exists, so we consider it "paused" (or at least stopped)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id, "message": "Download already stopped"})
+			return
+		}
+
+		http.Error(w, "Download not found", http.StatusNotFound)
 	})
 
 	// Resume endpoint
@@ -301,13 +318,98 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 			http.Error(w, "Missing id parameter", http.StatusBadRequest)
 			return
 		}
-		if GlobalPool != nil {
-			GlobalPool.Resume(id)
+
+		if GlobalPool == nil {
+			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+			return
+		}
+
+		// Try to resume if active/paused in memory
+		if GlobalPool.Resume(id) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id})
-		} else {
-			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+			return
 		}
+
+		// Cold Resume: Not in active pool, try loading from DB
+		entry, err := state.GetDownload(id)
+		if err != nil || entry == nil {
+			http.Error(w, "Download not found", http.StatusNotFound)
+			return
+		}
+
+		if entry.Status == "completed" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "completed", "id": id, "message": "Download already completed"})
+			return
+		}
+
+		// Load settings for runtime config
+		settings, err := config.LoadSettings()
+		if err != nil {
+			settings = config.DefaultSettings()
+		}
+
+		// Reconstruct configuration
+		runtimeConfig := convertRuntimeConfig(settings.ToRuntimeConfig())
+		outputPath := filepath.Dir(entry.DestPath)
+		if outputPath == "" || outputPath == "." {
+			outputPath = settings.General.DefaultDownloadDir
+		}
+		if outputPath == "" {
+			outputPath = "."
+		}
+
+		// Load saved state to get full progress/mirrors
+		savedState, stateErr := state.LoadState(entry.URL, entry.DestPath)
+
+		// Re-use mirrors from state if available, otherwise just URL
+		var mirrorURLs []string
+		var dmState *types.ProgressState
+
+		if stateErr == nil && savedState != nil {
+			// Create state populated from saved data
+			dmState = types.NewProgressState(id, savedState.TotalSize)
+			dmState.Downloaded.Store(savedState.Downloaded)
+			if savedState.Elapsed > 0 {
+				dmState.SetSavedElapsed(time.Duration(savedState.Elapsed))
+			}
+
+			if len(savedState.Mirrors) > 0 {
+				var mirrors []types.MirrorStatus
+				for _, u := range savedState.Mirrors {
+					mirrors = append(mirrors, types.MirrorStatus{URL: u, Active: true})
+					mirrorURLs = append(mirrorURLs, u)
+				}
+				dmState.SetMirrors(mirrors)
+			}
+		} else {
+			// Fallback if state file missing but DB entry exists
+			dmState = types.NewProgressState(id, entry.TotalSize)
+			dmState.Downloaded.Store(entry.Downloaded)
+			mirrorURLs = []string{entry.URL}
+		}
+
+		cfg := types.DownloadConfig{
+			URL:        entry.URL,
+			OutputPath: outputPath,
+			DestPath:   entry.DestPath,
+			ID:         id,
+			Filename:   entry.Filename,
+			Verbose:    false,
+			IsResume:   true,
+			ProgressCh: GlobalProgressCh,
+			State:      dmState,
+			Runtime:    runtimeConfig,
+			Mirrors:    mirrorURLs,
+		}
+
+		// Add to pool to start downloading
+		GlobalPool.Add(cfg)
+		atomic.AddInt32(&activeDownloads, 1)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id, "message": "Download cold-resumed"})
 	})
 
 	// Delete endpoint
@@ -433,6 +535,17 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS, PUT, PATCH")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		next.ServeHTTP(w, r)
 	})
 }
