@@ -70,9 +70,9 @@ jobs:
           # Use 'github.event.inputs' for manual triggers, default for others
           BENCH_URL: ${{ github.event.inputs.url || 'https://sin-speed.hetzner.com/1GB.bin' }}
           # On push/PR, we usually want 1 iteration to save time, 5 for manual
-          BENCH_ITERATIONS: ${{ github.event.inputs.iterations || '5' }}
+          BENCH_ITERATIONS: ${{ github.event.inputs.iterations || '10' }}
           # Default to 'y' for PRs to see regressions, 'n' for simple pushes
-          BASELINE_COMPARE: ${{ github.event.inputs.baseline || 'n' }}
+          BASELINE_COMPARE: ${{ github.event.inputs.baseline || 'y' }}
 
         run: |
           cd current

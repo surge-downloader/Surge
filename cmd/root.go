@@ -557,7 +557,7 @@ type DownloadRequest struct {
 	Path                 string   `json:"path,omitempty"`
 	RelativeToDefaultDir bool     `json:"relative_to_default_dir,omitempty"`
 	Mirrors              []string `json:"mirrors,omitempty"`
-	SkipDuplicateCheck   bool     `json:"skip_duplicate_check,omitempty"` // Extension already confirmed duplicate
+	SkipApproval         bool     `json:"skip_approval,omitempty"` // Extension validated request, skip TUI prompt
 }
 
 func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir string) {
@@ -656,7 +656,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	// 	req.Path = "."
 	// }
 
-	utils.Debug("Received download request: URL=%s, Path=%s, SkipDup=%v", req.URL, req.Path, req.SkipDuplicateCheck)
+	utils.Debug("Received download request: URL=%s, Path=%s", req.URL, req.Path)
 
 	downloadID := uuid.New().String()
 
@@ -700,18 +700,49 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 
 	// Check settings for extension prompt and duplicates
 	// settings already loaded above
-	if true {
-		// Check for duplicates (skip if extension already confirmed)
-		isDuplicate := false
-		if !req.SkipDuplicateCheck && GlobalPool.HasDownload(req.URL) {
-			isDuplicate = true
-		}
+	// Check for duplicates
+	// Logic modified to distinguish between ACTIVE (corruption risk) and COMPLETED (overwrite safe)
+	isDuplicate := false
+	isActive := false
 
+	if GlobalPool.HasDownload(req.URL) {
+		isDuplicate = true
+		// Check if specifically active
+		// Wait, GetStatus takes ID, we have URL.
+		// Currently GlobalPool doesn't expose GetStatusByUrl casually, but we can check if it's in the list
+		// Optimization: We could iterate, or just assume HasDownload means it exists.
+		// Let's use GetAll to check active
+		allActive := GlobalPool.GetAll()
+		for _, c := range allActive {
+			if c.URL == req.URL {
+				if c.State != nil && !c.State.Done.Load() {
+					isActive = true
+				}
+				break
+			}
+		}
+	}
+
+	// EXTENSION VETTING SHORTCUT:
+	// If SkipApproval is true, we trust the extension.
+	// BUT we must protect against corruption if the file is ALREADY downloading.
+	if req.SkipApproval {
+		if isActive {
+			// Reject active downloads to prevent corruption
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict) // 409
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": "Download rejected: File is currently downloading",
+			})
+			return
+		}
+		// Trust extension -> Skip prompting logic explicitly
+	} else {
 		// Logic for prompting:
 		// 1. If ExtensionPrompt is enabled
 		// 2. OR if WarnOnDuplicate is enabled AND it is a duplicate
-		// Note: Skip ALL prompts if extension already confirmed (SkipDuplicateCheck)
-		shouldPrompt := !req.SkipDuplicateCheck && (settings.General.ExtensionPrompt || (settings.General.WarnOnDuplicate && isDuplicate))
+		shouldPrompt := settings.General.ExtensionPrompt || (settings.General.WarnOnDuplicate && isDuplicate)
 
 		// Only prompt if we have a UI running (serverProgram != nil)
 		if shouldPrompt {
@@ -736,11 +767,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 				})
 				return
 			} else {
-				// Headless mode: If WarnOnDuplicate is true, we should reject it because we can't warn
-				// If ExtensionPrompt is true, we should definitely reject it because we can't prompt
-				// If it's just a duplicate and WarnOnDuplicate is true, we reject.
-				// If WarnOnDuplicate is false, we allow it (fallthrough).
-
+				// Headless mode check
 				if settings.General.ExtensionPrompt || (settings.General.WarnOnDuplicate && isDuplicate) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusConflict)

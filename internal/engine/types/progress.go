@@ -19,6 +19,7 @@ type ProgressState struct {
 	Pausing       atomic.Bool // Intermediate state: Pause requested but workers not yet exited
 	CancelFunc    context.CancelFunc
 
+	VerifiedProgress  atomic.Int64  // Verified bytes written to disk (for UI progress)
 	SessionStartBytes int64         // SessionStartBytes tracks how many bytes were already downloaded when the current session started
 	SavedElapsed      time.Duration // Time spent in previous sessions
 
@@ -75,7 +76,7 @@ func (ps *ProgressState) GetError() error {
 }
 
 func (ps *ProgressState) GetProgress() (downloaded int64, total int64, totalElapsed time.Duration, sessionElapsed time.Duration, connections int32, sessionStartBytes int64) {
-	downloaded = ps.Downloaded.Load()
+	downloaded = ps.VerifiedProgress.Load()
 	connections = ps.ActiveWorkers.Load()
 
 	ps.mu.Lock()
@@ -274,7 +275,19 @@ func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkSta
 
 		if status == ChunkCompleted {
 			// Accumulate bytes
-			ps.ChunkProgress[i] += overlap
+			// Only add providing we don't exceed chunk size
+			increment := overlap
+			remainingSpace := (chunkEnd - chunkStart) - ps.ChunkProgress[i]
+
+			if increment > remainingSpace {
+				increment = remainingSpace
+			}
+
+			if increment > 0 {
+				ps.ChunkProgress[i] += increment
+				ps.VerifiedProgress.Add(increment)
+			}
+
 			if ps.ChunkProgress[i] >= (chunkEnd - chunkStart) {
 				ps.ChunkProgress[i] = chunkEnd - chunkStart // clamp
 				ps.SetChunkState(i, ChunkCompleted)
@@ -304,6 +317,7 @@ func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
 
 	// 1. Assume everything is downloaded initially
 	ps.ChunkProgress = make([]int64, ps.BitmapWidth)
+	var totalVerified int64
 	for i := 0; i < ps.BitmapWidth; i++ {
 		chunkStart := int64(i) * ps.ActualChunkSize
 		chunkEnd := chunkStart + ps.ActualChunkSize
@@ -311,6 +325,7 @@ func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
 			chunkEnd = ps.TotalSize
 		}
 		ps.ChunkProgress[i] = chunkEnd - chunkStart
+		totalVerified += ps.ChunkProgress[i]
 	}
 
 	// 2. Subtract remaining tasks
@@ -348,9 +363,13 @@ func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
 			overlap := taskEnd - taskStart
 			if overlap > 0 {
 				ps.ChunkProgress[i] -= overlap
+				totalVerified -= overlap // Subtract unverified bytes
 			}
 		}
 	}
+
+	// Store the recalculated verified progress
+	ps.VerifiedProgress.Store(totalVerified)
 
 	// 3. Update Bitmap based on calculated progress
 	for i := 0; i < ps.BitmapWidth; i++ {

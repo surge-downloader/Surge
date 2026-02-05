@@ -139,6 +139,9 @@ async function sendToSurge(url, filename, absolutePath, skipDuplicateCheck = fal
       body.skip_duplicate_check = true;
     }
 
+    // Always skip TUI approval for extension downloads (vetted by user action)
+    body.skip_approval = true;
+
     const response = await fetch(`http://127.0.0.1:${port}/download`, {
       method: 'POST',
       headers: {
@@ -472,6 +475,17 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     );
 
     if (result.success) {
+      // Check for pending approval
+      if (result.data && result.data.status === 'pending_approval') {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icons/icon48.png',
+          title: 'Surge - Confirmation Required',
+          message: `Please confirm download in Surge TUI: ${filename || downloadItem.url.split('/').pop()}`,
+        });
+        return; // Don't auto-open popup for pending interactions
+      }
+
       // Show notification
       chrome.notifications.create({
         type: 'basic',

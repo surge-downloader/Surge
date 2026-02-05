@@ -123,7 +123,7 @@ func TestProgressState_PauseWithCancelFunc(t *testing.T) {
 
 func TestProgressState_GetProgress(t *testing.T) {
 	ps := NewProgressState("test", 1000)
-	ps.Downloaded.Store(500)
+	ps.VerifiedProgress.Store(500)
 	ps.ActiveWorkers.Store(4)
 	ps.SessionStartBytes = 100
 
