@@ -84,6 +84,11 @@ async function fetchDownloadList() {
     if (response.ok) {
       const list = await response.json();
       
+      // Handle null or non-array response
+      if (!Array.isArray(list)) {
+        return [];
+      }
+      
       // Calculate ETA for each download
       return list.map(dl => {
         let eta = null;
@@ -422,6 +427,14 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
         title: 'Surge',
         message: `Download started: ${filename || downloadItem.url.split('/').pop()}`,
       });
+      
+      // Auto-open the popup to show download progress
+      try {
+        await chrome.action.openPopup();
+      } catch (e) {
+        // openPopup may fail if popup is already open or no user gesture
+        console.log('[Surge] Could not auto-open popup:', e.message);
+      }
     } else {
       // Failed to send to Surge - show error notification
       chrome.notifications.create({
