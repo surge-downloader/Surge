@@ -177,43 +177,109 @@ body {
   padding: 12px;
 }
 
-/* === Download Item === */
+/* === Download Item (Collapsible) === */
 .download-item {
   background: var(--bg-surface);
   border-radius: var(--radius-md);
-  padding: 14px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   border: 1px solid var(--border-subtle);
   transition: all 0.2s ease;
-  position: relative;
+  overflow: hidden;
 }
 
 .download-item:hover {
   border-color: var(--border-default);
-  background: var(--bg-hover);
-  box-shadow: var(--shadow-sm);
 }
 
 .download-item:last-child {
   margin-bottom: 0;
 }
 
-.download-info {
+/* Collapsed Header (Always Visible) */
+.download-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
   gap: 12px;
+  transition: background 0.15s ease;
+}
+
+.download-header:hover {
+  background: var(--bg-hover);
+}
+
+.download-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .filename {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
+}
+
+.download-quick-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+}
+
+.speed-compact {
+  color: var(--accent-tertiary);
+  font-weight: 500;
+}
+
+.eta-compact {
+  color: var(--accent-primary);
+  font-weight: 500;
+}
+
+.progress-compact {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.download-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.expand-icon {
+  color: var(--text-muted);
+  font-size: 10px;
+  transition: transform 0.2s ease;
+}
+
+.download-item.expanded .expand-icon {
+  color: var(--accent-primary);
+}
+
+/* Expandable Details (Hidden by default) */
+.download-details {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease;
+  padding: 0 14px;
+  border-top: 1px solid transparent;
+}
+
+.download-item.expanded .download-details {
+  max-height: 200px;
+  opacity: 1;
+  padding: 14px;
+  border-top-color: var(--border-subtle);
 }
 
 .status-tag {

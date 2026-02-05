@@ -1,5 +1,5 @@
-// Surge Extension - Popup Script (Firefox)
-// Handles UI rendering and communication with background script
+// Surge Extension - Popup Script
+// Handles UI rendering and communication with background service worker
 // Also supports standalone testing via direct HTTP calls
 
 const SURGE_API_BASE = 'http://127.0.0.1:8080';
@@ -40,7 +40,7 @@ async function apiCall(action, params = {}) {
           return { connected: false, downloads: [] };
         }
         case 'getStatus':
-          return { enabled: true };
+          return { enabled: true }; // Always enabled in standalone
         case 'pauseDownload': {
           const response = await fetch(`${SURGE_API_BASE}/pause?id=${params.id}`, { method: 'POST' });
           return { success: response.ok };
@@ -76,6 +76,7 @@ function renderDownloads() {
   if (activeDownloads.length === 0) {
     emptyState.classList.remove('hidden');
     downloadCount.textContent = '0';
+    // Clear any existing download items
     const items = downloadsList.querySelectorAll('.download-item');
     items.forEach(item => item.remove());
     return;
@@ -84,6 +85,7 @@ function renderDownloads() {
   emptyState.classList.add('hidden');
   downloadCount.textContent = activeDownloads.length;
 
+  // Sort: downloading first, then paused, then queued, then completed
   const statusOrder = { downloading: 0, paused: 1, queued: 2, completed: 3, error: 4 };
   const sorted = activeDownloads.sort((a, b) => {
     const orderA = statusOrder[a.status] ?? 5;
@@ -92,6 +94,7 @@ function renderDownloads() {
     return (b.addedAt || 0) - (a.addedAt || 0);
   });
 
+  // Update or create items
   const existingIds = new Set();
   sorted.forEach((dl, index) => {
     existingIds.add(dl.id);
@@ -101,6 +104,7 @@ function renderDownloads() {
       updateDownloadItem(item, dl);
     } else {
       item = createDownloadItem(dl);
+      // Insert at correct position
       const items = downloadsList.querySelectorAll('.download-item');
       if (index < items.length) {
         items[index].before(item);
@@ -110,6 +114,7 @@ function renderDownloads() {
     }
   });
 
+  // Remove stale items
   const items = downloadsList.querySelectorAll('.download-item');
   items.forEach(item => {
     if (!existingIds.has(item.dataset.id)) {
@@ -129,38 +134,51 @@ function createDownloadItem(dl) {
 function updateDownloadItem(item, dl) {
   const progress = dl.progress || 0;
   const status = dl.status || 'queued';
+  const isExpanded = item.classList.contains('expanded');
   
   item.innerHTML = `
-    <div class="download-info">
-      <span class="filename" title="${escapeHtml(dl.filename || dl.url)}">${truncate(dl.filename || extractFilename(dl.url), 32)}</span>
-      <span class="status-tag ${status}">${status}</span>
-    </div>
-    <div class="progress-container">
-      <div class="progress-bar">
-        <div class="progress-fill" style="width: ${progress}%"></div>
+    <div class="download-header" data-toggle>
+      <div class="download-main">
+        <span class="filename" title="${escapeHtml(dl.filename || dl.url)}">${truncate(dl.filename || extractFilename(dl.url), 28)}</span>
+        <div class="download-quick-stats">
+          <span class="speed-compact">${formatSpeed(dl.speed)}</span>
+          <span class="eta-compact">${formatETA(dl.eta)}</span>
+          <span class="progress-compact">${progress.toFixed(0)}%</span>
+        </div>
       </div>
-      <div class="progress-text">
-        <span class="size">${formatSize(dl.downloaded)} / ${formatSize(dl.total_size)}</span>
-        <span class="progress-percent">${progress.toFixed(1)}%</span>
-      </div>
-    </div>
-    <div class="download-meta">
-      <div class="meta-item">
-        <span class="meta-icon">⬇</span>
-        <span class="speed">${formatSpeed(dl.speed)}</span>
-      </div>
-      <div class="meta-item">
-        <span class="meta-icon">⏱</span>
-        <span class="eta">${formatETA(dl.eta)}</span>
+      <div class="download-header-right">
+        <span class="status-tag ${status}">${status}</span>
+        <span class="expand-icon">${isExpanded ? '▼' : '▶'}</span>
       </div>
     </div>
-    <div class="download-actions">
-      ${status === 'downloading' ? 
-        '<button class="action-btn pause" title="Pause">⏸</button>' :
-        status === 'paused' || status === 'queued' ? 
-        '<button class="action-btn resume" title="Resume">▶</button>' : ''}
-      ${status !== 'completed' ? 
-        '<button class="action-btn cancel" title="Cancel">✕</button>' : ''}
+    <div class="download-details">
+      <div class="progress-container">
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: ${progress}%"></div>
+        </div>
+        <div class="progress-text">
+          <span class="size">${formatSize(dl.downloaded)} / ${formatSize(dl.total_size)}</span>
+          <span class="progress-percent">${progress.toFixed(1)}%</span>
+        </div>
+      </div>
+      <div class="download-meta">
+        <div class="meta-item">
+          <span class="meta-icon">⬇</span>
+          <span class="speed">${formatSpeed(dl.speed)}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-icon">⏱</span>
+          <span class="eta">${formatETA(dl.eta)}</span>
+        </div>
+      </div>
+      <div class="download-actions">
+        ${status === 'downloading' ? 
+          '<button class="action-btn pause" title="Pause">⏸</button>' :
+          status === 'paused' || status === 'queued' ? 
+          '<button class="action-btn resume" title="Resume">▶</button>' : ''}
+        ${status !== 'completed' ? 
+          '<button class="action-btn cancel" title="Cancel">✕</button>' : ''}
+      </div>
     </div>
   `;
 }
@@ -252,6 +270,22 @@ async function fetchDownloads() {
   }
 }
 
+// Handle toggle expand/collapse
+downloadsList.addEventListener('click', (e) => {
+  const toggleHeader = e.target.closest('[data-toggle]');
+  if (toggleHeader && !e.target.closest('.action-btn')) {
+    const item = toggleHeader.closest('.download-item');
+    if (item) {
+      item.classList.toggle('expanded');
+      const expandIcon = item.querySelector('.expand-icon');
+      if (expandIcon) {
+        expandIcon.textContent = item.classList.contains('expanded') ? '▼' : '▶';
+      }
+    }
+  }
+});
+
+// Handle action button clicks
 downloadsList.addEventListener('click', async (e) => {
   const btn = e.target.closest('.action-btn');
   if (!btn) return;
@@ -260,6 +294,8 @@ downloadsList.addEventListener('click', async (e) => {
   if (!item) return;
   
   const id = item.dataset.id;
+  
+  // Disable button temporarily
   btn.disabled = true;
   btn.style.opacity = '0.5';
   
@@ -271,6 +307,7 @@ downloadsList.addEventListener('click', async (e) => {
     } else if (btn.classList.contains('cancel')) {
       await apiCall('cancelDownload', { id });
     }
+    // Refresh immediately after action
     await fetchDownloads();
   } catch (error) {
     console.error('[Surge Popup] Action error:', error);
@@ -280,6 +317,7 @@ downloadsList.addEventListener('click', async (e) => {
   }
 });
 
+// Handle toggle change
 interceptToggle.addEventListener('change', async () => {
   if (isExtensionContext) {
     try {
@@ -290,6 +328,7 @@ interceptToggle.addEventListener('change', async () => {
   }
 });
 
+// Listen for messages from background (extension mode only)
 if (isExtensionContext) {
   browser.runtime.onMessage.addListener((message) => {
     if (message.type === 'downloadsUpdate') {
@@ -308,6 +347,7 @@ if (isExtensionContext) {
 async function init() {
   console.log('[Surge Popup] Initializing...', isExtensionContext ? '(extension mode)' : '(standalone mode)');
   
+  // Get current toggle state
   try {
     const response = await apiCall('getStatus');
     if (response) {
@@ -317,14 +357,19 @@ async function init() {
     console.error('[Surge Popup] Error getting status:', error);
   }
   
+  // Initial fetch
   await fetchDownloads();
+  
+  // Poll for updates every 1 second
   pollInterval = setInterval(fetchDownloads, 1000);
 }
 
+// Cleanup when popup closes
 window.addEventListener('unload', () => {
   if (pollInterval) {
     clearInterval(pollInterval);
   }
 });
 
+// Start
 init();

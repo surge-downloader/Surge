@@ -134,38 +134,51 @@ function createDownloadItem(dl) {
 function updateDownloadItem(item, dl) {
   const progress = dl.progress || 0;
   const status = dl.status || 'queued';
+  const isExpanded = item.classList.contains('expanded');
   
   item.innerHTML = `
-    <div class="download-info">
-      <span class="filename" title="${escapeHtml(dl.filename || dl.url)}">${truncate(dl.filename || extractFilename(dl.url), 32)}</span>
-      <span class="status-tag ${status}">${status}</span>
-    </div>
-    <div class="progress-container">
-      <div class="progress-bar">
-        <div class="progress-fill" style="width: ${progress}%"></div>
+    <div class="download-header" data-toggle>
+      <div class="download-main">
+        <span class="filename" title="${escapeHtml(dl.filename || dl.url)}">${truncate(dl.filename || extractFilename(dl.url), 28)}</span>
+        <div class="download-quick-stats">
+          <span class="speed-compact">${formatSpeed(dl.speed)}</span>
+          <span class="eta-compact">${formatETA(dl.eta)}</span>
+          <span class="progress-compact">${progress.toFixed(0)}%</span>
+        </div>
       </div>
-      <div class="progress-text">
-        <span class="size">${formatSize(dl.downloaded)} / ${formatSize(dl.total_size)}</span>
-        <span class="progress-percent">${progress.toFixed(1)}%</span>
-      </div>
-    </div>
-    <div class="download-meta">
-      <div class="meta-item">
-        <span class="meta-icon">⬇</span>
-        <span class="speed">${formatSpeed(dl.speed)}</span>
-      </div>
-      <div class="meta-item">
-        <span class="meta-icon">⏱</span>
-        <span class="eta">${formatETA(dl.eta)}</span>
+      <div class="download-header-right">
+        <span class="status-tag ${status}">${status}</span>
+        <span class="expand-icon">${isExpanded ? '▼' : '▶'}</span>
       </div>
     </div>
-    <div class="download-actions">
-      ${status === 'downloading' ? 
-        '<button class="action-btn pause" title="Pause">⏸</button>' :
-        status === 'paused' || status === 'queued' ? 
-        '<button class="action-btn resume" title="Resume">▶</button>' : ''}
-      ${status !== 'completed' ? 
-        '<button class="action-btn cancel" title="Cancel">✕</button>' : ''}
+    <div class="download-details">
+      <div class="progress-container">
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: ${progress}%"></div>
+        </div>
+        <div class="progress-text">
+          <span class="size">${formatSize(dl.downloaded)} / ${formatSize(dl.total_size)}</span>
+          <span class="progress-percent">${progress.toFixed(1)}%</span>
+        </div>
+      </div>
+      <div class="download-meta">
+        <div class="meta-item">
+          <span class="meta-icon">⬇</span>
+          <span class="speed">${formatSpeed(dl.speed)}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-icon">⏱</span>
+          <span class="eta">${formatETA(dl.eta)}</span>
+        </div>
+      </div>
+      <div class="download-actions">
+        ${status === 'downloading' ? 
+          '<button class="action-btn pause" title="Pause">⏸</button>' :
+          status === 'paused' || status === 'queued' ? 
+          '<button class="action-btn resume" title="Resume">▶</button>' : ''}
+        ${status !== 'completed' ? 
+          '<button class="action-btn cancel" title="Cancel">✕</button>' : ''}
+      </div>
     </div>
   `;
 }
@@ -256,6 +269,21 @@ async function fetchDownloads() {
     updateServerStatus(false);
   }
 }
+
+// Handle toggle expand/collapse
+downloadsList.addEventListener('click', (e) => {
+  const toggleHeader = e.target.closest('[data-toggle]');
+  if (toggleHeader && !e.target.closest('.action-btn')) {
+    const item = toggleHeader.closest('.download-item');
+    if (item) {
+      item.classList.toggle('expanded');
+      const expandIcon = item.querySelector('.expand-icon');
+      if (expandIcon) {
+        expandIcon.textContent = item.classList.contains('expanded') ? '▼' : '▶';
+      }
+    }
+  }
+});
 
 // Handle action button clicks
 downloadsList.addEventListener('click', async (e) => {
