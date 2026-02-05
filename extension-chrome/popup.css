@@ -339,26 +339,7 @@ body {
   box-shadow: 0 0 12px rgba(255, 121, 198, 0.4);
 }
 
-.progress-fill::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.25) 50%,
-    transparent 100%
-  );
-  animation: shimmer 2s infinite;
-}
 
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
 
 .progress-text {
   display: flex;
@@ -414,8 +395,8 @@ body {
 }
 
 .action-btn {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border: 1px solid var(--border-default);
   background: var(--bg-base);
   color: var(--text-secondary);
@@ -424,7 +405,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 18px;
   transition: all 0.15s ease;
 }
 

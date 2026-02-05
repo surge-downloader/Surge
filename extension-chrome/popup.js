@@ -161,16 +161,6 @@ function updateDownloadItem(item, dl) {
           <span class="progress-percent">${progress.toFixed(1)}%</span>
         </div>
       </div>
-      <div class="download-meta">
-        <div class="meta-item">
-          <span class="meta-icon">⬇</span>
-          <span class="speed">${formatSpeed(dl.speed)}</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-icon">⏱</span>
-          <span class="eta">${formatETA(dl.eta)}</span>
-        </div>
-      </div>
       <div class="download-actions">
         ${status === 'downloading' ? 
           '<button class="action-btn pause" title="Pause">⏸</button>' :
