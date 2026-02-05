@@ -1,53 +1,53 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=340" />
-    <link rel="stylesheet" href="popup.css" />
-  </head>
-  <body>
-    <div class="container">
-      <!-- Header -->
-      <header class="header">
-        <div class="logo">
-          <img src="icons/icon48.png" alt="Surge" />
-          <h1>SURGE</h1>
-        </div>
-        <div class="status-badge" id="serverStatus">
-          <span class="status-dot" id="statusDot"></span>
-          <span class="status-text" id="statusText">Connecting...</span>
-        </div>
-      </header>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=360">
+  <title>Surge</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <img src="icons/icon48.png" alt="Surge">
+        <h1>SURGE</h1>
+      </div>
+      <div class="status-badge" id="serverStatus">
+        <span class="status-dot" id="statusDot"></span>
+        <span class="status-text" id="statusText">Connecting...</span>
+      </div>
+    </header>
 
-      <!-- Downloads Section -->
-      <section class="downloads-section">
-        <div class="downloads-header">
-          <span class="section-title">Downloads</span>
-          <span class="download-count" id="downloadCount">0</span>
+    <!-- Downloads Section -->
+    <section class="downloads-section">
+      <div class="downloads-header">
+        <span class="section-title">Downloads</span>
+        <span class="download-count" id="downloadCount">0</span>
+      </div>
+      
+      <div class="downloads-list" id="downloadsList">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">📦</div>
+          <p>No active downloads</p>
+          <p class="empty-hint">Downloads will appear here automatically</p>
         </div>
+      </div>
+    </section>
 
-        <div class="downloads-list" id="downloadsList">
-          <!-- Downloads will be rendered here dynamically -->
-          <div class="empty-state" id="emptyState">
-            <div class="empty-icon">📥</div>
-            <p>No active downloads</p>
-            <p class="empty-hint">Downloads will appear here automatically</p>
-          </div>
+    <!-- Footer -->
+    <footer class="footer">
+      <label class="toggle-row">
+        <span>Intercept Downloads</span>
+        <div class="toggle">
+          <input type="checkbox" id="interceptToggle" checked>
+          <span class="toggle-slider"></span>
         </div>
-      </section>
+      </label>
+    </footer>
+  </div>
 
-      <!-- Footer -->
-      <footer class="footer">
-        <label class="toggle-row">
-          <span>Intercept Downloads</span>
-          <div class="toggle">
-            <input type="checkbox" id="interceptToggle" checked />
-            <span class="toggle-slider"></span>
-          </div>
-        </label>
-      </footer>
-    </div>
-
-    <script src="popup.js"></script>
-  </body>
+  <script src="popup.js"></script>
+</body>
 </html>

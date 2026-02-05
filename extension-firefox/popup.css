@@ -1,50 +1,45 @@
-/* === Surge Browser Extension - Cyberpunk Retro Design === */
+/* === Surge Browser Extension - Polished Dark Theme === */
+/* Premium design with subtle retro neon accents */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  /* Neon Colors (Dark Mode - Matching TUI) */
-  --neon-purple: #bd93f9;
-  --neon-pink: #ff79c6;
-  --neon-cyan: #8be9fd;
-
-  /* Background & Surface */
-  --bg-primary: #0a0118;
-  --bg-secondary: #282a36;
-  --bg-card: rgba(68, 71, 90, 0.4);
-  --bg-hover: rgba(68, 71, 90, 0.6);
-
+  /* Core Colors */
+  --accent-primary: #ff79c6;
+  --accent-secondary: #bd93f9;
+  --accent-tertiary: #8be9fd;
+  
+  /* Backgrounds */
+  --bg-base: #0f0f14;
+  --bg-elevated: #16161e;
+  --bg-surface: #1e1e28;
+  --bg-hover: #262633;
+  
   /* Text */
-  --text-primary: #f8f8f2;
-  --text-secondary: #a9b1d6;
-  --text-muted: #6272a4;
-
+  --text-primary: #e4e4eb;
+  --text-secondary: #9898a6;
+  --text-muted: #5c5c6e;
+  
   /* Borders */
-  --border-color: #44475a;
-  --border-focus: var(--neon-pink);
-
-  /* State Colors */
-  --state-error: #ff5555;
-  --state-paused: #ffb86c;
-  --state-downloading: #50fa7b;
-  --state-completed: #bd93f9;
-  --state-queued: #6272a4;
-
-  /* Gradients */
-  --gradient-accent: linear-gradient(135deg, #ff79c6, #bd93f9);
-  --gradient-glow: linear-gradient(
-    135deg,
-    rgba(255, 121, 198, 0.3),
-    rgba(189, 147, 249, 0.3)
-  );
-
-  /* Shadows & Glows */
-  --glow-pink: 0 0 10px rgba(255, 121, 198, 0.5);
-  --glow-cyan: 0 0 10px rgba(139, 233, 253, 0.5);
-  --glow-purple: 0 0 10px rgba(189, 147, 249, 0.5);
-
-  /* Spacing & Sizing */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-active: var(--accent-primary);
+  
+  /* States */
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --error: #f87171;
+  --info: #60a5fa;
+  
+  /* Effects */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 20px rgba(255, 121, 198, 0.15);
+  
+  /* Spacing */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
 }
 
 * {
@@ -54,23 +49,22 @@
 }
 
 body {
-  width: 340px;
-  max-height: 520px;
-  font-family:
-    "Segoe UI",
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
-  background: var(--bg-primary);
+  width: 360px;
+  max-height: 540px;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 13px;
+  background: var(--bg-base);
   color: var(--text-primary);
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
 .container {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 14px;
+  padding: 16px;
+  gap: 16px;
 }
 
 /* === Header === */
@@ -78,79 +72,62 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border-color);
-  margin-bottom: 12px;
 }
 
 .logo {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .logo img {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+  filter: drop-shadow(0 0 8px rgba(255, 121, 198, 0.4));
 }
 
 .logo h1 {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
-  letter-spacing: 3px;
-  background: var(--gradient-accent);
+  letter-spacing: 2px;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  text-shadow: 0 0 30px rgba(255, 121, 198, 0.3);
 }
 
 .status-badge {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  background: var(--bg-card);
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--bg-surface);
   border-radius: var(--radius-lg);
-  border: 1px solid var(--border-color);
-  font-size: 11px;
+  border: 1px solid var(--border-subtle);
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 .status-badge.online {
-  border-color: var(--state-downloading);
+  border-color: rgba(74, 222, 128, 0.3);
+  background: rgba(74, 222, 128, 0.08);
 }
 
 .status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--state-error);
+  background: var(--error);
   transition: all 0.3s ease;
 }
 
 .status-dot.online {
-  background: var(--state-downloading);
-  box-shadow: var(--glow-cyan);
-  animation: pulse 2s infinite;
-}
-
-.status-dot.offline {
-  background: var(--state-error);
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+  background: var(--success);
+  box-shadow: 0 0 12px rgba(74, 222, 128, 0.6);
 }
 
 /* === Downloads Section === */
@@ -160,83 +137,77 @@ body {
   flex-direction: column;
   min-height: 0;
   max-height: 380px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
 }
 
 .downloads-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
 }
 
 .section-title {
   font-size: 11px;
   font-weight: 600;
-  color: var(--neon-cyan);
+  color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 1.5px;
+  letter-spacing: 1px;
 }
 
 .download-count {
-  background: var(--gradient-accent);
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
   color: white;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  padding: 3px 10px;
-  border-radius: 12px;
-  min-width: 24px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  min-width: 28px;
   text-align: center;
 }
 
 .downloads-list {
   flex: 1;
   overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 4px;
+  padding: 12px;
 }
 
 /* === Download Item === */
 .download-item {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
   border-radius: var(--radius-md);
-  padding: 12px;
-  margin-bottom: 8px;
+  padding: 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border-subtle);
   transition: all 0.2s ease;
-  animation: slideIn 0.25s ease-out;
+  position: relative;
 }
 
 .download-item:hover {
+  border-color: var(--border-default);
   background: var(--bg-hover);
-  border-color: var(--neon-pink);
-  transform: translateX(2px);
+  box-shadow: var(--shadow-sm);
 }
 
 .download-item:last-child {
   margin-bottom: 0;
 }
 
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 .download-info {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
-  gap: 8px;
+  margin-bottom: 12px;
+  gap: 12px;
 }
 
 .filename {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
   white-space: nowrap;
@@ -246,53 +217,48 @@ body {
 }
 
 .status-tag {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  border-radius: 6px;
   flex-shrink: 0;
 }
 
 .status-tag.downloading {
-  background: rgba(80, 250, 123, 0.15);
-  color: var(--state-downloading);
-  border: 1px solid rgba(80, 250, 123, 0.3);
+  background: rgba(74, 222, 128, 0.12);
+  color: var(--success);
 }
 
 .status-tag.paused {
-  background: rgba(255, 184, 108, 0.15);
-  color: var(--state-paused);
-  border: 1px solid rgba(255, 184, 108, 0.3);
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--warning);
 }
 
 .status-tag.queued {
-  background: rgba(98, 114, 164, 0.15);
-  color: var(--state-queued);
-  border: 1px solid rgba(98, 114, 164, 0.3);
+  background: rgba(96, 165, 250, 0.12);
+  color: var(--info);
 }
 
 .status-tag.completed {
-  background: rgba(189, 147, 249, 0.15);
-  color: var(--state-completed);
-  border: 1px solid rgba(189, 147, 249, 0.3);
+  background: rgba(189, 147, 249, 0.12);
+  color: var(--accent-secondary);
 }
 
 .status-tag.error {
-  background: rgba(255, 85, 85, 0.15);
-  color: var(--state-error);
-  border: 1px solid rgba(255, 85, 85, 0.3);
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--error);
 }
 
-/* === Progress Bar (Gradient matching TUI) === */
+/* === Progress Bar === */
 .progress-container {
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .progress-bar {
   height: 6px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-base);
   border-radius: 3px;
   overflow: hidden;
   position: relative;
@@ -300,14 +266,15 @@ body {
 
 .progress-fill {
   height: 100%;
-  background: var(--gradient-accent);
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
   border-radius: 3px;
-  transition: width 0.4s ease;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
+  box-shadow: 0 0 12px rgba(255, 121, 198, 0.4);
 }
 
 .progress-fill::after {
-  content: "";
+  content: '';
   position: absolute;
   top: 0;
   left: 0;
@@ -316,116 +283,112 @@ body {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0.25) 50%,
     transparent 100%
   );
-  animation: shimmer 1.5s infinite;
+  animation: shimmer 2s infinite;
 }
 
 @keyframes shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 .progress-text {
   display: flex;
   justify-content: space-between;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
-  margin-top: 5px;
+  margin-top: 8px;
 }
 
 .progress-percent {
-  color: var(--neon-pink);
+  color: var(--accent-primary);
   font-weight: 600;
 }
 
-/* === Download Meta (Speed, ETA, Size) === */
+/* === Download Meta === */
 .download-meta {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-secondary);
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .meta-item {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .meta-icon {
-  font-size: 10px;
-  opacity: 0.7;
+  font-size: 12px;
+  opacity: 0.6;
 }
 
 .speed {
-  color: var(--neon-cyan);
+  color: var(--accent-tertiary);
   font-weight: 600;
 }
 
 .eta {
-  color: var(--neon-pink);
+  color: var(--accent-primary);
   font-weight: 600;
-}
-
-.size {
-  color: var(--text-secondary);
 }
 
 /* === Action Buttons === */
 .download-actions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   justify-content: flex-end;
-  padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .action-btn {
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--border-color);
-  background: transparent;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-base);
   color: var(--text-secondary);
   border-radius: var(--radius-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  transition: all 0.2s ease;
+  font-size: 14px;
+  transition: all 0.15s ease;
 }
 
 .action-btn:hover {
-  border-color: var(--neon-pink);
-  color: var(--neon-pink);
-  background: rgba(255, 121, 198, 0.1);
-  transform: scale(1.05);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  background: rgba(255, 121, 198, 0.08);
+  transform: translateY(-1px);
 }
 
 .action-btn.pause:hover {
-  border-color: var(--state-paused);
-  color: var(--state-paused);
-  background: rgba(255, 184, 108, 0.1);
+  border-color: var(--warning);
+  color: var(--warning);
+  background: rgba(251, 191, 36, 0.08);
 }
 
 .action-btn.resume:hover {
-  border-color: var(--state-downloading);
-  color: var(--state-downloading);
-  background: rgba(80, 250, 123, 0.1);
+  border-color: var(--success);
+  color: var(--success);
+  background: rgba(74, 222, 128, 0.08);
 }
 
 .action-btn.cancel:hover {
-  border-color: var(--state-error);
-  color: var(--state-error);
-  background: rgba(255, 85, 85, 0.1);
+  border-color: var(--error);
+  color: var(--error);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.action-btn:active {
+  transform: translateY(0);
 }
 
 /* === Empty State === */
@@ -434,34 +397,35 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 50px 20px;
+  padding: 48px 24px;
   color: var(--text-muted);
   text-align: center;
 }
 
 .empty-icon {
-  font-size: 40px;
+  font-size: 42px;
   margin-bottom: 16px;
   opacity: 0.4;
-  filter: grayscale(1);
 }
 
 .empty-state p {
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 500;
   margin-bottom: 6px;
   color: var(--text-secondary);
 }
 
 .empty-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
 /* === Footer === */
 .footer {
-  padding-top: 12px;
-  border-top: 1px solid var(--border-color);
-  margin-top: 12px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  padding: 14px 16px;
 }
 
 .toggle-row {
@@ -469,13 +433,14 @@ body {
   justify-content: space-between;
   align-items: center;
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   transition: color 0.2s ease;
 }
 
 .toggle-row:hover {
-  color: var(--text-primary);
+  color: var(--accent-primary);
 }
 
 .toggle {
@@ -494,14 +459,14 @@ body {
   position: absolute;
   cursor: pointer;
   inset: 0;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background: var(--bg-base);
+  border: 1px solid var(--border-default);
   border-radius: 24px;
-  transition: all 0.3s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .toggle-slider::before {
-  content: "";
+  content: '';
   position: absolute;
   height: 18px;
   width: 18px;
@@ -509,13 +474,13 @@ body {
   bottom: 2px;
   background: var(--text-muted);
   border-radius: 50%;
-  transition: all 0.3s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .toggle input:checked + .toggle-slider {
-  background: var(--gradient-accent);
-  border-color: var(--neon-pink);
-  box-shadow: var(--glow-pink);
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  border-color: transparent;
+  box-shadow: var(--shadow-glow);
 }
 
 .toggle input:checked + .toggle-slider::before {
@@ -525,21 +490,20 @@ body {
 
 /* === Scrollbar === */
 .downloads-list::-webkit-scrollbar {
-  width: 5px;
+  width: 6px;
 }
 
 .downloads-list::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
-  border-radius: 3px;
+  background: transparent;
 }
 
 .downloads-list::-webkit-scrollbar-thumb {
-  background: var(--border-color);
+  background: var(--border-default);
   border-radius: 3px;
 }
 
 .downloads-list::-webkit-scrollbar-thumb:hover {
-  background: var(--neon-pink);
+  background: var(--text-muted);
 }
 
 /* === Utilities === */
@@ -547,25 +511,12 @@ body {
   display: none !important;
 }
 
-/* === Loading State === */
-.loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
+/* === Animations === */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.spinner {
-  width: 24px;
-  height: 24px;
-  border: 2px solid var(--border-color);
-  border-top-color: var(--neon-pink);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.download-item {
+  animation: fadeIn 0.2s ease-out;
 }
