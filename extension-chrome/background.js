@@ -16,6 +16,11 @@ let isConnected = false;
 // Deduplication: URL hash -> timestamp
 const recentDownloads = new Map();
 
+// Pending duplicate downloads waiting for user confirmation
+// Key: unique id, Value: { downloadItem, filename, directory, timestamp }
+const pendingDuplicates = new Map();
+let pendingDuplicateCounter = 0;
+
 // === Port Discovery ===
 
 async function findSurgePort() {
@@ -230,13 +235,10 @@ function isDuplicateDownload(url) {
   if (recentDownloads.has(hash)) {
     const lastSeen = recentDownloads.get(hash);
     if (now - lastSeen < DEDUP_WINDOW_MS) {
-      console.log('[Surge] Duplicate download detected, skipping:', url);
+      console.log('[Surge] Duplicate download detected:', url);
       return true;
     }
   }
-  
-  // Mark as seen
-  recentDownloads.set(hash, now);
   
   // Cleanup old entries
   for (const [key, timestamp] of recentDownloads) {
@@ -246,6 +248,11 @@ function isDuplicateDownload(url) {
   }
   
   return false;
+}
+
+function markDownloadSeen(url) {
+  const hash = hashUrl(url);
+  recentDownloads.set(hash, Date.now());
 }
 
 // === History Filtering ===
@@ -386,15 +393,55 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
 
   // Check for duplicates
   if (isDuplicateDownload(downloadItem.url)) {
-    // Still cancel the browser download to prevent duplicate file
+    // Cancel the browser download first
     try {
       await chrome.downloads.cancel(downloadItem.id);
       await chrome.downloads.erase({ id: downloadItem.id });
     } catch (e) {
       // Ignore errors
     }
+    
+    // Store pending duplicate and prompt user
+    const pendingId = `dup_${++pendingDuplicateCounter}`;
+    const { filename, directory } = extractPathInfo(downloadItem);
+    const displayName = filename || downloadItem.url.split('/').pop() || 'Unknown file';
+    
+    pendingDuplicates.set(pendingId, {
+      downloadItem,
+      filename,
+      directory,
+      url: downloadItem.url,
+      timestamp: Date.now()
+    });
+    
+    // Cleanup old pending duplicates (older than 60s)
+    for (const [id, data] of pendingDuplicates) {
+      if (Date.now() - data.timestamp > 60000) {
+        pendingDuplicates.delete(id);
+      }
+    }
+    
+    // Try to open popup and send prompt
+    try {
+      await chrome.action.openPopup();
+    } catch (e) {
+      // Popup may already be open
+    }
+    
+    // Send message to popup
+    chrome.runtime.sendMessage({
+      type: 'promptDuplicate',
+      id: pendingId,
+      filename: displayName
+    }).catch(() => {
+      // Popup might not be open, that's ok - duplicate will timeout
+    });
+    
     return;
   }
+  
+  // Mark as seen for future duplicate detection
+  markDownloadSeen(downloadItem.url);
 
   // Check if Surge is running
   const surgeRunning = await checkSurgeHealth();
@@ -498,6 +545,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'cancelDownload': {
           const success = await cancelDownload(message.id);
           sendResponse({ success });
+          break;
+        }
+        
+        case 'confirmDuplicate': {
+          // User confirmed duplicate download
+          const pending = pendingDuplicates.get(message.id);
+          if (pending) {
+            pendingDuplicates.delete(message.id);
+            
+            // Mark as seen and proceed with download
+            markDownloadSeen(pending.url);
+            
+            const result = await sendToSurge(
+              pending.url,
+              pending.filename,
+              pending.directory
+            );
+            
+            if (result.success) {
+              chrome.notifications.create({
+                type: 'basic',
+                iconUrl: 'icons/icon48.png',
+                title: 'Surge',
+                message: `Download started: ${pending.filename || pending.url.split('/').pop()}`,
+              });
+            }
+            
+            sendResponse({ success: result.success });
+          } else {
+            sendResponse({ success: false, error: 'Pending download not found' });
+          }
+          break;
+        }
+        
+        case 'skipDuplicate': {
+          // User skipped duplicate download
+          const pending = pendingDuplicates.get(message.id);
+          if (pending) {
+            pendingDuplicates.delete(message.id);
+            console.log('[Surge] User skipped duplicate download:', pending.url);
+          }
+          sendResponse({ success: true });
           break;
         }
         

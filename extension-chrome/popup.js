@@ -21,6 +21,16 @@ const statusText = document.getElementById('statusText');
 const serverStatus = document.getElementById('serverStatus');
 const interceptToggle = document.getElementById('interceptToggle');
 
+// Duplicate modal elements
+const duplicateModal = document.getElementById('duplicateModal');
+const duplicateFilename = document.getElementById('duplicateFilename');
+const duplicateConfirm = document.getElementById('duplicateConfirm');
+const duplicateSkip = document.getElementById('duplicateSkip');
+
+// Pending duplicate state
+let pendingDuplicateId = null;
+let duplicateTimeout = null;
+
 // === API Wrapper (works in extension and standalone modes) ===
 
 async function apiCall(action, params = {}) {
@@ -318,6 +328,73 @@ interceptToggle.addEventListener('change', async () => {
   }
 });
 
+// === Duplicate Download Modal ===
+
+function showDuplicateModal(id, filename) {
+  pendingDuplicateId = id;
+  duplicateFilename.textContent = filename || 'Unknown file';
+  duplicateModal.classList.remove('hidden');
+  
+  // Auto-dismiss after 30 seconds
+  if (duplicateTimeout) {
+    clearTimeout(duplicateTimeout);
+  }
+  duplicateTimeout = setTimeout(() => {
+    hideDuplicateModal();
+    // Send skip response on timeout
+    if (isExtensionContext && pendingDuplicateId) {
+      apiCall('skipDuplicate', { id: pendingDuplicateId });
+    }
+  }, 30000);
+}
+
+function hideDuplicateModal() {
+  duplicateModal.classList.add('hidden');
+  pendingDuplicateId = null;
+  if (duplicateTimeout) {
+    clearTimeout(duplicateTimeout);
+    duplicateTimeout = null;
+  }
+}
+
+// Duplicate modal button handlers
+duplicateConfirm.addEventListener('click', async () => {
+  if (!pendingDuplicateId) return;
+  
+  const id = pendingDuplicateId;
+  hideDuplicateModal();
+  
+  if (isExtensionContext) {
+    try {
+      await apiCall('confirmDuplicate', { id });
+    } catch (error) {
+      console.error('[Surge Popup] Confirm duplicate error:', error);
+    }
+  }
+});
+
+duplicateSkip.addEventListener('click', async () => {
+  if (!pendingDuplicateId) return;
+  
+  const id = pendingDuplicateId;
+  hideDuplicateModal();
+  
+  if (isExtensionContext) {
+    try {
+      await apiCall('skipDuplicate', { id });
+    } catch (error) {
+      console.error('[Surge Popup] Skip duplicate error:', error);
+    }
+  }
+});
+
+// Close modal on escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && pendingDuplicateId) {
+    duplicateSkip.click();
+  }
+});
+
 // Listen for messages from background (extension mode only)
 if (isExtensionContext) {
   chrome.runtime.onMessage.addListener((message) => {
@@ -328,6 +405,9 @@ if (isExtensionContext) {
     }
     if (message.type === 'serverStatus') {
       updateServerStatus(message.connected);
+    }
+    if (message.type === 'promptDuplicate') {
+      showDuplicateModal(message.id, message.filename);
     }
   });
 }

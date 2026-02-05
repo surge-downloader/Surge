@@ -48,6 +48,20 @@
     </footer>
   </div>
 
+  <!-- Duplicate Download Modal -->
+  <div class="modal-overlay hidden" id="duplicateModal">
+    <div class="modal-container">
+      <div class="modal-icon">⚠️</div>
+      <h2 class="modal-title">Duplicate Download</h2>
+      <p class="modal-message">This file is already being downloaded:</p>
+      <p class="modal-filename" id="duplicateFilename">filename.zip</p>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-secondary" id="duplicateSkip">Skip</button>
+        <button class="modal-btn modal-btn-primary" id="duplicateConfirm">Download Anyway</button>
+      </div>
+    </div>
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html>
