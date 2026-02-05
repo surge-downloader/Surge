@@ -48,13 +48,16 @@ type MasterList struct {
 
 // DownloadStatus represents the transient status of an active download
 type DownloadStatus struct {
-	ID         string  `json:"id"`
-	URL        string  `json:"url"`
-	Filename   string  `json:"filename"`
-	TotalSize  int64   `json:"total_size"`
-	Downloaded int64   `json:"downloaded"`
-	Progress   float64 `json:"progress"` // Percentage 0-100
-	Speed      float64 `json:"speed"`    // MB/s
-	Status     string  `json:"status"`   // "queued", "paused", "downloading", "completed", "error"
-	Error      string  `json:"error,omitempty"`
+	ID          string  `json:"id"`
+	URL         string  `json:"url"`
+	Filename    string  `json:"filename"`
+	TotalSize   int64   `json:"total_size"`
+	Downloaded  int64   `json:"downloaded"`
+	Progress    float64 `json:"progress"`    // Percentage 0-100
+	Speed       float64 `json:"speed"`       // MB/s
+	Status      string  `json:"status"`      // "queued", "paused", "downloading", "completed", "error"
+	Error       string  `json:"error,omitempty"`
+	ETA         int64   `json:"eta"`         // Estimated seconds remaining
+	Connections int     `json:"connections"` // Active connections
+	AddedAt     int64   `json:"added_at"`    // Unix timestamp when added
 }

@@ -1,16 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Surge",
-  "version": "0.5.0",
-  "description": "Integrate with Surge Download Manager. Intercepts downloads to accelerate them using Surge's high-performance engine.",
-  "permissions": [
-    "downloads",
-    "storage",
-    "notifications"
-  ],
-  "host_permissions": [
-    "http://127.0.0.1/*"
-  ],
+  "name": "Surge Download Manager",
+  "version": "1.0.0",
+  "description": "High-performance download acceleration with live progress tracking. Intercepts downloads and accelerates them using Surge's multi-connection engine.",
+  "permissions": ["downloads", "storage", "notifications"],
+  "host_permissions": ["http://127.0.0.1/*"],
   "background": {
     "service_worker": "background.js"
   },

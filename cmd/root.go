@@ -362,11 +362,21 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 					}
 
 					// Calculate speed from progress
-					downloaded, _, _, sessionElapsed, _, sessionStart := cfg.State.GetProgress()
+					downloaded, _, _, sessionElapsed, connections, sessionStart := cfg.State.GetProgress()
 					sessionDownloaded := downloaded - sessionStart
 					if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
 						status.Speed = float64(sessionDownloaded) / sessionElapsed.Seconds() / (1024 * 1024)
+
+						// Calculate ETA (seconds remaining)
+						remaining := status.TotalSize - status.Downloaded
+						if remaining > 0 && status.Speed > 0 {
+							speedBytes := status.Speed * 1024 * 1024
+							status.ETA = int64(float64(remaining) / speedBytes)
+						}
 					}
+
+					// Get active connections count
+					status.Connections = int(connections)
 
 					// Update status based on state
 					if cfg.State.IsPaused() {

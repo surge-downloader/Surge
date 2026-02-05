@@ -3,215 +3,515 @@
 
 const DEFAULT_PORT = 8080;
 const MAX_PORT_SCAN = 100;
-const INTERCEPT_ENABLED_KEY = "interceptEnabled";
+const INTERCEPT_ENABLED_KEY = 'interceptEnabled';
+const SEEN_DOWNLOADS_KEY = 'seenDownloads';
+const DEDUP_WINDOW_MS = 300000; // 5 minutes
 
-// Cache the discovered port
+// === State ===
 let cachedPort = null;
+let downloads = new Map();
+let lastHealthCheck = 0;
+let isConnected = false;
 
-// Find Surge by scanning ports
+// Deduplication: URL hash -> timestamp
+const recentDownloads = new Map();
+
+// === Port Discovery ===
+
 async function findSurgePort() {
-  // Try cached port first
+  // Try cached port first (with quick timeout)
   if (cachedPort) {
     try {
       const response = await fetch(`http://127.0.0.1:${cachedPort}/health`, {
-        method: "GET",
-        signal: AbortSignal.timeout(500),
+        method: 'GET',
+        signal: AbortSignal.timeout(300),
       });
-      if (response.ok) return cachedPort;
+      if (response.ok) {
+        isConnected = true;
+        return cachedPort;
+      }
     } catch {}
+    cachedPort = null;
   }
 
   // Scan for available port
   for (let port = DEFAULT_PORT; port < DEFAULT_PORT + MAX_PORT_SCAN; port++) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`, {
-        method: "GET",
-        signal: AbortSignal.timeout(300),
+        method: 'GET',
+        signal: AbortSignal.timeout(200),
       });
       if (response.ok) {
         cachedPort = port;
+        isConnected = true;
         console.log(`[Surge] Found server on port ${port}`);
         return port;
       }
     } catch {}
   }
+  
+  isConnected = false;
   return null;
 }
 
-// Check if Surge is running
 async function checkSurgeHealth() {
+  const now = Date.now();
+  // Rate limit health checks to once per second
+  if (now - lastHealthCheck < 1000) {
+    return isConnected;
+  }
+  lastHealthCheck = now;
+  
   const port = await findSurgePort();
-  return port !== null;
+  isConnected = port !== null;
+  return isConnected;
 }
 
-// Send download request to Surge
-async function sendToSurge(url, filename, path) {
-    const port = await findSurgePort();
-    if (!port) {
-        console.error("[Surge] No server found");
-        return false;
+// === Download List Fetching ===
+
+async function fetchDownloadList() {
+  const port = await findSurgePort();
+  if (!port) {
+    return [];
+  }
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/list`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(5000),
+    });
+    
+    if (response.ok) {
+      const list = await response.json();
+      
+      // Calculate ETA for each download
+      return list.map(dl => {
+        let eta = null;
+        if (dl.status === 'downloading' && dl.speed > 0 && dl.total_size > 0) {
+          const remaining = dl.total_size - dl.downloaded;
+          // Speed is in MB/s, convert to bytes/s
+          const speedBytes = dl.speed * 1024 * 1024;
+          eta = Math.ceil(remaining / speedBytes);
+        }
+        return { ...dl, eta };
+      });
+    }
+  } catch (error) {
+    console.error('[Surge] Error fetching downloads:', error);
+  }
+  
+  return [];
+}
+
+// === Download Sending ===
+
+async function sendToSurge(url, filename, absolutePath) {
+  const port = await findSurgePort();
+  if (!port) {
+    console.error('[Surge] No server found');
+    return { success: false, error: 'Server not running' };
+  }
+
+  try {
+    const body = {
+      url: url,
+      filename: filename || '',
+    };
+
+    // Use absolute path directly if provided
+    if (absolutePath) {
+      body.path = absolutePath;
+      // Don't use relative_to_default_dir for absolute paths
     }
 
-    try {
-        const body = {
-            url: url,
-            filename: filename || "",
-            path: path || "",
-        };
-
-        if (path) {
-            body.relative_to_default_dir = true;
-        }
-
-        const response = await fetch(`http://127.0.0.1:${port}/download`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(body),
-        });
+    const response = await fetch(`http://127.0.0.1:${port}/download`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
 
     if (response.ok) {
       const data = await response.json();
-      console.log("[Surge] Download queued:", data);
-      return true;
+      console.log('[Surge] Download queued:', data);
+      return { success: true, data };
     } else {
-      console.error("[Surge] Failed to queue download:", response.status);
-      return false;
+      const error = await response.text();
+      console.error('[Surge] Failed to queue download:', response.status, error);
+      return { success: false, error };
     }
   } catch (error) {
-    console.error("[Surge] Error sending to Surge:", error);
+    console.error('[Surge] Error sending to Surge:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// === Download Control ===
+
+async function pauseDownload(id) {
+  const port = await findSurgePort();
+  if (!port) return false;
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/pause?id=${id}`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(5000),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('[Surge] Error pausing download:', error);
     return false;
   }
 }
 
-// Check if interception is enabled
+async function resumeDownload(id) {
+  const port = await findSurgePort();
+  if (!port) return false;
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/resume?id=${id}`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(5000),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('[Surge] Error resuming download:', error);
+    return false;
+  }
+}
+
+async function cancelDownload(id) {
+  const port = await findSurgePort();
+  if (!port) return false;
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/delete?id=${id}`, {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(5000),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('[Surge] Error canceling download:', error);
+    return false;
+  }
+}
+
+// === Interception State ===
+
 async function isInterceptEnabled() {
   const result = await chrome.storage.local.get(INTERCEPT_ENABLED_KEY);
-  // Default to enabled
   return result[INTERCEPT_ENABLED_KEY] !== false;
 }
 
-// Check if download is fresh (custom heuristic: < 60 seconds old AND in_progress)
+// === Deduplication ===
+
+function hashUrl(url) {
+  // Simple hash for URL deduplication
+  let hash = 0;
+  for (let i = 0; i < url.length; i++) {
+    const char = url.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return hash.toString(36);
+}
+
+function isDuplicateDownload(url) {
+  const hash = hashUrl(url);
+  const now = Date.now();
+  
+  // Check if we've seen this URL recently
+  if (recentDownloads.has(hash)) {
+    const lastSeen = recentDownloads.get(hash);
+    if (now - lastSeen < DEDUP_WINDOW_MS) {
+      console.log('[Surge] Duplicate download detected, skipping:', url);
+      return true;
+    }
+  }
+  
+  // Mark as seen
+  recentDownloads.set(hash, now);
+  
+  // Cleanup old entries
+  for (const [key, timestamp] of recentDownloads) {
+    if (now - timestamp > DEDUP_WINDOW_MS) {
+      recentDownloads.delete(key);
+    }
+  }
+  
+  return false;
+}
+
+// === History Filtering ===
+
+async function markExistingDownloads() {
+  // On startup, mark recent browser downloads as "seen" to prevent re-downloading
+  try {
+    const history = await chrome.downloads.search({
+      limit: 100,
+      orderBy: ['-startTime'],
+    });
+    
+    const seenUrls = {};
+    const now = Date.now();
+    
+    history.forEach(item => {
+      if (item.url && !item.url.startsWith('blob:') && !item.url.startsWith('data:')) {
+        const hash = hashUrl(item.url);
+        seenUrls[hash] = now;
+        recentDownloads.set(hash, now);
+      }
+    });
+    
+    // Persist to storage for future sessions
+    await chrome.storage.local.set({ [SEEN_DOWNLOADS_KEY]: seenUrls });
+    console.log(`[Surge] Marked ${Object.keys(seenUrls).length} existing downloads`);
+  } catch (error) {
+    console.error('[Surge] Error marking existing downloads:', error);
+  }
+}
+
 function isFreshDownload(downloadItem) {
-  // Filter out completed or interrupted downloads (history items)
-  if (downloadItem.state && downloadItem.state !== "in_progress") {
+  // Must be in progress (not completed/interrupted from history)
+  if (downloadItem.state && downloadItem.state !== 'in_progress') {
     return false;
   }
 
-  if (!downloadItem.startTime) return true; // unexpected, assume fresh
+  // Check start time
+  if (!downloadItem.startTime) return true;
 
   const startTime = new Date(downloadItem.startTime).getTime();
   const now = Date.now();
   const diff = now - startTime;
 
-  // If download started more than 60 seconds ago, it's likely history sync
-  if (diff > 60000) {
+  // If download started more than 30 seconds ago, likely history sync
+  if (diff > 30000) {
     return false;
   }
+  
   return true;
 }
 
+function shouldSkipUrl(url) {
+  // Skip blob and data URLs
+  if (url.startsWith('blob:') || url.startsWith('data:')) {
+    return true;
+  }
+  
+  // Skip chrome extension URLs
+  if (url.startsWith('chrome-extension:') || url.startsWith('moz-extension:')) {
+    return true;
+  }
+  
+  return false;
+}
+
+// === Path Extraction ===
+
+function extractPathInfo(downloadItem) {
+  let filename = '';
+  let directory = '';
+
+  if (downloadItem.filename) {
+    // downloadItem.filename contains the full path chosen by user
+    // On Windows: C:\Users\Name\Downloads\file.zip
+    // On macOS/Linux: /home/user/Downloads/file.zip
+    
+    const fullPath = downloadItem.filename;
+    
+    // Normalize separators and split
+    const normalized = fullPath.replace(/\\/g, '/');
+    const parts = normalized.split('/');
+    
+    filename = parts.pop() || '';
+    
+    if (parts.length > 0) {
+      // Reconstruct directory path
+      // On Windows, we need to preserve the drive letter
+      if (/^[A-Za-z]:$/.test(parts[0])) {
+        // Windows path with drive letter
+        directory = parts.join('/');
+      } else if (parts[0] === '') {
+        // Unix absolute path (starts with /)
+        directory = '/' + parts.slice(1).join('/');
+      } else {
+        directory = parts.join('/');
+      }
+    }
+  }
+
+  return { filename, directory };
+}
+
+// === Download Interception ===
+
 const processedIds = new Set();
 
-// Listen for downloads
 chrome.downloads.onCreated.addListener(async (downloadItem) => {
   // Prevent duplicate events for the same download ID
   if (processedIds.has(downloadItem.id)) {
     return;
   }
   processedIds.add(downloadItem.id);
-  // Cleanup ID after 1 minute
-  setTimeout(() => processedIds.delete(downloadItem.id), 60000);
+  
+  // Cleanup ID after 2 minutes
+  setTimeout(() => processedIds.delete(downloadItem.id), 120000);
 
-  console.log("[Surge] Download detected:", downloadItem.url);
+  console.log('[Surge] Download detected:', downloadItem.url);
 
   // Check if interception is enabled
   const enabled = await isInterceptEnabled();
   if (!enabled) {
-    console.log("[Surge] Interception disabled, using browser download");
+    console.log('[Surge] Interception disabled');
+    return;
+  }
+
+  // Skip certain URLs
+  if (shouldSkipUrl(downloadItem.url)) {
+    console.log('[Surge] Skipping URL type');
     return;
   }
 
   // Filter historical downloads
   if (!isFreshDownload(downloadItem)) {
-    console.log("[Surge] Ignoring historical download");
+    console.log('[Surge] Ignoring historical download');
     return;
   }
 
-  // Skip blob URLs and data URLs
-  if (
-    downloadItem.url.startsWith("blob:") ||
-    downloadItem.url.startsWith("data:")
-  ) {
-    console.log("[Surge] Skipping blob/data URL");
+  // Check for duplicates
+  if (isDuplicateDownload(downloadItem.url)) {
+    // Still cancel the browser download to prevent duplicate file
+    try {
+      await chrome.downloads.cancel(downloadItem.id);
+      await chrome.downloads.erase({ id: downloadItem.id });
+    } catch (e) {
+      // Ignore errors
+    }
     return;
   }
 
   // Check if Surge is running
   const surgeRunning = await checkSurgeHealth();
   if (!surgeRunning) {
-    console.log("[Surge] Server not running, using browser download");
+    console.log('[Surge] Server not running, using browser download');
+    // Remove from dedup map since we're not handling it
+    recentDownloads.delete(hashUrl(downloadItem.url));
     return;
   }
 
+  // Extract path info
+  const { filename, directory } = extractPathInfo(downloadItem);
+
   // Cancel browser download and send to Surge
   try {
-    chrome.downloads.cancel(downloadItem.id);
-    chrome.downloads.erase({ id: downloadItem.id });
+    await chrome.downloads.cancel(downloadItem.id);
+    await chrome.downloads.erase({ id: downloadItem.id });
 
-    // Extract directory and filename
-    let filenameOnly = "";
-    let directory = "";
-
-    if (downloadItem.filename) {
-      const parts = downloadItem.filename.split(/[/\\]/);
-      filenameOnly = parts.pop();
-      if (parts.length > 0) {
-        directory = parts.join("/");
-      }
-    }
-
-    const success = await sendToSurge(
+    const result = await sendToSurge(
       downloadItem.url,
-      filenameOnly,
-      directory,
+      filename,
+      directory
     );
 
-    if (success) {
+    if (result.success) {
+      // Show notification
       chrome.notifications.create({
-        type: "basic",
-        iconUrl: "icons/icon48.png",
-        title: "Surge",
-        message: `Download sent to Surge: ${filenameOnly || downloadItem.url.split("/").pop()}`,
+        type: 'basic',
+        iconUrl: 'icons/icon48.png',
+        title: 'Surge',
+        message: `Download started: ${filename || downloadItem.url.split('/').pop()}`,
+      });
+    } else {
+      // Failed to send to Surge - show error notification
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icons/icon48.png',
+        title: 'Surge Error',
+        message: `Failed to start download: ${result.error}`,
       });
     }
   } catch (error) {
-    console.error("[Surge] Failed to intercept download:", error);
+    console.error('[Surge] Failed to intercept download:', error);
   }
 });
 
-// Handle messages from popup
+// === Message Handling ===
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "checkHealth") {
-    checkSurgeHealth().then((healthy) => {
-      sendResponse({ healthy });
-    });
-    return true; // Keep channel open for async response
-  }
-
-  if (message.type === "getStatus") {
-    isInterceptEnabled().then((enabled) => {
-      sendResponse({ enabled });
-    });
-    return true;
-  }
-
-  if (message.type === "setStatus") {
-    chrome.storage.local.set({ [INTERCEPT_ENABLED_KEY]: message.enabled });
-    sendResponse({ success: true });
-    return true;
-  }
+  // Handle async responses
+  (async () => {
+    try {
+      switch (message.type) {
+        case 'checkHealth': {
+          const healthy = await checkSurgeHealth();
+          sendResponse({ healthy });
+          break;
+        }
+        
+        case 'getStatus': {
+          const enabled = await isInterceptEnabled();
+          sendResponse({ enabled });
+          break;
+        }
+        
+        case 'setStatus': {
+          await chrome.storage.local.set({ [INTERCEPT_ENABLED_KEY]: message.enabled });
+          sendResponse({ success: true });
+          break;
+        }
+        
+        case 'getDownloads': {
+          const downloadsList = await fetchDownloadList();
+          sendResponse({ 
+            downloads: downloadsList, 
+            connected: isConnected 
+          });
+          break;
+        }
+        
+        case 'pauseDownload': {
+          const success = await pauseDownload(message.id);
+          sendResponse({ success });
+          break;
+        }
+        
+        case 'resumeDownload': {
+          const success = await resumeDownload(message.id);
+          sendResponse({ success });
+          break;
+        }
+        
+        case 'cancelDownload': {
+          const success = await cancelDownload(message.id);
+          sendResponse({ success });
+          break;
+        }
+        
+        default:
+          sendResponse({ error: 'Unknown message type' });
+      }
+    } catch (error) {
+      console.error('[Surge] Message handler error:', error);
+      sendResponse({ error: error.message });
+    }
+  })();
+  
+  return true; // Keep channel open for async response
 });
 
-console.log("[Surge] Extension loaded");
+// === Initialization ===
+
+async function initialize() {
+  console.log('[Surge] Extension initializing...');
+  
+  // Mark existing downloads to prevent re-downloading
+  await markExistingDownloads();
+  
+  // Initial health check
+  await checkSurgeHealth();
+  
+  console.log('[Surge] Extension loaded');
+}
+
+initialize();

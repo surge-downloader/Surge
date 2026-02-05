@@ -1,190 +1,53 @@
-<!DOCTYPE html>
-<html>
-
-<head>
-    <meta charset="UTF-8">
-    <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            width: 280px;
-            padding: 16px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #050110;
-            color: #f8f8f2;
-        }
-
-        .header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 16px;
-        }
-
-        .header img {
-            width: 32px;
-            height: 32px;
-        }
-
-        .header h1 {
-            font-size: 18px;
-            font-weight: 600;
-            background: linear-gradient(135deg, #fd8ab0, #ed4be3);
-            background-clip: text;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .status-card {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-            padding: 14px;
-            margin-bottom: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .status-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .status-label {
-            font-size: 13px;
-            color: #a9b1d6;
-        }
-
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 13px;
-            font-weight: 500;
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-        }
-
-        .status-dot.online {
-            background: #50fa7b;
-            box-shadow: 0 0 8px rgba(80, 250, 123, 0.5);
-        }
-
-        .status-dot.offline {
-            background: #ff5555;
-            box-shadow: 0 0 8px rgba(255, 85, 85, 0.5);
-        }
-
-        .toggle-container {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-        }
-
-        .toggle-label {
-            font-size: 14px;
-        }
-
-        .toggle {
-            position: relative;
-            width: 44px;
-            height: 24px;
-        }
-
-        .toggle input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .toggle-slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #1f1a2e;
-            transition: 0.3s;
-            border-radius: 24px;
-        }
-
-        .toggle-slider:before {
-            position: absolute;
-            content: "";
-            height: 18px;
-            width: 18px;
-            left: 3px;
-            bottom: 3px;
-            background-color: #f8f8f2;
-            transition: 0.3s;
-            border-radius: 50%;
-        }
-
-        input:checked+.toggle-slider {
-            background: linear-gradient(135deg, #fd8ab0, #ed4be3);
-        }
-
-        input:checked+.toggle-slider:before {
-            transform: translateX(20px);
-        }
-
-        .help-text {
-            font-size: 11px;
-            color: #a9b1d6;
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            line-height: 1.5;
-        }
-
-        code {
-            background: rgba(253, 138, 176, 0.15);
-            color: #fd8ab0;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 11px;
-        }
-    </style>
-</head>
-
-<body>
-    <div class="header">
-        <img src="icons/icon48.png" alt="Surge">
-        <h1>Surge</h1>
-    </div>
-
-    <div class="status-card">
-        <div class="status-row">
-            <span class="status-label">Server Status</span>
-            <div class="status-indicator">
-                <span class="status-dot" id="statusDot"></span>
-                <span id="statusText">Checking...</span>
-            </div>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=340" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="container">
+      <!-- Header -->
+      <header class="header">
+        <div class="logo">
+          <img src="icons/icon48.png" alt="Surge" />
+          <h1>SURGE</h1>
         </div>
-    </div>
+        <div class="status-badge" id="serverStatus">
+          <span class="status-dot" id="statusDot"></span>
+          <span class="status-text" id="statusText">Connecting...</span>
+        </div>
+      </header>
 
-    <div class="toggle-container">
-        <span class="toggle-label">Intercept Downloads</span>
-        <label class="toggle">
-            <input type="checkbox" id="interceptToggle">
+      <!-- Downloads Section -->
+      <section class="downloads-section">
+        <div class="downloads-header">
+          <span class="section-title">Downloads</span>
+          <span class="download-count" id="downloadCount">0</span>
+        </div>
+
+        <div class="downloads-list" id="downloadsList">
+          <!-- Downloads will be rendered here dynamically -->
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon">📥</div>
+            <p>No active downloads</p>
+            <p class="empty-hint">Downloads will appear here automatically</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <label class="toggle-row">
+          <span>Intercept Downloads</span>
+          <div class="toggle">
+            <input type="checkbox" id="interceptToggle" checked />
             <span class="toggle-slider"></span>
+          </div>
         </label>
-    </div>
-
-    <div class="help-text">
-        Start the server with: <code>surge server</code>
+      </footer>
     </div>
 
     <script src="popup.js"></script>
-</body>
-
+  </body>
 </html>
