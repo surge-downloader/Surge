@@ -31,7 +31,7 @@ type ProgressState struct {
 	ActualChunkSize int64   // Size of each actual chunk in bytes
 	BitmapWidth     int     // Number of chunks tracked
 
-	mu sync.Mutex // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed, Mirrors
+	mu sync.RWMutex // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed, Mirrors
 }
 
 type MirrorStatus struct {
@@ -78,12 +78,12 @@ func (ps *ProgressState) GetProgress() (downloaded int64, total int64, totalElap
 	downloaded = ps.Downloaded.Load()
 	connections = ps.ActiveWorkers.Load()
 
-	ps.mu.Lock()
+	ps.mu.RLock()
 	total = ps.TotalSize
 	sessionElapsed = time.Since(ps.StartTime)
 	totalElapsed = ps.SavedElapsed + sessionElapsed
 	sessionStartBytes = ps.SessionStartBytes
-	ps.mu.Unlock()
+	ps.mu.RUnlock()
 	return
 }
 
@@ -125,8 +125,8 @@ func (ps *ProgressState) SetMirrors(mirrors []MirrorStatus) {
 }
 
 func (ps *ProgressState) GetMirrors() []MirrorStatus {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 	// Return a copy
 	if len(ps.Mirrors) == 0 {
 		return nil
@@ -376,8 +376,8 @@ func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
 
 // GetBitmap returns a copy of the bitmap and metadata
 func (ps *ProgressState) GetBitmap() ([]byte, int, int64, int64, []int64) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 
 	if len(ps.ChunkBitmap) == 0 {
 		return nil, 0, 0, 0, nil

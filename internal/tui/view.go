@@ -207,13 +207,19 @@ func (m RootModel) View() string {
 	chunkMapNeeded := 0
 	showChunkMap := false
 
+	// Data for Chunk Map (fetched once)
+	var bitmap []byte
+	var bitmapWidth int
+	var totalSize, chunkSize int64
+	var chunkProgress []int64
+
 	if selected != nil {
 		// Show Chunk Map only if:
 		// 1. Not Done (Completed)
 		// 2. Not Queued (Speed > 0 OR Paused OR Has Chunks)
 
-		bitmap, width, _, _, _ := selected.state.GetBitmap()
-		hasChunks := selected.state != nil && len(bitmap) > 0 && width > 0
+		bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress = selected.state.GetBitmap()
+		hasChunks := selected.state != nil && len(bitmap) > 0 && bitmapWidth > 0
 		isQueued := !selected.paused && selected.Speed == 0 && !hasChunks
 
 		if !selected.done && !isQueued {
@@ -222,7 +228,6 @@ func (m RootModel) View() string {
 	}
 
 	if showChunkMap {
-		_, bitmapWidth, _, _, _ := selected.state.GetBitmap()
 		// chunkMapWidth = rightWidth - 4 (box border) - 2 (inner padding) = rightWidth - 6
 		contentLines := components.CalculateHeight(bitmapWidth, rightWidth-6)
 		if contentLines > 0 {
@@ -541,7 +546,7 @@ func (m RootModel) View() string {
 		var chunkContent string
 		if selected != nil {
 			// New chunk map component
-			bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress := selected.state.GetBitmap()
+			// bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress were fetched above
 			chunkMap := components.NewChunkMapModel(bitmap, bitmapWidth, rightWidth-6, selected.paused, totalSize, chunkSize, chunkProgress)
 			chunkContent = lipgloss.NewStyle().Padding(0, 2, 1, 2).Render(chunkMap.View())
 
