@@ -12,17 +12,7 @@ func TestHealth_LastManStanding(t *testing.T) {
 	// 1. Setup mock state with high historical speed
 	// Say we downloaded 100MB in 10s => 10MB/s global average
 	state := types.NewProgressState("test", 1000)
-	state.Downloaded.Store(100 * 1024 * 1024)
-	// We need to fake StartTime to be 10s ago
-	// Since ProgressState uses time.Now(), we can't easily mock time inside it without DI.
-	// However, we can use Sleep or just rely on the fact that we can set SessionStartBytes?
-	// Actually, health.go uses d.State.GetProgress().
-	// We can't change StartTime in State easily.
-	// But we can set SessionStartBytes to 0, and Downloaded to 100MB.
-	// And we need elapsed > 5s.
-
-	// Hack: we need to modify StartTime roughly.
-	// Since we can't, let's create a downloader with a Mock RuntimeConfig.
+	state.VerifiedProgress.Store(100 * 1024 * 1024)
 
 	runtime := &types.RuntimeConfig{
 		SlowWorkerThreshold:   0.5,
@@ -62,23 +52,6 @@ func TestHealth_LastManStanding(t *testing.T) {
 	default:
 		t.Errorf("Worker should have been cancelled (Global Speed ~10MB/s, Worker 1MB/s)")
 	}
-	// Hack: Set State.StartTime to 10s ago via private field access? No, go test in same package.
-	// Wait, we are in `concurrent` package, so we can access private fields?
-	// Types are in `types` package.
-	// We can't access `types.ProgressState` private fields.
-
-	// ALTERNATIVE: checking `health.go`:
-	// `downloaded, _, _, sessionElapsed, _, sessionStartBytes := d.State.GetProgress()`
-	// We need `sessionElapsed` > 5s.
-
-	// We can just sleep 5s? Too slow for unit test.
-	// We can mock `State` if it was an interface, but it's a struct.
-
-	// BUT! `health.go` reads `d.State`.
-	// If we can't mock time, we might skip testing the exact Global Speed calculation
-	// and trust the math, OR we verify the logic uses the 1-worker branch.
-
-	// t.Skip("Skipping integration test due to time dependency in ProgressState")
 }
 
 func TestHealth_MultipleWorkers(t *testing.T) {
