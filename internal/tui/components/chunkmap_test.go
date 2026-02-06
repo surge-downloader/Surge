@@ -191,15 +191,15 @@ func TestChunkMap_GranularProgress(t *testing.T) {
 	// If we want exactly 10 blocks, we need cols=1 ?? No that gives 10 blocks TOTAL (1 row of 10? No 10 rows of 1?)
 
 	// Let's adjust Width to get a simple line.
-	// If Width=2, cols=1 and height=10. 10 Rows of 1 block.
-	// Then Row 0 should be Pink, Rows 1-9 Gray.
+	// If Width=2, cols=1 and height=5 (max). 5 Rows of 1 block.
+	// Then Row 0 should be Pink, Rows 1-4 Gray.
 
-	model = NewChunkMapModel(bitmap, chunkCount, 2, 10, false, totalSize, chunkSize, progress)
+	model = NewChunkMapModel(bitmap, chunkCount, 2, 5, false, totalSize, chunkSize, progress)
 	out = model.View()
 
 	rows := strings.Split(strings.TrimSpace(out), "\n")
-	if len(rows) != 10 {
-		t.Fatalf("Expected 10 rows, got %d", len(rows))
+	if len(rows) != 5 {
+		t.Fatalf("Expected 5 rows, got %d", len(rows))
 	}
 
 	pinkStyle := lipgloss.NewStyle().Foreground(colors.NeonPink)
