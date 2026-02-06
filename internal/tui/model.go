@@ -246,6 +246,10 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 					}
 					dm.state.SetMirrors(mirrors)
 				}
+				// Restore chunk map for paused downloads
+				if len(state.ChunkBitmap) > 0 && state.ActualChunkSize > 0 {
+					dm.state.RestoreBitmap(state.ChunkBitmap, state.ActualChunkSize)
+				}
 			}
 
 			// Decide if we should resume based on status and settings
