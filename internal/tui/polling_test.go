@@ -55,8 +55,10 @@ func TestStateSync(t *testing.T) {
 		})
 
 		// Simulate worker updating the state
+		// Note: The ProgressReporter reads from VerifiedProgress (via GetProgress),
+		// not Downloaded. This matches how the real engine updates progress.
 		time.Sleep(300 * time.Millisecond)
-		workerState.Downloaded.Store(500)
+		workerState.VerifiedProgress.Store(500)
 
 		// Wait effectively for 2 poll cycles (150ms * 2 = 300ms) + buffer
 		time.Sleep(500 * time.Millisecond)
