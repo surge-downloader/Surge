@@ -13,6 +13,7 @@ type ChunkMapModel struct {
 	Bitmap          []byte
 	BitmapWidth     int // Total number of chunks in bitmap
 	Width           int // UI render width (columns * 2)
+	Height          int // Available height in rows (0 = auto)
 	Paused          bool
 	TotalSize       int64
 	ActualChunkSize int64
@@ -20,11 +21,12 @@ type ChunkMapModel struct {
 }
 
 // NewChunkMapModel creates a new chunk map visualization
-func NewChunkMapModel(bitmap []byte, bitmapWidth int, width int, paused bool, totalSize int64, actualChunkSize int64, chunkProgress []int64) ChunkMapModel {
+func NewChunkMapModel(bitmap []byte, bitmapWidth int, width, height int, paused bool, totalSize int64, actualChunkSize int64, chunkProgress []int64) ChunkMapModel {
 	return ChunkMapModel{
 		Bitmap:          bitmap,
 		BitmapWidth:     bitmapWidth,
 		Width:           width,
+		Height:          height,
 		Paused:          paused,
 		TotalSize:       totalSize,
 		ActualChunkSize: actualChunkSize,
@@ -58,8 +60,21 @@ func (m ChunkMapModel) View() string {
 		cols = 1
 	}
 
-	// Target 10 rows to maintain the "full grid" look requested
-	targetChunks := 10 * cols
+	// Use provided height for rows (screen-based sizing)
+	// Grid size is ONLY based on screen dimensions, not file chunk count
+	targetRows := m.Height
+	if targetRows <= 0 {
+		// Default to reasonable height if not provided
+		targetRows = 4
+	}
+	// Minimum 3 lines, maximum 5
+	if targetRows < 3 {
+		targetRows = 3
+	}
+	if targetRows > 5 {
+		targetRows = 5
+	}
+	targetChunks := targetRows * cols
 
 	// Downsample logic
 	visualChunks := make([]types.ChunkStatus, targetChunks)
@@ -199,9 +214,19 @@ func (m ChunkMapModel) View() string {
 }
 
 // CalculateHeight returns the number of lines needed to render the chunks
-func CalculateHeight(count int, width int) int {
+// Takes available height to support dynamic sizing
+func CalculateHeight(count int, width int, availableHeight int) int {
 	if count == 0 {
 		return 0
 	}
-	return 5
+	// Use all available height (screen-based sizing)
+	// Minimum 3, maximum 5 for compact look
+	rows := availableHeight
+	if rows < 3 {
+		rows = 3
+	}
+	if rows > 5 {
+		rows = 5
+	}
+	return rows
 }

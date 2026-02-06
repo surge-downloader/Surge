@@ -224,10 +224,15 @@ func (m RootModel) View() string {
 	if showChunkMap {
 		_, bitmapWidth, _, _, _ := selected.state.GetBitmap()
 		// chunkMapWidth = rightWidth - 4 (box border) - 2 (inner padding) = rightWidth - 6
-		contentLines := components.CalculateHeight(bitmapWidth, rightWidth-6)
+		// Calculate available height for chunk map (remaining height minus graph minimum 9)
+		availableChunkHeight := remainingHeight - 9 - 4 // -9 for min graph, -4 for borders/padding
+		if availableChunkHeight < 1 {
+			availableChunkHeight = 1
+		}
+		contentLines := components.CalculateHeight(bitmapWidth, rightWidth-6, availableChunkHeight)
 		if contentLines > 0 {
-			// +2 for border, +2 for padding
-			chunkMapNeeded = contentLines + 4
+			// +2 for border, +1 for header
+			chunkMapNeeded = contentLines + 3
 		} else {
 			// Minimum for message "Chunk visualization not available"
 			chunkMapNeeded = 6
@@ -542,8 +547,16 @@ func (m RootModel) View() string {
 		if selected != nil {
 			// New chunk map component
 			bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress := selected.state.GetBitmap()
-			chunkMap := components.NewChunkMapModel(bitmap, bitmapWidth, rightWidth-6, selected.paused, totalSize, chunkSize, chunkProgress)
-			chunkContent = lipgloss.NewStyle().Padding(0, 2, 1, 2).Render(chunkMap.View())
+			// Calculate target rows based on available height (minus padding/borders)
+			targetRows := chunkMapHeight - 3 // -2 border, -1 padding
+			if targetRows < 3 {
+				targetRows = 3 // Minimum 3 rows
+			}
+			if targetRows > 5 {
+				targetRows = 5 // Maximum 5 rows for compact look
+			}
+			chunkMap := components.NewChunkMapModel(bitmap, bitmapWidth, rightWidth-6, targetRows, selected.paused, totalSize, chunkSize, chunkProgress)
+			chunkContent = lipgloss.NewStyle().Padding(0, 2).Render(chunkMap.View()) // No bottom padding
 
 			// If no chunks (not initialized or small file), show message
 			if bitmapWidth == 0 {

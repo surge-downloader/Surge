@@ -54,7 +54,7 @@ func TestChunkMap_Basic(t *testing.T) {
 	for i := range progress {
 		progress[i] = 1024
 	} // 1KB chunks
-	model := NewChunkMapModel(bitmap, chunkCount, 8, false, 4096, 1024, progress)
+	model := NewChunkMapModel(bitmap, chunkCount, 8, 0, false, 4096, 1024, progress)
 
 	// Logic generates 10 rows worth of blocks.
 	// cols = 8/2 = 4. Total blocks = 10 * 4 = 40.
@@ -92,7 +92,7 @@ func TestChunkMap_GhostPinkFix(t *testing.T) {
 		progress[i] = 1024
 	} // Full
 
-	model := NewChunkMapModel(bitmap, chunkCount, 6, false, 10240, 1024, progress) // 6 width -> 3 cols
+	model := NewChunkMapModel(bitmap, chunkCount, 6, 0, false, 10240, 1024, progress) // 6 width -> 3 cols
 	_ = model.View()
 
 	// We check if we have Pink in the output.
@@ -108,11 +108,11 @@ func TestChunkMap_PausedState(t *testing.T) {
 	progress[0] = 512 // Half chunk
 
 	// Case 1: Not Paused
-	modelActive := NewChunkMapModel(bitmap, chunkCount, 8, false, 4096, 1024, progress)
+	modelActive := NewChunkMapModel(bitmap, chunkCount, 8, 0, false, 4096, 1024, progress)
 	outActive := modelActive.View()
 
 	// Case 2: Paused
-	modelPaused := NewChunkMapModel(bitmap, chunkCount, 8, true, 4096, 1024, progress)
+	modelPaused := NewChunkMapModel(bitmap, chunkCount, 8, 0, true, 4096, 1024, progress)
 	outPaused := modelPaused.View()
 
 	if outActive == outPaused {
@@ -132,7 +132,7 @@ func TestChunkMap_LogicVerify(t *testing.T) {
 
 	progress := []int64{1024, 0}
 
-	model := NewChunkMapModel(bitmap, chunkCount, 2, false, 2048, 1024, progress) // 1 col
+	model := NewChunkMapModel(bitmap, chunkCount, 2, 0, false, 2048, 1024, progress) // 1 col
 	out := model.View()
 
 	if strings.Contains(out, "38;5;198") { // 198 is NeonPink
@@ -152,7 +152,7 @@ func TestChunkMap_DownloadingPriority(t *testing.T) {
 
 	progress := []int64{0, 512, 0} // Middle chunk 50% done
 
-	model := NewChunkMapModel(bitmap, chunkCount, 2, false, 3072, 1024, progress) // 1 col
+	model := NewChunkMapModel(bitmap, chunkCount, 2, 0, false, 3072, 1024, progress) // 1 col
 	out := model.View()
 
 	// Dynamic check to avoid hardcoded color codes
@@ -180,7 +180,7 @@ func TestChunkMap_GranularProgress(t *testing.T) {
 	progress := []int64{1024 * 1024} // 1MB
 
 	// Width 20 -> 10 Blocks (2 chars each)
-	model := NewChunkMapModel(bitmap, chunkCount, 20, false, totalSize, chunkSize, progress)
+	model := NewChunkMapModel(bitmap, chunkCount, 20, 0, false, totalSize, chunkSize, progress)
 	out := model.View()
 
 	// Split output into blocks (space separated)
@@ -191,10 +191,10 @@ func TestChunkMap_GranularProgress(t *testing.T) {
 	// If we want exactly 10 blocks, we need cols=1 ?? No that gives 10 blocks TOTAL (1 row of 10? No 10 rows of 1?)
 
 	// Let's adjust Width to get a simple line.
-	// If Width=2, cols=1. targetChunks=10. 10 Rows of 1 block.
+	// If Width=2, cols=1 and height=10. 10 Rows of 1 block.
 	// Then Row 0 should be Pink, Rows 1-9 Gray.
 
-	model = NewChunkMapModel(bitmap, chunkCount, 2, false, totalSize, chunkSize, progress)
+	model = NewChunkMapModel(bitmap, chunkCount, 2, 10, false, totalSize, chunkSize, progress)
 	out = model.View()
 
 	rows := strings.Split(strings.TrimSpace(out), "\n")
