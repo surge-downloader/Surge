@@ -713,20 +713,11 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	utils.Debug("Download request: URL=%s, SkipApproval=%v, isDuplicate=%v, isActive=%v", req.URL, req.SkipApproval, isDuplicate, isActive)
 
 	// EXTENSION VETTING SHORTCUT:
-	// If SkipApproval is true, we trust the extension.
-	// BUT we must protect against corruption if the file is ALREADY downloading.
+	// If SkipApproval is true, we trust the extension completely.
+	// The backend will auto-rename duplicate files, so no need to reject.
 	if req.SkipApproval {
-		if isActive {
-			// Reject active downloads to prevent corruption
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusConflict) // 409
-			json.NewEncoder(w).Encode(map[string]string{
-				"status":  "error",
-				"message": "Download rejected: File is currently downloading",
-			})
-			return
-		}
-		// Trust extension -> Skip prompting logic explicitly
+		// Trust extension -> Skip all prompting logic, proceed to download
+		utils.Debug("Extension request: skipping all prompts, proceeding with download")
 	} else {
 		// Logic for prompting:
 		// 1. If ExtensionPrompt is enabled

@@ -565,17 +565,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'confirmDuplicate': {
           // User confirmed duplicate download
           const pending = pendingDuplicates.get(message.id);
+          console.log('[Surge] confirmDuplicate called, pending:', pending ? 'found' : 'NOT FOUND', 'id:', message.id);
           if (pending) {
             pendingDuplicates.delete(message.id);
             
             // Mark as seen and proceed with download
             markDownloadSeen(pending.url);
             
+            console.log('[Surge] Sending confirmed duplicate to Surge:', pending.url);
             const result = await sendToSurge(
               pending.url,
               pending.filename,
               pending.directory
             );
+            console.log('[Surge] sendToSurge result:', result);
             
             if (result.success) {
               chrome.notifications.create({
