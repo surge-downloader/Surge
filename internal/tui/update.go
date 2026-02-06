@@ -62,6 +62,20 @@ func openBrowser(url string) error {
 	return cmd.Start()
 }
 
+// openFile opens a file with the system's default application
+func openFile(path string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", path)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", "", path)
+	default: // linux and others
+		cmd = exec.Command("xdg-open", path)
+	}
+	return cmd.Start()
+}
+
 // convertRuntimeConfig converts config.RuntimeConfig to types.RuntimeConfig
 func convertRuntimeConfig(rc *config.RuntimeConfig) *types.RuntimeConfig {
 	return &types.RuntimeConfig{
@@ -721,6 +735,23 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.UpdateListItems()
 				return m, tea.Batch(cmds...)
+			}
+
+			// Open file (for completed downloads or sequential downloads)
+			if key.Matches(msg, m.keys.Dashboard.OpenFile) {
+				if d := m.GetSelectedDownload(); d != nil {
+					// Allow opening for completed downloads or sequential downloads in progress
+					canOpen := d.done || (m.Settings.Connections.SequentialDownload && !d.paused && d.Downloaded > 0)
+					if canOpen && d.Destination != "" {
+						// Open the file (use the partial file path if still downloading)
+						filePath := d.Destination
+						if !d.done {
+							filePath = d.Destination + types.IncompleteSuffix
+						}
+						_ = openFile(filePath)
+					}
+				}
+				return m, nil
 			}
 
 			// Toggle log focus
