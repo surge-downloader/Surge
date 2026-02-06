@@ -66,6 +66,7 @@ type RuntimeConfig struct {
 	MaxConnectionsPerHost int
 	MaxGlobalConnections  int
 	UserAgent             string
+	ProxyURL              string
 	SequentialDownload    bool
 	MinChunkSize          int64
 

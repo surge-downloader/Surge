@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -159,11 +160,25 @@ func (d *ConcurrentDownloader) newConcurrentClient(numConns int) *http.Client {
 		maxConns = numConns
 	}
 
+	var proxyFunc func(*http.Request) (*url.URL, error)
+	if d.Runtime.ProxyURL != "" {
+		if parsedURL, err := url.Parse(d.Runtime.ProxyURL); err == nil {
+			proxyFunc = http.ProxyURL(parsedURL)
+		} else {
+			// Fallback or log error? For now fallback to environment
+			utils.Debug("Invalid proxy URL %s: %v", d.Runtime.ProxyURL, err)
+			proxyFunc = http.ProxyFromEnvironment
+		}
+	} else {
+		proxyFunc = http.ProxyFromEnvironment
+	}
+
 	transport := &http.Transport{
 		// Connection pooling
 		MaxIdleConns:        types.DefaultMaxIdleConns,
 		MaxIdleConnsPerHost: maxConns + 2, // Slightly more than max to handle bursts
 		MaxConnsPerHost:     maxConns,
+		Proxy:               proxyFunc,
 
 		// Timeouts to prevent hung connections
 		IdleConnTimeout:       types.DefaultIdleConnTimeout,
