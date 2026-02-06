@@ -665,11 +665,22 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 
 	timeStr = d.Elapsed.Round(time.Second).String()
 
+	// Connections
+	var connStr string
+	if d.done || d.paused {
+		connStr = "N/A"
+	} else if d.Connections > 0 {
+		connStr = fmt.Sprintf("%d", d.Connections)
+	} else {
+		connStr = "0"
+	}
+
 	// Stats Layout
 	colWidth := (contentWidth - 4) / 2
 	leftCol := lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Size:"), StatsValueStyle.Render(sizeStr)),
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Speed:"), StatsValueStyle.Render(speedStr)),
+		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Conns:"), StatsValueStyle.Render(connStr)),
 	)
 	rightCol := lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Time:"), StatsValueStyle.Render(timeStr)),
