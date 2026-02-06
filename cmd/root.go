@@ -648,13 +648,6 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		http.Error(w, "Invalid filename", http.StatusBadRequest)
 		return
 	}
-	// Absolute paths are allowed for local tool usage
-	// if filepath.IsAbs(req.Path) { ... }
-
-	// Don't default to "." here, let TUI handle it
-	// if req.Path == "" {
-	// 	req.Path = "."
-	// }
 
 	utils.Debug("Received download request: URL=%s, Path=%s", req.URL, req.Path)
 
@@ -699,19 +692,13 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	outPath = utils.EnsureAbsPath(outPath)
 
 	// Check settings for extension prompt and duplicates
-	// settings already loaded above
-	// Check for duplicates
 	// Logic modified to distinguish between ACTIVE (corruption risk) and COMPLETED (overwrite safe)
 	isDuplicate := false
 	isActive := false
 
 	if GlobalPool.HasDownload(req.URL) {
 		isDuplicate = true
-		// Check if specifically active
-		// Wait, GetStatus takes ID, we have URL.
-		// Currently GlobalPool doesn't expose GetStatusByUrl casually, but we can check if it's in the list
-		// Optimization: We could iterate, or just assume HasDownload means it exists.
-		// Let's use GetAll to check active
+		// Check if specifically active\
 		allActive := GlobalPool.GetAll()
 		for _, c := range allActive {
 			if c.URL == req.URL {
@@ -722,6 +709,8 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 			}
 		}
 	}
+
+	utils.Debug("Download request: URL=%s, SkipApproval=%v, isDuplicate=%v, isActive=%v", req.URL, req.SkipApproval, isDuplicate, isActive)
 
 	// EXTENSION VETTING SHORTCUT:
 	// If SkipApproval is true, we trust the extension.

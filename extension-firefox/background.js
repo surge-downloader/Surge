@@ -124,7 +124,7 @@ async function fetchDownloadList() {
 
 // === Download Sending ===
 
-async function sendToSurge(url, filename, absolutePath, skipDuplicateCheck = false) {
+async function sendToSurge(url, filename, absolutePath) {
   const port = await findSurgePort();
   if (!port) {
     console.error('[Surge] No server found');
@@ -142,10 +142,9 @@ async function sendToSurge(url, filename, absolutePath, skipDuplicateCheck = fal
       body.path = absolutePath;
     }
 
-    // Skip TUI duplicate check if extension already confirmed
-    if (skipDuplicateCheck) {
-      body.skip_duplicate_check = true;
-    }
+    // Always skip TUI approval for extension downloads (vetted by user action)
+    // This also bypasses duplicate warnings since extension handles those
+    body.skip_approval = true;
 
     const response = await fetch(`http://127.0.0.1:${port}/download`, {
       method: 'POST',
@@ -529,8 +528,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
             const result = await sendToSurge(
               pending.url,
               pending.filename,
-              pending.directory,
-              true // Skip TUI duplicate check - already confirmed in extension
+              pending.directory
             );
             
             if (result.success) {
