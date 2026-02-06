@@ -235,14 +235,16 @@ function hashUrl(url) {
   return hash.toString(36);
 }
 
-function isDuplicateDownload(url) {
+// Check if URL is duplicate (either in recent downloads OR in Surge's active list)
+async function isDuplicateDownload(url) {
   const hash = hashUrl(url);
   const now = Date.now();
   
+  // Check 1: Time-based (catches rapid double-clicks within 5 seconds)
   if (recentDownloads.has(hash)) {
     const lastSeen = recentDownloads.get(hash);
     if (now - lastSeen < DEDUP_WINDOW_MS) {
-      console.log('[Surge] Duplicate download detected:', url);
+      console.log('[Surge] Duplicate download detected (time-based):', url);
       return true;
     }
   }
@@ -252,6 +254,23 @@ function isDuplicateDownload(url) {
     if (now - timestamp > DEDUP_WINDOW_MS) {
       recentDownloads.delete(key);
     }
+  }
+  
+  // Check 2: Query Surge's active download list
+  try {
+    const downloadsList = await fetchDownloadList();
+    if (downloadsList && downloadsList.length > 0) {
+      const normalizedUrl = url.replace(/\/$/, ''); // Remove trailing slash
+      for (const dl of downloadsList) {
+        const normalizedDlUrl = (dl.url || '').replace(/\/$/, '');
+        if (normalizedDlUrl === normalizedUrl && dl.status !== 'completed') {
+          console.log('[Surge] Duplicate download detected (in Surge list):', url);
+          return true;
+        }
+      }
+    }
+  } catch (e) {
+    console.log('[Surge] Could not check Surge list for duplicates:', e);
   }
   
   return false;
@@ -375,8 +394,8 @@ browser.downloads.onCreated.addListener(async (downloadItem) => {
     console.log('[Surge] Ignoring historical download');
     return;
   }
-
-  if (isDuplicateDownload(downloadItem.url)) {
+  // Check for duplicates (async - checks both time-based and Surge's download list)
+  if (await isDuplicateDownload(downloadItem.url)) {
     // Cancel the browser download first
     try {
       await browser.downloads.cancel(downloadItem.id);
