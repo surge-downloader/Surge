@@ -90,7 +90,7 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 
 	// Probe server once to get all metadata
 	utils.Debug("TUIDownload: Probing server... %s", cfg.URL)
-	probe, err := engine.ProbeServer(ctx, cfg.URL, cfg.Filename, cfg.Headers)
+	probe, err := engine.ProbeServer(ctx, cfg.URL, cfg.Filename)
 	if err != nil {
 		utils.Debug("TUIDownload: Probe failed: %v\n", err)
 		return err

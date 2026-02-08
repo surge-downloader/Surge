@@ -291,10 +291,7 @@ async function isDuplicateDownload(url) {
         const normalizedDlUrl = (dl.url || "").replace(/\/$/, "");
         // Flag as duplicate if URL exists in Surge's download list (any status)
         if (normalizedDlUrl === normalizedUrl) {
-          console.log(
-            "[Surge] Duplicate download detected (already in Surge):",
-            url,
-          );
+          console.log("[Surge] Duplicate download detected (already in Surge):", url);
           return true;
         }
       }
@@ -305,6 +302,7 @@ async function isDuplicateDownload(url) {
 
   return false;
 }
+
 
 function isFreshDownload(downloadItem) {
   // Must be in progress (not completed/interrupted from history)
@@ -386,53 +384,6 @@ function extractPathInfo(downloadItem) {
 const processedIds = new Set();
 const pendingInterceptions = new Map(); // downloadId -> downloadItem
 
-async function checkPendingDownload(id) {
-  if (!pendingInterceptions.has(id)) return;
-
-  try {
-    const results = await chrome.downloads.search({ id });
-    if (!results || results.length === 0) {
-      pendingInterceptions.delete(id);
-      return;
-    }
-
-    const item = results[0];
-    
-    // If state is not in_progress, it might be interrupted or complete
-    if (item.state !== "in_progress") {
-       // If it is interrupted, it might be the user cancelled Save As.
-       // We should stop polling.
-       pendingInterceptions.delete(id);
-       return;
-    }
-
-    // Check if data is moving (Auto-download)
-    // The browser has started writing data, meaning user accepted "Save As" or it was automatic.
-    if (item.bytesReceived > 0 || (item.fileSize > 0 && item.bytesReceived === item.fileSize)) {
-       console.log("[Surge] Detected active download progress, intercepting:", id);
-       
-        // Remove from pending so we don't process it again
-       pendingInterceptions.delete(id);
-       
-       // Mark as processed
-       processedIds.add(id);
-       setTimeout(() => processedIds.delete(id), 120000);
-
-       // Update item with latest info
-       await handleDownloadIntercept(item);
-       return;
-    }
-
-    // If still 0 bytes, it could be "Save As" dialog open or just slow start.
-    // We keep polling.
-    setTimeout(() => checkPendingDownload(id), 1000);
-
-  } catch (e) {
-    console.error("[Surge] Error checking pending download:", e);
-    pendingInterceptions.delete(id);
-  }
-}
-
 chrome.downloads.onCreated.addListener(async (downloadItem) => {
   // Prevent duplicate events for the same download ID
   if (processedIds.has(downloadItem.id)) {
@@ -444,8 +395,6 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     downloadItem.url,
     "filename:",
     downloadItem.filename,
-    "state:",
-    downloadItem.state,
   );
 
   // Quick checks that can be done immediately
@@ -465,34 +414,29 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     return;
   }
 
-  // Queue for delayed check (polling)
-  // This allows "Save As" dialogs to open without being immediately killed.
-  // We will poll for byte progress or filename changes.
-
-  if (pendingInterceptions.has(downloadItem.id)) {
+  // If filename is already determined (auto-download mode), intercept immediately
+  if (downloadItem.filename && downloadItem.filename.length > 0) {
+    console.log(
+      "[Surge] Filename already determined, intercepting immediately",
+    );
+    processedIds.add(downloadItem.id);
+    setTimeout(() => processedIds.delete(downloadItem.id), 120000);
+    await handleDownloadIntercept(downloadItem);
     return;
   }
 
-  console.log(
-    "[Surge] Queueing download for interception check:",
-    downloadItem.id,
-  );
-
+  // Otherwise, wait for filename to be determined (Save As dialog)
+  console.log("[Surge] Waiting for filename determination (Save As dialog)...");
   pendingInterceptions.set(downloadItem.id, {
     ...downloadItem,
-    url: downloadItem.url,
-    timestamp: Date.now(),
+    url: downloadItem.url, // Ensure URL is captured
   });
 
-  // Start polling
-  setTimeout(() => checkPendingDownload(downloadItem.id), 500);
-
-  // Set timeout to cleanup (safety net)
+  // Set timeout to cleanup if filename never gets determined (user cancelled)
   setTimeout(() => {
     if (pendingInterceptions.has(downloadItem.id)) {
       console.log(
-        "[Surge] Timeout waiting for download start/filename, cleanup:",
-        downloadItem.id,
+        "[Surge] Timeout waiting for filename, user likely cancelled",
       );
       pendingInterceptions.delete(downloadItem.id);
     }
