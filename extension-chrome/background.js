@@ -582,15 +582,6 @@ async function handleDownloadIntercept(downloadItem) {
       }
     }
 
-    // Show notification for duplicate (clickable to open popup)
-    chrome.notifications.create(`surge-dup-${pendingId}`, {
-      type: "basic",
-      iconUrl: "icons/icon48.png",
-      title: "Surge - Duplicate Download",
-      message: `Duplicate detected: ${displayName}. Click to resolve.`,
-      requireInteraction: true,
-    });
-
     // Try to open popup and send prompt (might fail if no user gesture)
     try {
       await chrome.action.openPopup();
@@ -680,7 +671,7 @@ async function handleDownloadIntercept(downloadItem) {
 
 // Handle notification clicks
 chrome.notifications.onClicked.addListener((notificationId) => {
-  if (notificationId.startsWith("surge-confirm-") || notificationId.startsWith("surge-dup-")) {
+  if (notificationId.startsWith("surge-confirm-")) {
     // Attempt to open popup
     try {
       chrome.action.openPopup();
