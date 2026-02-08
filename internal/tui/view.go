@@ -167,10 +167,16 @@ func (m RootModel) View() string {
 		availableHeight = 10 // Minimum safe height
 	}
 	availableWidth := m.width - 4 // Margin
+	if availableWidth < 0 {
+		availableWidth = 0
+	}
 
 	// Column Widths
 	leftWidth := int(float64(availableWidth) * ListWidthRatio)
 	rightWidth := availableWidth - leftWidth - 2 // -2 for spacing
+	if rightWidth < 0 {
+		rightWidth = 0
+	}
 
 	// --- LEFT COLUMN HEIGHTS ---
 	serverBoxHeight := 3
@@ -188,11 +194,17 @@ func (m RootModel) View() string {
 	// Pre-calculate Detail Content to determine exact height needed
 	var detailContent string
 	selected := m.GetSelectedDownload()
+
+	detailWidth := rightWidth - 4
+	if detailWidth < 0 {
+		detailWidth = 0
+	}
+
 	if selected != nil {
-		detailContent = renderFocusedDetails(selected, rightWidth-4)
+		detailContent = renderFocusedDetails(selected, detailWidth)
 	} else {
 		// Default Placeholder
-		detailContent = lipgloss.Place(rightWidth-4, 8, lipgloss.Center, lipgloss.Center,
+		detailContent = lipgloss.Place(detailWidth, 8, lipgloss.Center, lipgloss.Center,
 			lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("No Download Selected"))
 	}
 
@@ -302,6 +314,13 @@ func (m RootModel) View() string {
 	logoWidth := int(float64(leftWidth) * 0.45)
 	logWidth := leftWidth - logoWidth - 2 // Rest for log box
 
+	if logoWidth < 4 {
+		logoWidth = 4 // Minimum for server box content
+	}
+	if logWidth < 4 {
+		logWidth = 4 // Minimum for viewport
+	}
+
 	// Render logo centered in its box (move up to make room for server box)
 	gradientLogo := ApplyGradient(logoText, ColorNeonPink, ColorNeonPurple)
 	logoContent := lipgloss.NewStyle().Render(gradientLogo)
@@ -310,8 +329,14 @@ func (m RootModel) View() string {
 	// Server port box (below logo, same width)
 	greenDot := lipgloss.NewStyle().Foreground(ColorStateDownloading).Render("●")
 	serverText := lipgloss.NewStyle().Foreground(ColorNeonCyan).Bold(true).Render(fmt.Sprintf(" Listening on :%d", m.ServerPort))
+
+	serverContentWidth := logoWidth - 4
+	if serverContentWidth < 0 {
+		serverContentWidth = 0
+	}
+
 	serverPortContent := lipgloss.NewStyle().
-		Width(logoWidth - 4).
+		Width(serverContentWidth).
 		Align(lipgloss.Center).
 		Render(greenDot + serverText)
 	serverBox := renderBtopBox("", PaneTitleStyle.Render(" Server "), serverPortContent, logoWidth, serverBoxHeight, ColorGray)
@@ -320,7 +345,11 @@ func (m RootModel) View() string {
 	logoColumn := lipgloss.JoinVertical(lipgloss.Left, logoBox, serverBox)
 
 	// Render log viewport
-	m.logViewport.Width = logWidth - 4      // Account for borders
+	vpWidth := logWidth - 4
+	if vpWidth < 0 {
+		vpWidth = 0
+	}
+	m.logViewport.Width = vpWidth           // Account for borders
 	m.logViewport.Height = headerHeight - 4 // Account for borders and title
 	logContent := m.logViewport.View()
 
@@ -508,14 +537,18 @@ func (m RootModel) View() string {
 	// Render the bubbles list or centered empty message
 	var listContent string
 	if len(m.list.Items()) == 0 {
-		// FIX: Reduced width (leftWidth-8) to account for padding (4) and borders (2) + safety
-		// preventing the "floating bits" wrap-around artifact.
 		listContentHeight := listHeight - 6
+
+		listContentWidth := leftWidth - 8
+		if listContentWidth < 0 {
+			listContentWidth = 0
+		}
+
 		if m.searchQuery != "" {
-			listContent = lipgloss.Place(leftWidth-8, listContentHeight, lipgloss.Center, lipgloss.Center,
+			listContent = lipgloss.Place(listContentWidth, listContentHeight, lipgloss.Center, lipgloss.Center,
 				lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("No matching downloads"))
 		} else {
-			listContent = lipgloss.Place(leftWidth-8, listContentHeight, lipgloss.Center, lipgloss.Center,
+			listContent = lipgloss.Place(listContentWidth, listContentHeight, lipgloss.Center, lipgloss.Center,
 				lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("No downloads"))
 		}
 	} else {
@@ -555,13 +588,23 @@ func (m RootModel) View() string {
 			if targetRows > 5 {
 				targetRows = 5 // Maximum 5 rows for compact look
 			}
-			chunkMap := components.NewChunkMapModel(bitmap, bitmapWidth, rightWidth-6, targetRows, selected.paused, totalSize, chunkSize, chunkProgress)
+			chunkMapWidth := rightWidth - 6
+			if chunkMapWidth < 4 {
+				chunkMapWidth = 4
+			}
+			chunkMap := components.NewChunkMapModel(bitmap, bitmapWidth, chunkMapWidth, targetRows, selected.paused, totalSize, chunkSize, chunkProgress)
 			chunkContent = lipgloss.NewStyle().Padding(0, 2).Render(chunkMap.View()) // No bottom padding
 
 			// If no chunks (not initialized or small file), show message
 			if bitmapWidth == 0 {
 				msg := "Chunk visualization not available"
-				chunkContent = lipgloss.Place(rightWidth-4, chunkMapHeight-2, lipgloss.Center, lipgloss.Center,
+
+				placeholderWidth := rightWidth - 4
+				if placeholderWidth < 0 {
+					placeholderWidth = 0
+				}
+
+				chunkContent = lipgloss.Place(placeholderWidth, chunkMapHeight-2, lipgloss.Center, lipgloss.Center,
 					lipgloss.NewStyle().Foreground(ColorGray).Render(msg))
 			}
 		}
@@ -598,6 +641,9 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 
 	// Consistent content width for centering
 	contentWidth := w - 4
+	if contentWidth < 0 {
+		contentWidth = 0
+	}
 
 	// Separator Style
 	divider := lipgloss.NewStyle().
