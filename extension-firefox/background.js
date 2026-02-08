@@ -16,6 +16,16 @@ let isConnected = false;
 const pendingDuplicates = new Map();
 let pendingDuplicateCounter = 0;
 
+function updateBadge() {
+  const count = pendingDuplicates.size;
+  if (count > 0) {
+    browser.action.setBadgeText({ text: count.toString() });
+    browser.action.setBadgeBackgroundColor({ color: "#FF0000" }); // Red
+  } else {
+    browser.action.setBadgeText({ text: "" });
+  }
+}
+
 // === Header Capture ===
 // Store request headers for URLs to forward to Surge (cookies, auth, etc.)
 // Key: URL, Value: { headers: {}, timestamp: Date.now() }
@@ -477,9 +487,13 @@ async function handleDownloadIntercept(downloadItem) {
     for (const [id, data] of pendingDuplicates) {
       if (Date.now() - data.timestamp > 60000) {
         pendingDuplicates.delete(id);
+        updateBadge();
       }
     }
     
+    // Update badge
+    updateBadge();
+
     // Try to open popup and send prompt
     try {
       await browser.action.openPopup();
@@ -538,6 +552,18 @@ async function handleDownloadIntercept(downloadItem) {
         title: 'Surge Error',
         message: `Failed to start download: ${result.error}`,
       });
+    }
+
+    // Check for next pending duplicate
+    if (pendingDuplicates.size > 0) {
+      const [nextId, nextData] = pendingDuplicates.entries().next().value;
+      const nextName = nextData.filename || nextData.url.split("/").pop() || "Unknown file";
+      
+      browser.runtime.sendMessage({
+        type: "promptDuplicate",
+        id: nextId,
+        filename: nextName,
+      }).catch(() => {});
     }
   } catch (error) {
     console.error('[Surge] Failed to intercept download:', error);
@@ -608,7 +634,8 @@ browser.runtime.onMessage.addListener((message, sender) => {
           console.log('[Surge] confirmDuplicate called, pending:', pending ? 'found' : 'NOT FOUND', 'id:', message.id);
           if (pending) {
             pendingDuplicates.delete(message.id);
-            
+            updateBadge(); // Update badge
+
             console.log('[Surge] Sending confirmed duplicate to Surge:', pending.url);
             const result = await sendToSurge(
               pending.url,
@@ -637,10 +664,24 @@ browser.runtime.onMessage.addListener((message, sender) => {
           const pending = pendingDuplicates.get(message.id);
           if (pending) {
             pendingDuplicates.delete(message.id);
+            updateBadge(); // Update badge
+
             console.log(
               "[Surge] User skipped duplicate download:",
               pending.url,
             );
+            
+            // Check for next pending duplicate
+            if (pendingDuplicates.size > 0) {
+              const [nextId, nextData] = pendingDuplicates.entries().next().value;
+              const nextName = nextData.filename || nextData.url.split("/").pop() || "Unknown file";
+              
+              browser.runtime.sendMessage({
+                type: "promptDuplicate",
+                id: nextId,
+                filename: nextName,
+              }).catch(() => {});
+            }
           }
           return { success: true };
         }
