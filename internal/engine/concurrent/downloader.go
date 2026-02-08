@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -28,6 +29,7 @@ type ConcurrentDownloader struct {
 	DestPath     string // For pause/resume
 	Runtime      *types.RuntimeConfig
 	bufPool      sync.Pool
+	Headers      map[string]string // Custom HTTP headers from browser (cookies, auth, etc.)
 }
 
 // NewConcurrentDownloader creates a new concurrent downloader with all required parameters
@@ -52,22 +54,38 @@ func NewConcurrentDownloader(id string, progressCh chan<- any, progState *types.
 // getInitialConnections returns the starting number of connections based on file size
 func (d *ConcurrentDownloader) getInitialConnections(fileSize int64) int {
 	maxConns := d.Runtime.GetMaxConnectionsPerHost()
-	minChunk := d.Runtime.GetMinChunkSize()
+	minChunkSize := d.Runtime.GetMinChunkSize() // e.g., 1MB or 5MB
 
-	if minChunk <= 0 {
+	if fileSize <= 0 {
 		return 1
 	}
 
-	// Calculate how many chunks we can fit
-	possibleChunks := int(fileSize / minChunk)
-	if possibleChunks == 0 {
-		return 1
+	// 1. Calculate ideal workers using the Square Root heuristic
+	// Convert to float first to avoid integer truncation on small files
+	sizeMB := float64(fileSize) / (1024 * 1024)
+	calculatedWorkers := int(math.Round(math.Sqrt(sizeMB)))
+
+	// 2. Hard constraint: Don't create chunks smaller than MinChunkSize
+	// If file is 20MB and MinChunk is 10MB, we strictly can't have more than 2 workers
+	if minChunkSize > 0 {
+		maxPossibleChunks := int(fileSize / minChunkSize)
+		if maxPossibleChunks < 1 {
+			maxPossibleChunks = 1
+		}
+		if calculatedWorkers > maxPossibleChunks {
+			calculatedWorkers = maxPossibleChunks
+		}
 	}
 
-	if possibleChunks < maxConns {
-		return possibleChunks
+	// 3. Safety Floors and Ceilings
+	if calculatedWorkers < 1 {
+		return 1
 	}
-	return maxConns
+	if calculatedWorkers > maxConns {
+		return maxConns
+	}
+
+	return calculatedWorkers
 }
 
 // ReportMirrorError marks a mirror as having an error in the state

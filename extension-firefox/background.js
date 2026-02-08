@@ -21,6 +21,62 @@ const recentDownloads = new Map();
 const pendingDuplicates = new Map();
 let pendingDuplicateCounter = 0;
 
+// === Header Capture ===
+// Store request headers for URLs to forward to Surge (cookies, auth, etc.)
+// Key: URL, Value: { headers: {}, timestamp: Date.now() }
+const capturedHeaders = new Map();
+const HEADER_EXPIRY_MS = 120000; // 2 minutes - headers expire after this time
+
+// Capture all headers from requests using webRequest API
+browser.webRequest.onBeforeSendHeaders.addListener(
+  (details) => {
+    if (!details.requestHeaders || !details.url) return;
+    
+    // Capture all headers
+    const headers = {};
+    for (const header of details.requestHeaders) {
+      headers[header.name] = header.value;
+    }
+    
+    // Only store if we captured something
+    if (Object.keys(headers).length > 0) {
+      capturedHeaders.set(details.url, {
+        headers,
+        timestamp: Date.now()
+      });
+      
+      // Cleanup old entries periodically
+      if (capturedHeaders.size > 1000) {
+        cleanupExpiredHeaders();
+      }
+    }
+  },
+  { urls: ["<all_urls>"] },
+  ["requestHeaders"]
+);
+
+function cleanupExpiredHeaders() {
+  const now = Date.now();
+  for (const [url, data] of capturedHeaders) {
+    if (now - data.timestamp > HEADER_EXPIRY_MS) {
+      capturedHeaders.delete(url);
+    }
+  }
+}
+
+function getCapturedHeaders(url) {
+  const data = capturedHeaders.get(url);
+  if (!data) return null;
+  
+  // Check if expired
+  if (Date.now() - data.timestamp > HEADER_EXPIRY_MS) {
+    capturedHeaders.delete(url);
+    return null;
+  }
+  
+  return data.headers;
+}
+
 // === Port Discovery ===
 
 async function findSurgePort() {
@@ -140,6 +196,13 @@ async function sendToSurge(url, filename, absolutePath) {
     // Use absolute path directly if provided
     if (absolutePath) {
       body.path = absolutePath;
+    }
+
+    // Include captured headers for authenticated downloads
+    const headers = getCapturedHeaders(url);
+    if (headers) {
+      body.headers = headers;
+      console.log('[Surge] Forwarding captured headers to Surge');
     }
 
     // Always skip TUI approval for extension downloads (vetted by user action)

@@ -552,12 +552,13 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 // DownloadRequest represents a download request from the browser extension
 type DownloadRequest struct {
-	URL                  string   `json:"url"`
-	Filename             string   `json:"filename,omitempty"`
-	Path                 string   `json:"path,omitempty"`
-	RelativeToDefaultDir bool     `json:"relative_to_default_dir,omitempty"`
-	Mirrors              []string `json:"mirrors,omitempty"`
-	SkipApproval         bool     `json:"skip_approval,omitempty"` // Extension validated request, skip TUI prompt
+	URL                  string            `json:"url"`
+	Filename             string            `json:"filename,omitempty"`
+	Path                 string            `json:"path,omitempty"`
+	RelativeToDefaultDir bool              `json:"relative_to_default_dir,omitempty"`
+	Mirrors              []string          `json:"mirrors,omitempty"`
+	SkipApproval         bool              `json:"skip_approval,omitempty"` // Extension validated request, skip TUI prompt
+	Headers              map[string]string `json:"headers,omitempty"`       // Custom HTTP headers from browser (cookies, auth, etc.)
 }
 
 func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir string) {
@@ -772,6 +773,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		State:      types.NewProgressState(downloadID, 0),
 		// Runtime config loaded from settings
 		Runtime: convertRuntimeConfig(settings.ToRuntimeConfig()),
+		Headers: req.Headers, // Forward browser headers (cookies, auth, etc.)
 	}
 
 	// Handle implicit mirrors in URL if not explicitly provided
