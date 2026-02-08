@@ -200,6 +200,25 @@ func (d *ConcurrentDownloader) newConcurrentClient(numConns int) *http.Client {
 
 	return &http.Client{
 		Transport: transport,
+		// Preserve headers on redirects for authenticated downloads
+		// By default, Go strips sensitive headers (Cookie, Authorization) on cross-domain redirects.
+		// Since these headers were explicitly provided by the browser for this download, we forward them.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			// Copy headers from original request to redirect request
+			if len(via) > 0 {
+				for key, vals := range via[0].Header {
+					// Skip Range header - we set our own for parallel downloads
+					if key == "Range" {
+						continue
+					}
+					req.Header[key] = vals
+				}
+			}
+			return nil
+		},
 	}
 }
 

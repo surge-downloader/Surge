@@ -29,11 +29,32 @@ type ProbeResult struct {
 }
 
 // ProbeServer sends GET with Range: bytes=0-0 to determine server capabilities
-func ProbeServer(ctx context.Context, rawurl string, filenameHint string) (*ProbeResult, error) {
+// headers is optional - pass nil for non-authenticated probes
+func ProbeServer(ctx context.Context, rawurl string, filenameHint string, headers map[string]string) (*ProbeResult, error) {
 	utils.Debug("Probing server: %s", rawurl)
 
 	var resp *http.Response
 	var err error
+
+	// Create a client that preserves headers on redirects (for authenticated downloads)
+	client := &http.Client{
+		Timeout: types.ProbeTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			// Copy headers from original request to redirect request
+			if len(via) > 0 {
+				for key, vals := range via[0].Header {
+					if key == "Range" {
+						continue
+					}
+					req.Header[key] = vals
+				}
+			}
+			return nil
+		},
+	}
 
 	// Retry logic for probe request
 	for i := 0; i < 3; i++ {
@@ -51,10 +72,20 @@ func ProbeServer(ctx context.Context, rawurl string, filenameHint string) (*Prob
 			break // Fatal error, don't retry
 		}
 
-		req.Header.Set("Range", "bytes=0-0")
-		req.Header.Set("User-Agent", ua)
+		// Apply custom headers first (from browser extension: cookies, auth, etc.)
+		for key, val := range headers {
+			if key != "Range" { // Skip Range, we set our own
+				req.Header.Set(key, val)
+			}
+		}
 
-		resp, err = probeClient.Do(req)
+		req.Header.Set("Range", "bytes=0-0")
+		// Set User-Agent only if not provided in custom headers
+		if req.Header.Get("User-Agent") == "" {
+			req.Header.Set("User-Agent", ua)
+		}
+
+		resp, err = client.Do(req)
 		if err == nil {
 			break // Success
 		}
@@ -153,7 +184,7 @@ func ProbeMirrors(ctx context.Context, mirrors []string) (valid []string, errors
 			probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 
-			result, err := ProbeServer(probeCtx, target, "")
+			result, err := ProbeServer(probeCtx, target, "", nil)
 
 			mu.Lock()
 			defer mu.Unlock()
