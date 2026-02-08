@@ -1,0 +1,223 @@
+package concurrent
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/testutil"
+)
+
+// TestConcurrentDownloader_CustomHeaders verifies that custom headers from browser
+// extension are correctly forwarded to the download server.
+func TestConcurrentDownloader_CustomHeaders(t *testing.T) {
+	tmpDir, cleanup := initTestState(t)
+	defer cleanup()
+
+	fileSize := int64(64 * types.KB)
+
+	// Track received headers
+	var mu sync.Mutex
+	var receivedCookie string
+	var receivedAuth string
+	var receivedReferer string
+	var receivedUserAgent string
+	requestCount := 0
+
+	// Custom handler to capture headers
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requestCount++
+		// Capture headers from first request (all requests should have same custom headers)
+		if requestCount == 1 {
+			receivedCookie = r.Header.Get("Cookie")
+			receivedAuth = r.Header.Get("Authorization")
+			receivedReferer = r.Header.Get("Referer")
+			receivedUserAgent = r.Header.Get("User-Agent")
+		}
+		mu.Unlock()
+
+		// Serve the file content with range support
+		w.Header().Set("Content-Length", "65536")
+		w.Header().Set("Accept-Ranges", "bytes")
+
+		// Handle range requests
+		rangeHeader := r.Header.Get("Range")
+		if rangeHeader != "" {
+			w.Header().Set("Content-Range", "bytes 0-65535/65536")
+			w.WriteHeader(http.StatusPartialContent)
+		}
+
+		// Write file content (zeros)
+		data := make([]byte, fileSize)
+		w.Write(data)
+	}))
+	defer server.Close()
+
+	destPath := filepath.Join(tmpDir, "headers_test.bin")
+	progState := types.NewProgressState("headers-test", fileSize)
+	runtime := &types.RuntimeConfig{MaxConnectionsPerHost: 2}
+
+	downloader := NewConcurrentDownloader("headers-test", nil, progState, runtime)
+
+	// Set custom headers from "browser extension"
+	downloader.Headers = map[string]string{
+		"Cookie":        "session_id=abc123; user_token=xyz789",
+		"Authorization": "Bearer test-jwt-token",
+		"Referer":       "https://example.com/downloads",
+		"User-Agent":    "CustomBrowser/1.0",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err := downloader.Download(ctx, server.URL, nil, nil, destPath, fileSize, false)
+	if err != nil {
+		t.Fatalf("Download failed: %v", err)
+	}
+
+	// Verify headers were received
+	mu.Lock()
+	defer mu.Unlock()
+
+	if receivedCookie != "session_id=abc123; user_token=xyz789" {
+		t.Errorf("Cookie header not forwarded correctly. Got: %q", receivedCookie)
+	}
+	if receivedAuth != "Bearer test-jwt-token" {
+		t.Errorf("Authorization header not forwarded correctly. Got: %q", receivedAuth)
+	}
+	if receivedReferer != "https://example.com/downloads" {
+		t.Errorf("Referer header not forwarded correctly. Got: %q", receivedReferer)
+	}
+	if receivedUserAgent != "CustomBrowser/1.0" {
+		t.Errorf("User-Agent header should use custom value. Got: %q", receivedUserAgent)
+	}
+
+	// Verify file was created
+	if err := testutil.VerifyFileSize(destPath, fileSize); err != nil {
+		t.Error(err)
+	}
+}
+
+// TestConcurrentDownloader_DefaultUserAgent verifies that the default User-Agent
+// is used when custom headers don't include one.
+func TestConcurrentDownloader_DefaultUserAgent(t *testing.T) {
+	tmpDir, cleanup := initTestState(t)
+	defer cleanup()
+
+	fileSize := int64(32 * types.KB)
+
+	var mu sync.Mutex
+	var receivedUserAgent string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		if receivedUserAgent == "" {
+			receivedUserAgent = r.Header.Get("User-Agent")
+		}
+		mu.Unlock()
+
+		w.Header().Set("Content-Length", "32768")
+		w.Header().Set("Accept-Ranges", "bytes")
+		if r.Header.Get("Range") != "" {
+			w.WriteHeader(http.StatusPartialContent)
+		}
+		data := make([]byte, fileSize)
+		w.Write(data)
+	}))
+	defer server.Close()
+
+	destPath := filepath.Join(tmpDir, "default_ua_test.bin")
+	progState := types.NewProgressState("ua-test", fileSize)
+	runtime := &types.RuntimeConfig{
+		MaxConnectionsPerHost: 1,
+		UserAgent:             "SurgeDownloader/1.0",
+	}
+
+	downloader := NewConcurrentDownloader("ua-test", nil, progState, runtime)
+
+	// Set custom headers WITHOUT User-Agent
+	downloader.Headers = map[string]string{
+		"Cookie": "session=test",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err := downloader.Download(ctx, server.URL, nil, nil, destPath, fileSize, false)
+	if err != nil {
+		t.Fatalf("Download failed: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Should use default User-Agent from runtime config when not provided in headers
+	if receivedUserAgent != "SurgeDownloader/1.0" {
+		t.Errorf("Expected default User-Agent, got: %q", receivedUserAgent)
+	}
+}
+
+// TestConcurrentDownloader_RangeHeaderNotOverridden verifies that custom Range
+// headers from browser are ignored (we must use our own for parallel downloads).
+func TestConcurrentDownloader_RangeHeaderNotOverridden(t *testing.T) {
+	tmpDir, cleanup := initTestState(t)
+	defer cleanup()
+
+	fileSize := int64(32 * types.KB)
+
+	var mu sync.Mutex
+	var receivedRange string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		if receivedRange == "" {
+			receivedRange = r.Header.Get("Range")
+		}
+		mu.Unlock()
+
+		w.Header().Set("Content-Length", "32768")
+		w.Header().Set("Accept-Ranges", "bytes")
+		if r.Header.Get("Range") != "" {
+			w.WriteHeader(http.StatusPartialContent)
+		}
+		data := make([]byte, fileSize)
+		w.Write(data)
+	}))
+	defer server.Close()
+
+	destPath := filepath.Join(tmpDir, "range_test.bin")
+	progState := types.NewProgressState("range-test", fileSize)
+	runtime := &types.RuntimeConfig{MaxConnectionsPerHost: 1}
+
+	downloader := NewConcurrentDownloader("range-test", nil, progState, runtime)
+
+	// Set custom Range header (should be ignored/overridden)
+	downloader.Headers = map[string]string{
+		"Range": "bytes=0-100", // This should NOT be used
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err := downloader.Download(ctx, server.URL, nil, nil, destPath, fileSize, false)
+	if err != nil {
+		t.Fatalf("Download failed: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Range should be set by our code, not the custom header
+	if receivedRange == "bytes=0-100" {
+		t.Errorf("Custom Range header should be ignored, but got: %q", receivedRange)
+	}
+	if receivedRange == "" {
+		t.Errorf("Range header should have been set by downloader")
+	}
+}
