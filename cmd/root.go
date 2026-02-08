@@ -52,8 +52,12 @@ var rootCmd = &cobra.Command{
 		GlobalProgressCh = make(chan any, 100)
 
 		// Initialize Global Worker Pool
-		// TODO: Load max downloads from settings
-		GlobalPool = download.NewWorkerPool(GlobalProgressCh, 4)
+		// Load max downloads from settings
+		settings, err := config.LoadSettings()
+		if err != nil {
+			settings = config.DefaultSettings()
+		}
+		GlobalPool = download.NewWorkerPool(GlobalProgressCh, settings.Connections.MaxConcurrentDownloads)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 

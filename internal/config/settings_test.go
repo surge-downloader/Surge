@@ -134,16 +134,16 @@ func TestSaveAndLoadSettings(t *testing.T) {
 	// We'll test the JSON serialization directly since we can't easily mock GetSettingsPath
 	original := &Settings{
 		General: GeneralSettings{
-			DefaultDownloadDir:     tmpDir,
-			WarnOnDuplicate:        false,
-			ExtensionPrompt:        true,
-			AutoResume:             true,
-			MaxConcurrentDownloads: 7,
+			DefaultDownloadDir: tmpDir,
+			WarnOnDuplicate:    false,
+			ExtensionPrompt:    true,
+			AutoResume:         true,
 		},
 		Connections: ConnectionSettings{
-			MaxConnectionsPerHost: 16,
-			MaxGlobalConnections:  50,
-			UserAgent:             "TestAgent/1.0",
+			MaxConnectionsPerHost:  16,
+			MaxGlobalConnections:   50,
+			MaxConcurrentDownloads: 7,
+			UserAgent:              "TestAgent/1.0",
 		},
 		Chunks: ChunkSettings{
 			MinChunkSize:     1 * MB,
@@ -192,8 +192,8 @@ func TestSaveAndLoadSettings(t *testing.T) {
 	if loaded.General.ExtensionPrompt != original.General.ExtensionPrompt {
 		t.Error("ExtensionPrompt mismatch")
 	}
-	if loaded.General.MaxConcurrentDownloads != original.General.MaxConcurrentDownloads {
-		t.Errorf("MaxConcurrentDownloads mismatch: got %d, want %d", loaded.General.MaxConcurrentDownloads, original.General.MaxConcurrentDownloads)
+	if loaded.Connections.MaxConcurrentDownloads != original.Connections.MaxConcurrentDownloads {
+		t.Errorf("MaxConcurrentDownloads mismatch: got %d, want %d", loaded.Connections.MaxConcurrentDownloads, original.Connections.MaxConcurrentDownloads)
 	}
 	if loaded.Connections.MaxConnectionsPerHost != original.Connections.MaxConnectionsPerHost {
 		t.Error("MaxConnectionsPerHost mismatch")

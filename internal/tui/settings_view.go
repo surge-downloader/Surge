@@ -224,7 +224,7 @@ func (m RootModel) getSettingsValues(category string) map[string]interface{} {
 		values["extension_prompt"] = m.Settings.General.ExtensionPrompt
 		values["auto_resume"] = m.Settings.General.AutoResume
 		values["skip_update_check"] = m.Settings.General.SkipUpdateCheck
-		values["max_concurrent_downloads"] = m.Settings.General.MaxConcurrentDownloads
+
 		values["clipboard_monitor"] = m.Settings.General.ClipboardMonitor
 		values["theme"] = m.Settings.General.Theme
 		values["log_retention_count"] = m.Settings.General.LogRetentionCount
@@ -232,6 +232,7 @@ func (m RootModel) getSettingsValues(category string) map[string]interface{} {
 	case "Network":
 		values["max_connections_per_host"] = m.Settings.Connections.MaxConnectionsPerHost
 		values["max_global_connections"] = m.Settings.Connections.MaxGlobalConnections
+		values["max_concurrent_downloads"] = m.Settings.Connections.MaxConcurrentDownloads
 		values["user_agent"] = m.Settings.Connections.UserAgent
 		values["sequential_download"] = m.Settings.Connections.SequentialDownload
 		values["min_chunk_size"] = m.Settings.Chunks.MinChunkSize
@@ -291,15 +292,7 @@ func (m *RootModel) setGeneralSetting(key, value, typ string) error {
 		m.Settings.General.SkipUpdateCheck = !m.Settings.General.SkipUpdateCheck
 	case "clipboard_monitor":
 		m.Settings.General.ClipboardMonitor = !m.Settings.General.ClipboardMonitor
-	case "max_concurrent_downloads":
-		if v, err := strconv.Atoi(value); err == nil {
-			if v < 1 {
-				v = 1
-			} else if v > 10 {
-				v = 10
-			}
-			m.Settings.General.MaxConcurrentDownloads = v
-		}
+
 	case "theme":
 		var theme int
 		valLower := strings.ToLower(value)
@@ -343,6 +336,15 @@ func (m *RootModel) setConnectionsSetting(key, value, typ string) error {
 	case "max_global_connections":
 		if v, err := strconv.Atoi(value); err == nil {
 			m.Settings.Connections.MaxGlobalConnections = v
+		}
+	case "max_concurrent_downloads":
+		if v, err := strconv.Atoi(value); err == nil {
+			if v < 1 {
+				v = 1
+			} else if v > 10 {
+				v = 10
+			}
+			m.Settings.Connections.MaxConcurrentDownloads = v
 		}
 	case "user_agent":
 		m.Settings.Connections.UserAgent = value
@@ -583,8 +585,7 @@ func (m *RootModel) resetSettingToDefault(category, key string, defaults *config
 			m.Settings.General.AutoResume = defaults.General.AutoResume
 		case "skip_update_check":
 			m.Settings.General.SkipUpdateCheck = defaults.General.SkipUpdateCheck
-		case "max_concurrent_downloads":
-			m.Settings.General.MaxConcurrentDownloads = defaults.General.MaxConcurrentDownloads
+
 		case "clipboard_monitor":
 			m.Settings.General.ClipboardMonitor = defaults.General.ClipboardMonitor
 		case "theme":
@@ -600,6 +601,8 @@ func (m *RootModel) resetSettingToDefault(category, key string, defaults *config
 			m.Settings.Connections.MaxConnectionsPerHost = defaults.Connections.MaxConnectionsPerHost
 		case "max_global_connections":
 			m.Settings.Connections.MaxGlobalConnections = defaults.Connections.MaxGlobalConnections
+		case "max_concurrent_downloads":
+			m.Settings.Connections.MaxConcurrentDownloads = defaults.Connections.MaxConcurrentDownloads
 		case "user_agent":
 			m.Settings.Connections.UserAgent = defaults.Connections.UserAgent
 		case "sequential_download":
