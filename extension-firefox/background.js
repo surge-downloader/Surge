@@ -4,8 +4,6 @@
 const DEFAULT_PORT = 8080;
 const MAX_PORT_SCAN = 100;
 const INTERCEPT_ENABLED_KEY = 'interceptEnabled';
-const SEEN_DOWNLOADS_KEY = 'seenDownloads';
-const DEDUP_WINDOW_MS = 5000; // 5 seconds - catch duplicate events, allow intentional re-downloads
 
 // === State ===
 let cachedPort = null;
@@ -13,13 +11,66 @@ let downloads = new Map();
 let lastHealthCheck = 0;
 let isConnected = false;
 
-// Deduplication: URL hash -> timestamp
-const recentDownloads = new Map();
-
 // Pending duplicate downloads waiting for user confirmation
 // Key: unique id, Value: { downloadItem, filename, directory, timestamp }
 const pendingDuplicates = new Map();
 let pendingDuplicateCounter = 0;
+
+// === Header Capture ===
+// Store request headers for URLs to forward to Surge (cookies, auth, etc.)
+// Key: URL, Value: { headers: {}, timestamp: Date.now() }
+const capturedHeaders = new Map();
+const HEADER_EXPIRY_MS = 120000; // 2 minutes - headers expire after this time
+
+// Capture all headers from requests using webRequest API
+browser.webRequest.onBeforeSendHeaders.addListener(
+  (details) => {
+    if (!details.requestHeaders || !details.url) return;
+    
+    // Capture all headers
+    const headers = {};
+    for (const header of details.requestHeaders) {
+      headers[header.name] = header.value;
+    }
+    
+    // Only store if we captured something
+    if (Object.keys(headers).length > 0) {
+      capturedHeaders.set(details.url, {
+        headers,
+        timestamp: Date.now()
+      });
+      
+      // Cleanup old entries periodically
+      if (capturedHeaders.size > 1000) {
+        cleanupExpiredHeaders();
+      }
+    }
+  },
+  { urls: ["<all_urls>"] },
+  ["requestHeaders"]
+);
+
+function cleanupExpiredHeaders() {
+  const now = Date.now();
+  for (const [url, data] of capturedHeaders) {
+    if (now - data.timestamp > HEADER_EXPIRY_MS) {
+      capturedHeaders.delete(url);
+    }
+  }
+}
+
+function getCapturedHeaders(url) {
+  const data = capturedHeaders.get(url);
+  if (!data) return null;
+  
+  // Check if expired
+  if (Date.now() - data.timestamp > HEADER_EXPIRY_MS) {
+    capturedHeaders.delete(url);
+    return null;
+  }
+  
+  return data.headers;
+}
 
 // === Port Discovery ===
 
@@ -142,6 +193,13 @@ async function sendToSurge(url, filename, absolutePath) {
       body.path = absolutePath;
     }
 
+    // Include captured headers for authenticated downloads
+    const headers = getCapturedHeaders(url);
+    if (headers) {
+      body.headers = headers;
+      console.log('[Surge] Forwarding captured headers to Surge');
+    }
+
     // Always skip TUI approval for extension downloads (vetted by user action)
     // This also bypasses duplicate warnings since extension handles those
     body.skip_approval = true;
@@ -225,46 +283,17 @@ async function isInterceptEnabled() {
 
 // === Deduplication ===
 
-function hashUrl(url) {
-  let hash = 0;
-  for (let i = 0; i < url.length; i++) {
-    const char = url.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return hash.toString(36);
-}
-
-// Check if URL is duplicate (either in recent downloads OR in Surge's active list)
+// Check if URL is already being downloaded by Surge
 async function isDuplicateDownload(url) {
-  const hash = hashUrl(url);
-  const now = Date.now();
-  
-  // Check 1: Time-based (catches rapid double-clicks within 5 seconds)
-  if (recentDownloads.has(hash)) {
-    const lastSeen = recentDownloads.get(hash);
-    if (now - lastSeen < DEDUP_WINDOW_MS) {
-      console.log('[Surge] Duplicate download detected (time-based):', url);
-      return true;
-    }
-  }
-  
-  // Cleanup old entries
-  for (const [key, timestamp] of recentDownloads) {
-    if (now - timestamp > DEDUP_WINDOW_MS) {
-      recentDownloads.delete(key);
-    }
-  }
-  
-  // Check 2: Query Surge's active download list
   try {
     const downloadsList = await fetchDownloadList();
     if (downloadsList && downloadsList.length > 0) {
       const normalizedUrl = url.replace(/\/$/, ''); // Remove trailing slash
       for (const dl of downloadsList) {
         const normalizedDlUrl = (dl.url || '').replace(/\/$/, '');
-        if (normalizedDlUrl === normalizedUrl && dl.status !== 'completed') {
-          console.log('[Surge] Duplicate download detected (in Surge list):', url);
+        // Flag as duplicate if URL exists in Surge's download list (any status)
+        if (normalizedDlUrl === normalizedUrl) {
+          console.log('[Surge] Duplicate download detected (already in Surge):', url);
           return true;
         }
       }
@@ -276,37 +305,6 @@ async function isDuplicateDownload(url) {
   return false;
 }
 
-function markDownloadSeen(url) {
-  const hash = hashUrl(url);
-  recentDownloads.set(hash, Date.now());
-}
-
-// === History Filtering ===
-
-async function markExistingDownloads() {
-  try {
-    const history = await browser.downloads.search({
-      limit: 100,
-      orderBy: ['-startTime'],
-    });
-    
-    const seenUrls = {};
-    const now = Date.now();
-    
-    history.forEach(item => {
-      if (item.url && !item.url.startsWith('blob:') && !item.url.startsWith('data:')) {
-        const hash = hashUrl(item.url);
-        seenUrls[hash] = now;
-        recentDownloads.set(hash, now);
-      }
-    });
-    
-    await browser.storage.local.set({ [SEEN_DOWNLOADS_KEY]: seenUrls });
-    console.log(`[Surge] Marked ${Object.keys(seenUrls).length} existing downloads`);
-  } catch (error) {
-    console.error('[Surge] Error marking existing downloads:', error);
-  }
-}
 
 function isFreshDownload(downloadItem) {
   if (downloadItem.state && downloadItem.state !== 'in_progress') {
@@ -500,14 +498,9 @@ async function handleDownloadIntercept(downloadItem) {
     
     return;
   }
-  
-  // Mark as seen for future duplicate detection
-  markDownloadSeen(downloadItem.url);
-
   const surgeRunning = await checkSurgeHealth();
   if (!surgeRunning) {
     console.log('[Surge] Server not running, using browser download');
-    recentDownloads.delete(hashUrl(downloadItem.url));
     return; // Let browser continue - download is already in progress
   }
 
@@ -602,9 +595,6 @@ browser.runtime.onMessage.addListener((message, sender) => {
           if (pending) {
             pendingDuplicates.delete(message.id);
             
-            // Mark as seen and proceed with download
-            markDownloadSeen(pending.url);
-            
             console.log('[Surge] Sending confirmed duplicate to Surge:', pending.url);
             const result = await sendToSurge(
               pending.url,
@@ -652,7 +642,6 @@ browser.runtime.onMessage.addListener((message, sender) => {
 
 async function initialize() {
   console.log('[Surge] Extension initializing...');
-  await markExistingDownloads();
   await checkSurgeHealth();
   console.log('[Surge] Extension loaded');
 }

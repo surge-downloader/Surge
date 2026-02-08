@@ -178,7 +178,19 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 
 	task := activeTask.Task
 
-	req.Header.Set("User-Agent", d.Runtime.GetUserAgent())
+	// Apply custom headers first (from browser extension: cookies, auth, referer, etc.)
+	for key, val := range d.Headers {
+		// Skip Range header - we set it ourselves for parallel downloads
+		if key != "Range" {
+			req.Header.Set(key, val)
+		}
+	}
+
+	// Set User-Agent from config only if not provided in custom headers
+	if req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", d.Runtime.GetUserAgent())
+	}
+	// Range header is always set for partial downloads (overrides any browser Range header)
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", task.Offset, task.Offset+task.Length-1))
 
 	resp, err := client.Do(req)

@@ -3,9 +3,7 @@
 
 const DEFAULT_PORT = 8080;
 const MAX_PORT_SCAN = 100;
-const INTERCEPT_ENABLED_KEY = 'interceptEnabled';
-const SEEN_DOWNLOADS_KEY = 'seenDownloads';
-const DEDUP_WINDOW_MS = 5000; // 5 seconds - catch duplicate events, allow intentional re-downloads
+const INTERCEPT_ENABLED_KEY = "interceptEnabled";
 
 // === State ===
 let cachedPort = null;
@@ -13,13 +11,66 @@ let downloads = new Map();
 let lastHealthCheck = 0;
 let isConnected = false;
 
-// Deduplication: URL hash -> timestamp
-const recentDownloads = new Map();
-
 // Pending duplicate downloads waiting for user confirmation
 // Key: unique id, Value: { downloadItem, filename, directory, timestamp }
 const pendingDuplicates = new Map();
 let pendingDuplicateCounter = 0;
+
+// === Header Capture ===
+// Store request headers for URLs to forward to Surge (cookies, auth, etc.)
+// Key: URL, Value: { headers: {}, timestamp: Date.now() }
+const capturedHeaders = new Map();
+const HEADER_EXPIRY_MS = 120000; // 2 minutes - headers expire after this time
+
+// Capture all headers from requests using webRequest API
+chrome.webRequest.onBeforeSendHeaders.addListener(
+  (details) => {
+    if (!details.requestHeaders || !details.url) return;
+
+    // Capture all headers
+    const headers = {};
+    for (const header of details.requestHeaders) {
+      headers[header.name] = header.value;
+    }
+
+    // Only store if we captured something
+    if (Object.keys(headers).length > 0) {
+      capturedHeaders.set(details.url, {
+        headers,
+        timestamp: Date.now(),
+      });
+
+      // Cleanup old entries periodically
+      if (capturedHeaders.size > 1000) {
+        cleanupExpiredHeaders();
+      }
+    }
+  },
+  { urls: ["<all_urls>"] },
+  ["requestHeaders"],
+);
+
+function cleanupExpiredHeaders() {
+  const now = Date.now();
+  for (const [url, data] of capturedHeaders) {
+    if (now - data.timestamp > HEADER_EXPIRY_MS) {
+      capturedHeaders.delete(url);
+    }
+  }
+}
+
+function getCapturedHeaders(url) {
+  const data = capturedHeaders.get(url);
+  if (!data) return null;
+
+  // Check if expired
+  if (Date.now() - data.timestamp > HEADER_EXPIRY_MS) {
+    capturedHeaders.delete(url);
+    return null;
+  }
+
+  return data.headers;
+}
 
 // === Port Discovery ===
 
@@ -28,7 +79,7 @@ async function findSurgePort() {
   if (cachedPort) {
     try {
       const response = await fetch(`http://127.0.0.1:${cachedPort}/health`, {
-        method: 'GET',
+        method: "GET",
         signal: AbortSignal.timeout(300),
       });
       if (response.ok) {
@@ -43,7 +94,7 @@ async function findSurgePort() {
   for (let port = DEFAULT_PORT; port < DEFAULT_PORT + MAX_PORT_SCAN; port++) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`, {
-        method: 'GET',
+        method: "GET",
         signal: AbortSignal.timeout(200),
       });
       if (response.ok) {
@@ -54,7 +105,7 @@ async function findSurgePort() {
       }
     } catch {}
   }
-  
+
   isConnected = false;
   return null;
 }
@@ -66,7 +117,7 @@ async function checkSurgeHealth() {
     return isConnected;
   }
   lastHealthCheck = now;
-  
+
   const port = await findSurgePort();
   isConnected = port !== null;
   return isConnected;
@@ -82,22 +133,22 @@ async function fetchDownloadList() {
 
   try {
     const response = await fetch(`http://127.0.0.1:${port}/list`, {
-      method: 'GET',
+      method: "GET",
       signal: AbortSignal.timeout(5000),
     });
-    
+
     if (response.ok) {
       const list = await response.json();
-      
+
       // Handle null or non-array response
       if (!Array.isArray(list)) {
         return [];
       }
-      
+
       // Calculate ETA for each download
-      return list.map(dl => {
+      return list.map((dl) => {
         let eta = null;
-        if (dl.status === 'downloading' && dl.speed > 0 && dl.total_size > 0) {
+        if (dl.status === "downloading" && dl.speed > 0 && dl.total_size > 0) {
           const remaining = dl.total_size - dl.downloaded;
           // Speed is in MB/s, convert to bytes/s
           const speedBytes = dl.speed * 1024 * 1024;
@@ -107,9 +158,9 @@ async function fetchDownloadList() {
       });
     }
   } catch (error) {
-    console.error('[Surge] Error fetching downloads:', error);
+    console.error("[Surge] Error fetching downloads:", error);
   }
-  
+
   return [];
 }
 
@@ -118,14 +169,14 @@ async function fetchDownloadList() {
 async function sendToSurge(url, filename, absolutePath) {
   const port = await findSurgePort();
   if (!port) {
-    console.error('[Surge] No server found');
-    return { success: false, error: 'Server not running' };
+    console.error("[Surge] No server found");
+    return { success: false, error: "Server not running" };
   }
 
   try {
     const body = {
       url: url,
-      filename: filename || '',
+      filename: filename || "",
     };
 
     // Use absolute path directly if provided
@@ -133,29 +184,40 @@ async function sendToSurge(url, filename, absolutePath) {
       body.path = absolutePath;
     }
 
+    // Include captured headers for authenticated downloads
+    const headers = getCapturedHeaders(url);
+    if (headers) {
+      body.headers = headers;
+      console.log("[Surge] Forwarding captured headers to Surge");
+    }
+
     // Always skip TUI approval for extension downloads (vetted by user action)
     // This also bypasses duplicate warnings since extension handles those
     body.skip_approval = true;
 
     const response = await fetch(`http://127.0.0.1:${port}/download`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
     });
 
     if (response.ok) {
       const data = await response.json();
-      console.log('[Surge] Download queued:', data);
+      console.log("[Surge] Download queued:", data);
       return { success: true, data };
     } else {
       const error = await response.text();
-      console.error('[Surge] Failed to queue download:', response.status, error);
+      console.error(
+        "[Surge] Failed to queue download:",
+        response.status,
+        error,
+      );
       return { success: false, error };
     }
   } catch (error) {
-    console.error('[Surge] Error sending to Surge:', error);
+    console.error("[Surge] Error sending to Surge:", error);
     return { success: false, error: error.message };
   }
 }
@@ -168,12 +230,12 @@ async function pauseDownload(id) {
 
   try {
     const response = await fetch(`http://127.0.0.1:${port}/pause?id=${id}`, {
-      method: 'POST',
+      method: "POST",
       signal: AbortSignal.timeout(5000),
     });
     return response.ok;
   } catch (error) {
-    console.error('[Surge] Error pausing download:', error);
+    console.error("[Surge] Error pausing download:", error);
     return false;
   }
 }
@@ -184,12 +246,12 @@ async function resumeDownload(id) {
 
   try {
     const response = await fetch(`http://127.0.0.1:${port}/resume?id=${id}`, {
-      method: 'POST',
+      method: "POST",
       signal: AbortSignal.timeout(5000),
     });
     return response.ok;
   } catch (error) {
-    console.error('[Surge] Error resuming download:', error);
+    console.error("[Surge] Error resuming download:", error);
     return false;
   }
 }
@@ -200,12 +262,12 @@ async function cancelDownload(id) {
 
   try {
     const response = await fetch(`http://127.0.0.1:${port}/delete?id=${id}`, {
-      method: 'DELETE',
+      method: "DELETE",
       signal: AbortSignal.timeout(5000),
     });
     return response.ok;
   } catch (error) {
-    console.error('[Surge] Error canceling download:', error);
+    console.error("[Surge] Error canceling download:", error);
     return false;
   }
 }
@@ -219,95 +281,32 @@ async function isInterceptEnabled() {
 
 // === Deduplication ===
 
-function hashUrl(url) {
-  // Simple hash for URL deduplication
-  let hash = 0;
-  for (let i = 0; i < url.length; i++) {
-    const char = url.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return hash.toString(36);
-}
-
-// Check if URL is duplicate (either in recent downloads OR in Surge's active list)
+// Check if URL is already being downloaded by Surge
 async function isDuplicateDownload(url) {
-  const hash = hashUrl(url);
-  const now = Date.now();
-  
-  // Check 1: Time-based (catches rapid double-clicks within 5 seconds)
-  if (recentDownloads.has(hash)) {
-    const lastSeen = recentDownloads.get(hash);
-    if (now - lastSeen < DEDUP_WINDOW_MS) {
-      console.log('[Surge] Duplicate download detected (time-based):', url);
-      return true;
-    }
-  }
-  
-  // Cleanup old entries
-  for (const [key, timestamp] of recentDownloads) {
-    if (now - timestamp > DEDUP_WINDOW_MS) {
-      recentDownloads.delete(key);
-    }
-  }
-  
-  // Check 2: Query Surge's active download list
   try {
     const downloadsList = await fetchDownloadList();
     if (downloadsList && downloadsList.length > 0) {
-      const normalizedUrl = url.replace(/\/$/, ''); // Remove trailing slash
+      const normalizedUrl = url.replace(/\/$/, ""); // Remove trailing slash
       for (const dl of downloadsList) {
-        const normalizedDlUrl = (dl.url || '').replace(/\/$/, '');
-        if (normalizedDlUrl === normalizedUrl && dl.status !== 'completed') {
-          console.log('[Surge] Duplicate download detected (in Surge list):', url);
+        const normalizedDlUrl = (dl.url || "").replace(/\/$/, "");
+        // Flag as duplicate if URL exists in Surge's download list (any status)
+        if (normalizedDlUrl === normalizedUrl) {
+          console.log("[Surge] Duplicate download detected (already in Surge):", url);
           return true;
         }
       }
     }
   } catch (e) {
-    console.log('[Surge] Could not check Surge list for duplicates:', e);
+    console.log("[Surge] Could not check Surge list for duplicates:", e);
   }
-  
+
   return false;
 }
 
-function markDownloadSeen(url) {
-  const hash = hashUrl(url);
-  recentDownloads.set(hash, Date.now());
-}
-
-// === History Filtering ===
-
-async function markExistingDownloads() {
-  // On startup, mark recent browser downloads as "seen" to prevent re-downloading
-  try {
-    const history = await chrome.downloads.search({
-      limit: 100,
-      orderBy: ['-startTime'],
-    });
-    
-    const seenUrls = {};
-    const now = Date.now();
-    
-    history.forEach(item => {
-      if (item.url && !item.url.startsWith('blob:') && !item.url.startsWith('data:')) {
-        const hash = hashUrl(item.url);
-        seenUrls[hash] = now;
-        recentDownloads.set(hash, now);
-      }
-    });
-    
-    // Persist to storage for future sessions
-    await chrome.storage.local.set({ [SEEN_DOWNLOADS_KEY]: seenUrls });
-    console.log(`[Surge] Marked ${Object.keys(seenUrls).length} existing downloads`);
-  } catch (error) {
-    console.error('[Surge] Error marking existing downloads:', error);
-  }
-}
 
 function isFreshDownload(downloadItem) {
   // Must be in progress (not completed/interrupted from history)
-  if (downloadItem.state && downloadItem.state !== 'in_progress') {
+  if (downloadItem.state && downloadItem.state !== "in_progress") {
     return false;
   }
 
@@ -322,54 +321,54 @@ function isFreshDownload(downloadItem) {
   if (diff > 30000) {
     return false;
   }
-  
+
   return true;
 }
 
 function shouldSkipUrl(url) {
   // Skip blob and data URLs
-  if (url.startsWith('blob:') || url.startsWith('data:')) {
+  if (url.startsWith("blob:") || url.startsWith("data:")) {
     return true;
   }
-  
+
   // Skip chrome extension URLs
-  if (url.startsWith('chrome-extension:') || url.startsWith('moz-extension:')) {
+  if (url.startsWith("chrome-extension:") || url.startsWith("moz-extension:")) {
     return true;
   }
-  
+
   return false;
 }
 
 // === Path Extraction ===
 
 function extractPathInfo(downloadItem) {
-  let filename = '';
-  let directory = '';
+  let filename = "";
+  let directory = "";
 
   if (downloadItem.filename) {
     // downloadItem.filename contains the full path chosen by user
     // On Windows: C:\Users\Name\Downloads\file.zip
     // On macOS/Linux: /home/user/Downloads/file.zip
-    
+
     const fullPath = downloadItem.filename;
-    
+
     // Normalize separators and split
-    const normalized = fullPath.replace(/\\/g, '/');
-    const parts = normalized.split('/');
-    
-    filename = parts.pop() || '';
-    
+    const normalized = fullPath.replace(/\\/g, "/");
+    const parts = normalized.split("/");
+
+    filename = parts.pop() || "";
+
     if (parts.length > 0) {
       // Reconstruct directory path
       // On Windows, we need to preserve the drive letter
       if (/^[A-Za-z]:$/.test(parts[0])) {
         // Windows path with drive letter
-        directory = parts.join('/');
-      } else if (parts[0] === '') {
+        directory = parts.join("/");
+      } else if (parts[0] === "") {
         // Unix absolute path (starts with /)
-        directory = '/' + parts.slice(1).join('/');
+        directory = "/" + parts.slice(1).join("/");
       } else {
-        directory = parts.join('/');
+        directory = parts.join("/");
       }
     }
   }
@@ -391,28 +390,35 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     return;
   }
 
-  console.log('[Surge] Download created:', downloadItem.url, 'filename:', downloadItem.filename);
+  console.log(
+    "[Surge] Download created:",
+    downloadItem.url,
+    "filename:",
+    downloadItem.filename,
+  );
 
   // Quick checks that can be done immediately
   const enabled = await isInterceptEnabled();
   if (!enabled) {
-    console.log('[Surge] Interception disabled');
+    console.log("[Surge] Interception disabled");
     return;
   }
 
   if (shouldSkipUrl(downloadItem.url)) {
-    console.log('[Surge] Skipping URL type');
+    console.log("[Surge] Skipping URL type");
     return;
   }
 
   if (!isFreshDownload(downloadItem)) {
-    console.log('[Surge] Ignoring historical download');
+    console.log("[Surge] Ignoring historical download");
     return;
   }
 
   // If filename is already determined (auto-download mode), intercept immediately
   if (downloadItem.filename && downloadItem.filename.length > 0) {
-    console.log('[Surge] Filename already determined, intercepting immediately');
+    console.log(
+      "[Surge] Filename already determined, intercepting immediately",
+    );
     processedIds.add(downloadItem.id);
     setTimeout(() => processedIds.delete(downloadItem.id), 120000);
     await handleDownloadIntercept(downloadItem);
@@ -420,16 +426,18 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
   }
 
   // Otherwise, wait for filename to be determined (Save As dialog)
-  console.log('[Surge] Waiting for filename determination (Save As dialog)...');
+  console.log("[Surge] Waiting for filename determination (Save As dialog)...");
   pendingInterceptions.set(downloadItem.id, {
     ...downloadItem,
     url: downloadItem.url, // Ensure URL is captured
   });
-  
+
   // Set timeout to cleanup if filename never gets determined (user cancelled)
   setTimeout(() => {
     if (pendingInterceptions.has(downloadItem.id)) {
-      console.log('[Surge] Timeout waiting for filename, user likely cancelled');
+      console.log(
+        "[Surge] Timeout waiting for filename, user likely cancelled",
+      );
       pendingInterceptions.delete(downloadItem.id);
     }
   }, 300000); // 5 minute timeout for slow users
@@ -444,29 +452,39 @@ chrome.downloads.onChanged.addListener(async (delta) => {
 
   // Check if filename was just determined (this happens after Save As dialog)
   if (delta.filename && delta.filename.current) {
-    console.log('[Surge] Filename determined via Save As:', delta.filename.current);
-    
+    console.log(
+      "[Surge] Filename determined via Save As:",
+      delta.filename.current,
+    );
+
     const downloadItem = pendingInterceptions.get(delta.id);
     pendingInterceptions.delete(delta.id);
-    
+
     // Mark as processed
     if (processedIds.has(delta.id)) {
       return;
     }
     processedIds.add(delta.id);
     setTimeout(() => processedIds.delete(delta.id), 120000);
-    
+
     // Update the downloadItem with the actual chosen filename/path
     downloadItem.filename = delta.filename.current;
     downloadItem.id = delta.id;
-    
+
     await handleDownloadIntercept(downloadItem);
     return;
   }
-  
+
   // If download was cancelled or errored before filename was determined, clean up
-  if (delta.state && (delta.state.current === 'interrupted' || delta.state.current === 'complete')) {
-    console.log('[Surge] Download ended before interception, state:', delta.state.current);
+  if (
+    delta.state &&
+    (delta.state.current === "interrupted" ||
+      delta.state.current === "complete")
+  ) {
+    console.log(
+      "[Surge] Download ended before interception, state:",
+      delta.state.current,
+    );
     pendingInterceptions.delete(delta.id);
   }
 });
@@ -479,114 +497,113 @@ async function handleDownloadIntercept(downloadItem) {
       await chrome.downloads.cancel(downloadItem.id);
       await chrome.downloads.erase({ id: downloadItem.id });
     } catch (e) {
-      console.log('[Surge] Error canceling duplicate:', e);
+      console.log("[Surge] Error canceling duplicate:", e);
     }
-    
+
     // Store pending duplicate and prompt user
     const pendingId = `dup_${++pendingDuplicateCounter}`;
     const { filename, directory } = extractPathInfo(downloadItem);
-    const displayName = filename || downloadItem.url.split('/').pop() || 'Unknown file';
-    
+    const displayName =
+      filename || downloadItem.url.split("/").pop() || "Unknown file";
+
     pendingDuplicates.set(pendingId, {
       downloadItem,
       filename,
       directory,
       url: downloadItem.url,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
-    
+
     // Cleanup old pending duplicates (older than 60s)
     for (const [id, data] of pendingDuplicates) {
       if (Date.now() - data.timestamp > 60000) {
         pendingDuplicates.delete(id);
       }
     }
-    
+
     // Try to open popup and send prompt
     try {
       await chrome.action.openPopup();
     } catch (e) {
       // Popup may already be open
     }
-    
+
     // Send message to popup
-    chrome.runtime.sendMessage({
-      type: 'promptDuplicate',
-      id: pendingId,
-      filename: displayName
-    }).catch(() => {
-      // Popup might not be open, that's ok - duplicate will timeout
-    });
-    
+    chrome.runtime
+      .sendMessage({
+        type: "promptDuplicate",
+        id: pendingId,
+        filename: displayName,
+      })
+      .catch(() => {
+        // Popup might not be open, that's ok - duplicate will timeout
+      });
+
     return;
   }
-  
-  // Mark as seen for future duplicate detection
-  markDownloadSeen(downloadItem.url);
 
   // Check if Surge is running
   const surgeRunning = await checkSurgeHealth();
   if (!surgeRunning) {
-    console.log('[Surge] Server not running, using browser download');
-    // Remove from dedup map since we're not handling it
-    recentDownloads.delete(hashUrl(downloadItem.url));
+    console.log("[Surge] Server not running, using browser download");
     return; // Let browser continue - download is already in progress
   }
 
   // Extract path info - filename now contains the full path from Save As dialog
   const { filename, directory } = extractPathInfo(downloadItem);
-  
-  console.log('[Surge] Extracted path info - filename:', filename, 'directory:', directory);
+
+  console.log(
+    "[Surge] Extracted path info - filename:",
+    filename,
+    "directory:",
+    directory,
+  );
 
   // Cancel browser download and send to Surge
   try {
     await chrome.downloads.cancel(downloadItem.id);
     await chrome.downloads.erase({ id: downloadItem.id });
 
-    const result = await sendToSurge(
-      downloadItem.url,
-      filename,
-      directory
-    );
+    const result = await sendToSurge(downloadItem.url, filename, directory);
 
     if (result.success) {
       // Check for pending approval
-      if (result.data && result.data.status === 'pending_approval') {
+      if (result.data && result.data.status === "pending_approval") {
         chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icons/icon48.png',
-          title: 'Surge - Confirmation Required',
-          message: `Please confirm download in Surge TUI: ${filename || downloadItem.url.split('/').pop()}`,
+          type: "basic",
+          iconUrl: "icons/icon48.png",
+          title: "Surge - Confirmation Required",
+          message: `Please confirm download in Surge TUI: ${filename || downloadItem.url.split("/").pop()}`,
         });
         return; // Don't auto-open popup for pending interactions
       }
 
       // Show notification
       chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icons/icon48.png',
-        title: 'Surge',
-        message: `Download started: ${filename || downloadItem.url.split('/').pop()}`,
+        type: "basic",
+        iconUrl: "icons/icon48.png",
+        title: "Surge",
+        message: `Download started: ${filename || downloadItem.url.split("/").pop()}`,
       });
-      
+
       // Auto-open the popup to show download progress
       try {
         await chrome.action.openPopup();
       } catch (e) {
         // openPopup may fail if popup is already open or no user gesture
-        console.log('[Surge] Could not auto-open popup:', e.message);
+        console.log("[Surge] Could not auto-open popup:", e.message);
       }
     } else {
       // Failed to send to Surge - show error notification
       chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icons/icon48.png',
-        title: 'Surge Error',
+        type: "basic",
+        iconUrl: "icons/icon48.png",
+        title: "Surge Error",
         message: `Failed to start download: ${result.error}`,
       });
     }
   } catch (error) {
-    console.error('[Surge] Failed to intercept download:', error);
+    console.error("[Surge] Failed to intercept download:", error);
   }
 }
 
@@ -597,120 +614,127 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     try {
       switch (message.type) {
-        case 'checkHealth': {
+        case "checkHealth": {
           const healthy = await checkSurgeHealth();
           sendResponse({ healthy });
           break;
         }
-        
-        case 'getStatus': {
+
+        case "getStatus": {
           const enabled = await isInterceptEnabled();
           sendResponse({ enabled });
           break;
         }
-        
-        case 'setStatus': {
-          await chrome.storage.local.set({ [INTERCEPT_ENABLED_KEY]: message.enabled });
+
+        case "setStatus": {
+          await chrome.storage.local.set({
+            [INTERCEPT_ENABLED_KEY]: message.enabled,
+          });
           sendResponse({ success: true });
           break;
         }
-        
-        case 'getDownloads': {
+
+        case "getDownloads": {
           const downloadsList = await fetchDownloadList();
-          sendResponse({ 
-            downloads: downloadsList, 
-            connected: isConnected 
+          sendResponse({
+            downloads: downloadsList,
+            connected: isConnected,
           });
           break;
         }
-        
-        case 'pauseDownload': {
+
+        case "pauseDownload": {
           const success = await pauseDownload(message.id);
           sendResponse({ success });
           break;
         }
-        
-        case 'resumeDownload': {
+
+        case "resumeDownload": {
           const success = await resumeDownload(message.id);
           sendResponse({ success });
           break;
         }
-        
-        case 'cancelDownload': {
+
+        case "cancelDownload": {
           const success = await cancelDownload(message.id);
           sendResponse({ success });
           break;
         }
-        
-        case 'confirmDuplicate': {
+
+        case "confirmDuplicate": {
           // User confirmed duplicate download
           const pending = pendingDuplicates.get(message.id);
-          console.log('[Surge] confirmDuplicate called, pending:', pending ? 'found' : 'NOT FOUND', 'id:', message.id);
+          console.log(
+            "[Surge] confirmDuplicate called, pending:",
+            pending ? "found" : "NOT FOUND",
+            "id:",
+            message.id,
+          );
           if (pending) {
             pendingDuplicates.delete(message.id);
-            
-            // Mark as seen and proceed with download
-            markDownloadSeen(pending.url);
-            
-            console.log('[Surge] Sending confirmed duplicate to Surge:', pending.url);
+
+            console.log(
+              "[Surge] Sending confirmed duplicate to Surge:",
+              pending.url,
+            );
             const result = await sendToSurge(
               pending.url,
               pending.filename,
-              pending.directory
+              pending.directory,
             );
-            console.log('[Surge] sendToSurge result:', result);
-            
+            console.log("[Surge] sendToSurge result:", result);
+
             if (result.success) {
               chrome.notifications.create({
-                type: 'basic',
-                iconUrl: 'icons/icon48.png',
-                title: 'Surge',
-                message: `Download started: ${pending.filename || pending.url.split('/').pop()}`,
+                type: "basic",
+                iconUrl: "icons/icon48.png",
+                title: "Surge",
+                message: `Download started: ${pending.filename || pending.url.split("/").pop()}`,
               });
             }
-            
+
             sendResponse({ success: result.success });
           } else {
-            sendResponse({ success: false, error: 'Pending download not found' });
+            sendResponse({
+              success: false,
+              error: "Pending download not found",
+            });
           }
           break;
         }
-        
-        case 'skipDuplicate': {
+
+        case "skipDuplicate": {
           // User skipped duplicate download
           const pending = pendingDuplicates.get(message.id);
           if (pending) {
             pendingDuplicates.delete(message.id);
-            console.log('[Surge] User skipped duplicate download:', pending.url);
+            console.log(
+              "[Surge] User skipped duplicate download:",
+              pending.url,
+            );
           }
           sendResponse({ success: true });
           break;
         }
-        
+
         default:
-          sendResponse({ error: 'Unknown message type' });
+          sendResponse({ error: "Unknown message type" });
       }
     } catch (error) {
-      console.error('[Surge] Message handler error:', error);
+      console.error("[Surge] Message handler error:", error);
       sendResponse({ error: error.message });
     }
   })();
-  
+
   return true; // Keep channel open for async response
 });
 
 // === Initialization ===
 
 async function initialize() {
-  console.log('[Surge] Extension initializing...');
-  
-  // Mark existing downloads to prevent re-downloading
-  await markExistingDownloads();
-  
-  // Initial health check
+  console.log("[Surge] Extension initializing...");
   await checkSurgeHealth();
-  
-  console.log('[Surge] Extension loaded');
+  console.log("[Surge] Extension loaded");
 }
 
 initialize();
