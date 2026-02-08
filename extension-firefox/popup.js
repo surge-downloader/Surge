@@ -499,6 +499,20 @@ async function init() {
   } catch (error) {
     console.error('[Surge Popup] Error getting status:', error);
   }
+
+  // Check for pending duplicates
+  if (isExtensionContext) {
+    try {
+      const response = await apiCall('getPendingDuplicates');
+      if (response && response.duplicates && response.duplicates.length > 0) {
+        // Show the first one
+        const dup = response.duplicates[0];
+        showDuplicateModal(dup.id, dup.filename);
+      }
+    } catch (error) {
+      console.error('[Surge Popup] Error checking duplicates:', error);
+    }
+  }
   
   // Initial fetch
   await fetchDownloads();

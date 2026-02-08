@@ -480,6 +480,14 @@ async function handleDownloadIntercept(downloadItem) {
       }
     }
     
+    // Show notification for duplicate (clickable to open popup)
+    browser.notifications.create(`surge-dup-${pendingId}`, {
+      type: "basic",
+      iconUrl: "icons/icon48.png",
+      title: "Surge - Duplicate Download",
+      message: `Duplicate detected: ${displayName}. Click to resolve.`,
+    });
+
     // Try to open popup and send prompt
     try {
       await browser.action.openPopup();
@@ -517,7 +525,7 @@ async function handleDownloadIntercept(downloadItem) {
     );
 
     if (result.success) {
-      browser.notifications.create({
+      browser.notifications.create(`surge-confirm-${downloadItem.id}`, {
         type: 'basic',
         iconUrl: 'icons/icon48.png',
         title: 'Surge',
@@ -543,6 +551,20 @@ async function handleDownloadIntercept(downloadItem) {
     console.error('[Surge] Failed to intercept download:', error);
   }
 }
+
+// Handle notification clicks
+browser.notifications.onClicked.addListener((notificationId) => {
+  if (notificationId.startsWith("surge-confirm-") || notificationId.startsWith("surge-dup-")) {
+    // Attempt to open popup
+    try {
+      browser.action.openPopup();
+    } catch (e) {
+      console.error("[Surge] Failed to open popup from notification:", e);
+    }
+    // Clear notification
+    browser.notifications.clear(notificationId);
+  }
+});
 
 // === Message Handling ===
 
@@ -618,14 +640,30 @@ browser.runtime.onMessage.addListener((message, sender) => {
           }
         }
         
-        case 'skipDuplicate': {
+        case "skipDuplicate": {
           // User skipped duplicate download
           const pending = pendingDuplicates.get(message.id);
           if (pending) {
             pendingDuplicates.delete(message.id);
-            console.log('[Surge] User skipped duplicate download:', pending.url);
+            console.log(
+              "[Surge] User skipped duplicate download:",
+              pending.url,
+            );
           }
           return { success: true };
+        }
+
+        case "getPendingDuplicates": {
+          const duplicates = [];
+          for (const [id, data] of pendingDuplicates) {
+            duplicates.push({
+              id,
+              filename:
+                data.filename || data.url.split("/").pop() || "Unknown file",
+              url: data.url,
+            });
+          }
+          return { duplicates };
         }
         
         default:

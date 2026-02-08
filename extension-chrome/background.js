@@ -397,36 +397,41 @@ async function checkPendingDownload(id) {
     }
 
     const item = results[0];
-    
+
     // If state is not in_progress, it might be interrupted or complete
     if (item.state !== "in_progress") {
-       // If it is interrupted, it might be the user cancelled Save As.
-       // We should stop polling.
-       pendingInterceptions.delete(id);
-       return;
+      // If it is interrupted, it might be the user cancelled Save As.
+      // We should stop polling.
+      pendingInterceptions.delete(id);
+      return;
     }
 
     // Check if data is moving (Auto-download)
     // The browser has started writing data, meaning user accepted "Save As" or it was automatic.
-    if (item.bytesReceived > 0 || (item.fileSize > 0 && item.bytesReceived === item.fileSize)) {
-       console.log("[Surge] Detected active download progress, intercepting:", id);
-       
-        // Remove from pending so we don't process it again
-       pendingInterceptions.delete(id);
-       
-       // Mark as processed
-       processedIds.add(id);
-       setTimeout(() => processedIds.delete(id), 120000);
+    if (
+      item.bytesReceived > 0 ||
+      (item.fileSize > 0 && item.bytesReceived === item.fileSize)
+    ) {
+      console.log(
+        "[Surge] Detected active download progress, intercepting:",
+        id,
+      );
 
-       // Update item with latest info
-       await handleDownloadIntercept(item);
-       return;
+      // Remove from pending so we don't process it again
+      pendingInterceptions.delete(id);
+
+      // Mark as processed
+      processedIds.add(id);
+      setTimeout(() => processedIds.delete(id), 120000);
+
+      // Update item with latest info
+      await handleDownloadIntercept(item);
+      return;
     }
 
     // If still 0 bytes, it could be "Save As" dialog open or just slow start.
     // We keep polling.
     setTimeout(() => checkPendingDownload(id), 1000);
-
   } catch (e) {
     console.error("[Surge] Error checking pending download:", e);
     pendingInterceptions.delete(id);
@@ -577,11 +582,20 @@ async function handleDownloadIntercept(downloadItem) {
       }
     }
 
-    // Try to open popup and send prompt
+    // Show notification for duplicate (clickable to open popup)
+    chrome.notifications.create(`surge-dup-${pendingId}`, {
+      type: "basic",
+      iconUrl: "icons/icon48.png",
+      title: "Surge - Duplicate Download",
+      message: `Duplicate detected: ${displayName}. Click to resolve.`,
+      requireInteraction: true,
+    });
+
+    // Try to open popup and send prompt (might fail if no user gesture)
     try {
       await chrome.action.openPopup();
     } catch (e) {
-      // Popup may already be open
+      console.log("[Surge] openPopup failed (might be open or no user gesture):", e);
     }
 
     // Send message to popup
@@ -591,8 +605,9 @@ async function handleDownloadIntercept(downloadItem) {
         id: pendingId,
         filename: displayName,
       })
-      .catch(() => {
+      .catch((e) => {
         // Popup might not be open, that's ok - duplicate will timeout
+        console.log("[Surge] Sending promptDuplicate failed:", e);
       });
 
     return;
@@ -623,13 +638,13 @@ async function handleDownloadIntercept(downloadItem) {
     const result = await sendToSurge(downloadItem.url, filename, directory);
 
     if (result.success) {
-      // Check for pending approval
       if (result.data && result.data.status === "pending_approval") {
-        chrome.notifications.create({
+        chrome.notifications.create(`surge-confirm-${downloadItem.id}`, {
           type: "basic",
           iconUrl: "icons/icon48.png",
           title: "Surge - Confirmation Required",
-          message: `Please confirm download in Surge TUI: ${filename || downloadItem.url.split("/").pop()}`,
+          message: `Click to confirm download: ${filename || downloadItem.url.split("/").pop()}`,
+          requireInteraction: true,
         });
         return; // Don't auto-open popup for pending interactions
       }
@@ -662,6 +677,20 @@ async function handleDownloadIntercept(downloadItem) {
     console.error("[Surge] Failed to intercept download:", error);
   }
 }
+
+// Handle notification clicks
+chrome.notifications.onClicked.addListener((notificationId) => {
+  if (notificationId.startsWith("surge-confirm-") || notificationId.startsWith("surge-dup-")) {
+    // Attempt to open popup
+    try {
+      chrome.action.openPopup();
+    } catch (e) {
+      console.error("[Surge] Failed to open popup from notification:", e);
+    }
+    // Clear notification
+    chrome.notifications.clear(notificationId);
+  }
+});
 
 // === Message Handling ===
 
@@ -770,6 +799,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             );
           }
           sendResponse({ success: true });
+          break;
+        }
+
+        case "getPendingDuplicates": {
+          const duplicates = [];
+          for (const [id, data] of pendingDuplicates) {
+            duplicates.push({
+              id,
+              filename:
+                data.filename || data.url.split("/").pop() || "Unknown file",
+              url: data.url,
+            });
+          }
+          sendResponse({ duplicates });
           break;
         }
 
