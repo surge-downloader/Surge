@@ -394,59 +394,6 @@ function extractPathInfo(downloadItem) {
 // 2. onChanged: Wait for filename to be determined (after Save As dialog), then intercept
 
 const processedIds = new Set();
-const pendingInterceptions = new Map(); // downloadId -> downloadItem
-
-async function checkPendingDownload(id) {
-  if (!pendingInterceptions.has(id)) return;
-
-  try {
-    const results = await chrome.downloads.search({ id });
-    if (!results || results.length === 0) {
-      pendingInterceptions.delete(id);
-      return;
-    }
-
-    const item = results[0];
-
-    // If state is not in_progress, it might be interrupted or complete
-    if (item.state !== "in_progress") {
-      // If it is interrupted, it might be the user cancelled Save As.
-      // We should stop polling.
-      pendingInterceptions.delete(id);
-      return;
-    }
-
-    // Check if data is moving (Auto-download)
-    // The browser has started writing data, meaning user accepted "Save As" or it was automatic.
-    if (
-      item.bytesReceived > 0 ||
-      (item.fileSize > 0 && item.bytesReceived === item.fileSize)
-    ) {
-      console.log(
-        "[Surge] Detected active download progress, intercepting:",
-        id,
-      );
-
-      // Remove from pending so we don't process it again
-      pendingInterceptions.delete(id);
-
-      // Mark as processed
-      processedIds.add(id);
-      setTimeout(() => processedIds.delete(id), 120000);
-
-      // Update item with latest info
-      await handleDownloadIntercept(item);
-      return;
-    }
-
-    // If still 0 bytes, it could be "Save As" dialog open or just slow start.
-    // We keep polling.
-    setTimeout(() => checkPendingDownload(id), 1000);
-  } catch (e) {
-    console.error("[Surge] Error checking pending download:", e);
-    pendingInterceptions.delete(id);
-  }
-}
 
 chrome.downloads.onCreated.addListener(async (downloadItem) => {
   // Prevent duplicate events for the same download ID
@@ -480,84 +427,12 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     return;
   }
 
-  // Queue for delayed check (polling)
-  // This allows "Save As" dialogs to open without being immediately killed.
-  // We will poll for byte progress or filename changes.
+  // Intercept immediately - we don't wait for Save As / filenames anymore
+  // as user requested to force default directory for everything.
+  processedIds.add(downloadItem.id);
+  setTimeout(() => processedIds.delete(downloadItem.id), 120000);
 
-  if (pendingInterceptions.has(downloadItem.id)) {
-    return;
-  }
-
-  console.log(
-    "[Surge] Queueing download for interception check:",
-    downloadItem.id,
-  );
-
-  pendingInterceptions.set(downloadItem.id, {
-    ...downloadItem,
-    url: downloadItem.url,
-    timestamp: Date.now(),
-  });
-
-  // Start polling
-  setTimeout(() => checkPendingDownload(downloadItem.id), 500);
-
-  // Set timeout to cleanup (safety net)
-  setTimeout(() => {
-    if (pendingInterceptions.has(downloadItem.id)) {
-      console.log(
-        "[Surge] Timeout waiting for download start/filename, cleanup:",
-        downloadItem.id,
-      );
-      pendingInterceptions.delete(downloadItem.id);
-    }
-  }, 300000); // 5 minute timeout for slow users
-});
-
-// Listen for download changes to catch when filename is determined
-chrome.downloads.onChanged.addListener(async (delta) => {
-  // Check if this download is pending interception
-  if (!pendingInterceptions.has(delta.id)) {
-    return;
-  }
-
-  // Check if filename was just determined (this happens after Save As dialog)
-  if (delta.filename && delta.filename.current) {
-    console.log(
-      "[Surge] Filename determined via Save As:",
-      delta.filename.current,
-    );
-
-    const downloadItem = pendingInterceptions.get(delta.id);
-    pendingInterceptions.delete(delta.id);
-
-    // Mark as processed
-    if (processedIds.has(delta.id)) {
-      return;
-    }
-    processedIds.add(delta.id);
-    setTimeout(() => processedIds.delete(delta.id), 120000);
-
-    // Update the downloadItem with the actual chosen filename/path
-    downloadItem.filename = delta.filename.current;
-    downloadItem.id = delta.id;
-
-    await handleDownloadIntercept(downloadItem);
-    return;
-  }
-
-  // If download was cancelled or errored before filename was determined, clean up
-  if (
-    delta.state &&
-    (delta.state.current === "interrupted" ||
-      delta.state.current === "complete")
-  ) {
-    console.log(
-      "[Surge] Download ended before interception, state:",
-      delta.state.current,
-    );
-    pendingInterceptions.delete(delta.id);
-  }
+  await handleDownloadIntercept(downloadItem);
 });
 
 async function handleDownloadIntercept(downloadItem) {
@@ -626,13 +501,12 @@ async function handleDownloadIntercept(downloadItem) {
   }
 
   // Extract path info - filename now contains the full path from Save As dialog
-  const { filename, directory } = extractPathInfo(downloadItem);
+  const { filename } = extractPathInfo(downloadItem);
 
   console.log(
     "[Surge] Extracted path info - filename:",
     filename,
-    "directory:",
-    directory,
+    "directory: (forced default)",
   );
 
   // Cancel browser download and send to Surge
@@ -640,7 +514,8 @@ async function handleDownloadIntercept(downloadItem) {
     await chrome.downloads.cancel(downloadItem.id);
     await chrome.downloads.erase({ id: downloadItem.id });
 
-    const result = await sendToSurge(downloadItem.url, filename, directory);
+    // Force default directory by passing empty string
+    const result = await sendToSurge(downloadItem.url, filename, "");
 
     if (result.success) {
       if (result.data && result.data.status === "pending_approval") {
