@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Surge Download Manager",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "High-performance download acceleration with live progress tracking. Intercepts downloads and accelerates them using Surge's multi-connection engine.",
   "permissions": ["downloads", "storage", "notifications"],
   "host_permissions": ["http://127.0.0.1/*"],

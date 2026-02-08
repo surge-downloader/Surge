@@ -366,18 +366,19 @@ function extractPathInfo(downloadItem) {
 }
 
 // === Download Interception ===
+// Firefox doesn't support onDeterminingFilename, so we use a two-phase approach:
+// 1. onCreated: Store the download as "pending" 
+// 2. onChanged: Wait for filename to be determined, then intercept
 
 const processedIds = new Set();
+const pendingInterceptions = new Map(); // downloadId -> downloadItem
 
 browser.downloads.onCreated.addListener(async (downloadItem) => {
   if (processedIds.has(downloadItem.id)) {
     return;
   }
-  processedIds.add(downloadItem.id);
   
-  setTimeout(() => processedIds.delete(downloadItem.id), 120000);
-
-  console.log('[Surge] Download detected:', downloadItem.url);
+  console.log('[Surge] Download created:', downloadItem.url);
 
   const enabled = await isInterceptEnabled();
   if (!enabled) {
@@ -394,13 +395,72 @@ browser.downloads.onCreated.addListener(async (downloadItem) => {
     console.log('[Surge] Ignoring historical download');
     return;
   }
+
+  // If filename is already determined (auto-download mode), intercept immediately
+  if (downloadItem.filename && downloadItem.filename.length > 0) {
+    console.log('[Surge] Filename already determined, intercepting immediately');
+    processedIds.add(downloadItem.id);
+    setTimeout(() => processedIds.delete(downloadItem.id), 120000);
+    await handleDownloadIntercept(downloadItem);
+    return;
+  }
+
+  // Otherwise, wait for filename to be determined (Save As dialog)
+  console.log('[Surge] Waiting for filename determination...');
+  pendingInterceptions.set(downloadItem.id, downloadItem);
+  
+  // Set timeout to cleanup if filename never gets determined
+  setTimeout(() => {
+    if (pendingInterceptions.has(downloadItem.id)) {
+      console.log('[Surge] Timeout waiting for filename, cleaning up');
+      pendingInterceptions.delete(downloadItem.id);
+    }
+  }, 60000);
+});
+
+// Listen for download changes to catch when filename is determined
+browser.downloads.onChanged.addListener(async (delta) => {
+  // Check if this download is pending interception
+  if (!pendingInterceptions.has(delta.id)) {
+    return;
+  }
+
+  // Check if filename was just determined
+  if (delta.filename && delta.filename.current) {
+    console.log('[Surge] Filename determined:', delta.filename.current);
+    
+    const downloadItem = pendingInterceptions.get(delta.id);
+    pendingInterceptions.delete(delta.id);
+    
+    // Mark as processed
+    if (processedIds.has(delta.id)) {
+      return;
+    }
+    processedIds.add(delta.id);
+    setTimeout(() => processedIds.delete(delta.id), 120000);
+    
+    // Update the downloadItem with the new filename
+    downloadItem.filename = delta.filename.current;
+    
+    await handleDownloadIntercept(downloadItem);
+  }
+  
+  // If download was cancelled or errored, clean up
+  if (delta.state && (delta.state.current === 'interrupted' || delta.state.current === 'complete')) {
+    pendingInterceptions.delete(delta.id);
+  }
+});
+
+async function handleDownloadIntercept(downloadItem) {
   // Check for duplicates (async - checks both time-based and Surge's download list)
   if (await isDuplicateDownload(downloadItem.url)) {
-    // Cancel the browser download first
+    // Cancel the browser download
     try {
       await browser.downloads.cancel(downloadItem.id);
       await browser.downloads.erase({ id: downloadItem.id });
-    } catch (e) {}
+    } catch (e) {
+      console.log('[Surge] Error canceling duplicate:', e);
+    }
     
     // Store pending duplicate and prompt user
     const pendingId = `dup_${++pendingDuplicateCounter}`;
@@ -448,7 +508,7 @@ browser.downloads.onCreated.addListener(async (downloadItem) => {
   if (!surgeRunning) {
     console.log('[Surge] Server not running, using browser download');
     recentDownloads.delete(hashUrl(downloadItem.url));
-    return;
+    return; // Let browser continue - download is already in progress
   }
 
   const { filename, directory } = extractPathInfo(downloadItem);
@@ -489,7 +549,7 @@ browser.downloads.onCreated.addListener(async (downloadItem) => {
   } catch (error) {
     console.error('[Surge] Failed to intercept download:', error);
   }
-});
+}
 
 // === Message Handling ===
 
