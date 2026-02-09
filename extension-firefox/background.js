@@ -57,7 +57,7 @@ browser.webRequest.onBeforeSendHeaders.addListener(
     }
   },
   { urls: ["<all_urls>"] },
-  ["requestHeaders", "extraHeaders"]
+  ["requestHeaders"]
 );
 
 function cleanupExpiredHeaders() {
