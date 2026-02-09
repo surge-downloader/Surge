@@ -42,27 +42,22 @@ Most browsers open a single connection for a download. Surge opens multiple (up 
 
 Download the latest binary for your OS from the [Releases Page](https://github.com/surge-downloader/surge/releases/latest).
 
-### Option 2: Homebrew (macOS/Linux)
+### Option 2: Install with AUR
+
+```bash
+yay -S surge
+```
+
+### Option 3: Homebrew (macOS/Linux)
 
 ```bash
 brew install surge-downloader/tap/surge
-
 ```
 
-### Option 3: Go Install
+### Option 4: Go Install
 
 ```bash
 go install github.com/surge-downloader/surge@latest
-
-```
-
-### Option 4: Build from Source
-
-```bash
-git clone https://github.com/surge-downloader/surge.git
-cd surge
-go build -o surge .
-
 ```
 
 ---
