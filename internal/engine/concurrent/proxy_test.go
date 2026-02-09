@@ -3,6 +3,7 @@ package concurrent
 import (
 	"context"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -22,40 +23,38 @@ func TestConcurrentDownloader_ProxySupport(t *testing.T) {
 
 	// 2. Setup Mock Proxy Server
 	proxyHit := false
-	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		proxyHit = true
-		// Forward request to target
-		// Note: A real proxy would handle CONNECT or absolute URLs.
-		// For this test, the client will send an absolute URL to the proxy.
+	proxyServer := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			proxyHit = true
+			// Forward request to target
+			// Note: A real proxy would handle CONNECT or absolute URLs.
+			// For this test, the client will send an absolute URL to the proxy.
 
-		// Create request to target
-		req, err := http.NewRequest(r.Method, r.RequestURI, r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+			// Create request to target
+			req, err := http.NewRequest(r.Method, r.RequestURI, r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 
-		// Copy headers
-		for k, v := range r.Header {
-			req.Header[k] = v
-		}
+			// Copy headers
+			maps.Copy(req.Header, r.Header)
 
-		// Execute
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
-		}
-		defer resp.Body.Close()
+			// Execute
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
+			defer resp.Body.Close()
 
-		// Copy response
-		for k, v := range resp.Header {
-			w.Header()[k] = v
-		}
-		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
-	}))
+			// Copy response
+			maps.Copy(w.Header(), resp.Header)
+			w.WriteHeader(resp.StatusCode)
+			io.Copy(w, resp.Body)
+		}),
+	)
 	defer proxyServer.Close()
 
 	// 3. Configure Downloader with Proxy

@@ -92,7 +92,7 @@ func sendToServer(url string, mirrors []string, outPath string, port int) error 
 	// The caller (add.go/root.go) might want to know ID.
 	// For now, keep it simple as error/nil.
 
-	var respData map[string]interface{}
+	var respData map[string]any
 	json.NewDecoder(resp.Body).Decode(&respData) // Ignore error? safely
 	if id, ok := respData["id"].(string); ok {
 		// Could log debug
@@ -171,7 +171,11 @@ func resolveDownloadID(partialID string) (string, error) {
 		return matches[0], nil
 	}
 	if len(matches) > 1 {
-		return "", fmt.Errorf("ambiguous ID prefix '%s' matches %d downloads", partialID, len(matches))
+		return "", fmt.Errorf(
+			"ambiguous ID prefix '%s' matches %d downloads",
+			partialID,
+			len(matches),
+		)
 	}
 
 	return partialID, nil // No match, use as-is (will fail with "not found" later)

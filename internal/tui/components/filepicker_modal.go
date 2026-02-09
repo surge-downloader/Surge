@@ -20,7 +20,13 @@ type FilePickerModal struct {
 }
 
 // NewFilePickerModal creates a file picker modal with default styling
-func NewFilePickerModal(title string, picker filepicker.Model, helpModel help.Model, helpKeys help.KeyMap, borderColor lipgloss.TerminalColor) FilePickerModal {
+func NewFilePickerModal(
+	title string,
+	picker filepicker.Model,
+	helpModel help.Model,
+	helpKeys help.KeyMap,
+	borderColor lipgloss.TerminalColor,
+) FilePickerModal {
 	return FilePickerModal{
 		Title:       title,
 		Picker:      picker,

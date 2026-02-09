@@ -62,8 +62,7 @@ func TestHealth_MultipleWorkers(t *testing.T) {
 	state := types.NewProgressState("test", 1000)
 	d := NewConcurrentDownloader("test", nil, state, runtime)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	now := time.Now()
 
@@ -77,9 +76,21 @@ func TestHealth_MultipleWorkers(t *testing.T) {
 	w1Ctx, w1Cancel := context.WithCancel(ctx)
 	w2Ctx, w2Cancel := context.WithCancel(ctx)
 
-	d.activeTasks[0] = &ActiveTask{StartTime: now.Add(-10 * time.Second), Speed: 10 * 1024 * 1024, Cancel: w0Cancel}
-	d.activeTasks[1] = &ActiveTask{StartTime: now.Add(-10 * time.Second), Speed: 10 * 1024 * 1024, Cancel: w1Cancel}
-	d.activeTasks[2] = &ActiveTask{StartTime: now.Add(-10 * time.Second), Speed: 1 * 1024 * 1024, Cancel: w2Cancel}
+	d.activeTasks[0] = &ActiveTask{
+		StartTime: now.Add(-10 * time.Second),
+		Speed:     10 * 1024 * 1024,
+		Cancel:    w0Cancel,
+	}
+	d.activeTasks[1] = &ActiveTask{
+		StartTime: now.Add(-10 * time.Second),
+		Speed:     10 * 1024 * 1024,
+		Cancel:    w1Cancel,
+	}
+	d.activeTasks[2] = &ActiveTask{
+		StartTime: now.Add(-10 * time.Second),
+		Speed:     1 * 1024 * 1024,
+		Cancel:    w2Cancel,
+	}
 
 	d.checkWorkerHealth()
 
@@ -112,8 +123,7 @@ func TestHealth_GracePeriod(t *testing.T) {
 	state := types.NewProgressState("test", 1000)
 	d := NewConcurrentDownloader("test", nil, state, runtime)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	now := time.Now()
 
@@ -124,8 +134,16 @@ func TestHealth_GracePeriod(t *testing.T) {
 	w0Ctx, w0Cancel := context.WithCancel(ctx)
 	w1Ctx, w1Cancel := context.WithCancel(ctx)
 
-	d.activeTasks[0] = &ActiveTask{StartTime: now.Add(-10 * time.Second), Speed: 10 * 1024 * 1024, Cancel: w0Cancel}
-	d.activeTasks[1] = &ActiveTask{StartTime: now.Add(-1 * time.Second), Speed: 100 * 1024, Cancel: w1Cancel}
+	d.activeTasks[0] = &ActiveTask{
+		StartTime: now.Add(-10 * time.Second),
+		Speed:     10 * 1024 * 1024,
+		Cancel:    w0Cancel,
+	}
+	d.activeTasks[1] = &ActiveTask{
+		StartTime: now.Add(-1 * time.Second),
+		Speed:     100 * 1024,
+		Cancel:    w1Cancel,
+	}
 
 	d.checkWorkerHealth()
 

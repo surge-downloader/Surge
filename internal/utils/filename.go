@@ -19,7 +19,11 @@ import (
 // DetermineFilename extracts the filename from a URL and HTTP response,
 // applying various heuristics. It returns the determined filename,
 // a new io.Reader that includes any sniffed header bytes, and an error.
-func DetermineFilename(rawurl string, resp *http.Response, verbose bool) (string, io.Reader, error) {
+func DetermineFilename(
+	rawurl string,
+	resp *http.Response,
+	verbose bool,
+) (string, io.Reader, error) {
 	parsed, err := url.Parse(rawurl)
 	if err != nil {
 		return "", nil, err
@@ -83,7 +87,9 @@ func DetermineFilename(rawurl string, resp *http.Response, verbose bool) (string
 		}
 	}
 
-	if candidate == "." && len(header) >= 4 && bytes.HasPrefix(header, []byte{0x50, 0x4B, 0x03, 0x04}) && len(header) >= 30 {
+	if candidate == "." && len(header) >= 4 &&
+		bytes.HasPrefix(header, []byte{0x50, 0x4B, 0x03, 0x04}) &&
+		len(header) >= 30 {
 		nameLen := int(binary.LittleEndian.Uint16(header[26:28]))
 		start := 30
 		end := start + nameLen

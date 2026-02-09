@@ -165,9 +165,10 @@ func TestDeleteState(t *testing.T) {
 
 	// Verify it was deleted
 	_, err := LoadState(testURL, testDestPath)
-	if err == nil {
+	switch err {
+	case nil:
 		t.Error("LoadState should fail after DeleteState")
-	} else if err == sql.ErrNoRows {
+	case sql.ErrNoRows:
 		// Acceptable error
 	}
 }

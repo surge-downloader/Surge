@@ -239,31 +239,35 @@ func TestConcurrentDownloader_HeadersForwardedOnRedirect(t *testing.T) {
 	redirectCount := 0
 
 	// Final server (simulates the actual file server after redirect)
-	finalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		receivedCookie = r.Header.Get("Cookie")
-		receivedAuth = r.Header.Get("Authorization")
-		mu.Unlock()
+	finalServer := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			receivedCookie = r.Header.Get("Cookie")
+			receivedAuth = r.Header.Get("Authorization")
+			mu.Unlock()
 
-		w.Header().Set("Content-Length", "32768")
-		w.Header().Set("Accept-Ranges", "bytes")
-		if r.Header.Get("Range") != "" {
-			w.WriteHeader(http.StatusPartialContent)
-		}
-		data := make([]byte, fileSize)
-		w.Write(data)
-	}))
+			w.Header().Set("Content-Length", "32768")
+			w.Header().Set("Accept-Ranges", "bytes")
+			if r.Header.Get("Range") != "" {
+				w.WriteHeader(http.StatusPartialContent)
+			}
+			data := make([]byte, fileSize)
+			w.Write(data)
+		}),
+	)
 	defer finalServer.Close()
 
 	// Redirect server (simulates members.easynews.com redirecting to iad-dl-08.easynews.com)
-	redirectServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		redirectCount++
-		mu.Unlock()
+	redirectServer := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			redirectCount++
+			mu.Unlock()
 
-		// Redirect to the final server
-		http.Redirect(w, r, finalServer.URL+"/file.bin", http.StatusFound)
-	}))
+			// Redirect to the final server
+			http.Redirect(w, r, finalServer.URL+"/file.bin", http.StatusFound)
+		}),
+	)
 	defer redirectServer.Close()
 
 	destPath := filepath.Join(tmpDir, "redirect_headers_test.bin")

@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+// [TODO]: I don't understand what this package does?
+// Probably LLM got halucinated again.
 // BenchmarkMetrics collects performance metrics during download
 type BenchmarkMetrics struct {
 	StartTime     time.Time
@@ -164,7 +166,7 @@ func formatBytes(b int64) string {
 	return sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-func sprintf(format string, args ...interface{}) string {
+func sprintf(format string, args ...any) string {
 	// Simple sprintf without importing fmt to avoid cycles
 	// For benchmark output, we'll use a simpler approach
 	result := format
@@ -238,7 +240,7 @@ func floatToString(f float64, decimals int) string {
 	intPart := int64(f)
 	fracPart := f - float64(intPart)
 
-	for i := 0; i < decimals; i++ {
+	for range decimals {
 		fracPart *= 10
 	}
 

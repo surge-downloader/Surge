@@ -209,7 +209,7 @@ func TestWorkerPool_PauseAll_MultipleDownloads(t *testing.T) {
 
 	// Add multiple active downloads
 	states := make([]*types.ProgressState, 3)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		id := string(rune('a' + i))
 		states[i] = types.NewProgressState(id, 1000)
 		pool.mu.Lock()
@@ -613,7 +613,7 @@ func TestWorkerPool_ConcurrentPauseCancel(t *testing.T) {
 	pool := NewWorkerPool(ch, 3)
 
 	// Add multiple downloads
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		id := string(rune('a' + i))
 		state := types.NewProgressState(id, 1000)
 		pool.mu.Lock()
@@ -625,7 +625,7 @@ func TestWorkerPool_ConcurrentPauseCancel(t *testing.T) {
 
 	// Concurrently pause and cancel
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		id := string(rune('a' + i))
 		go func(id string) {

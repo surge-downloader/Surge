@@ -14,8 +14,6 @@ import (
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
-var probeClient = &http.Client{Timeout: types.ProbeTimeout}
-
 var ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
 	"AppleWebKit/537.36 (KHTML, like Gecko) " +
 	"Chrome/120.0.0.0 Safari/537.36"
@@ -30,7 +28,12 @@ type ProbeResult struct {
 
 // ProbeServer sends GET with Range: bytes=0-0 to determine server capabilities
 // headers is optional - pass nil for non-authenticated probes
-func ProbeServer(ctx context.Context, rawurl string, filenameHint string, headers map[string]string) (*ProbeResult, error) {
+func ProbeServer(
+	ctx context.Context,
+	rawurl string,
+	filenameHint string,
+	headers map[string]string,
+) (*ProbeResult, error) {
 	utils.Debug("Probing server: %s", rawurl)
 
 	var resp *http.Response
@@ -57,7 +60,7 @@ func ProbeServer(ctx context.Context, rawurl string, filenameHint string, header
 	}
 
 	// Retry logic for probe request
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if i > 0 {
 			time.Sleep(1 * time.Second)
 			utils.Debug("Retrying probe... attempt %d", i+1)

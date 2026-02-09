@@ -130,7 +130,12 @@ func TestParseURLArg_Unit(t *testing.T) {
 
 			for i := range mirrors {
 				if mirrors[i] != tt.expectedMirrors[i] {
-					t.Errorf("Mirror[%d]: expected %q, got %q", i, tt.expectedMirrors[i], mirrors[i])
+					t.Errorf(
+						"Mirror[%d]: expected %q, got %q",
+						i,
+						tt.expectedMirrors[i],
+						mirrors[i],
+					)
 				}
 			}
 		})

@@ -17,15 +17,15 @@ type Settings struct {
 
 // GeneralSettings contains application behavior settings.
 type GeneralSettings struct {
-	DefaultDownloadDir     string `json:"default_download_dir"`
-	WarnOnDuplicate        bool   `json:"warn_on_duplicate"`
-	ExtensionPrompt        bool   `json:"extension_prompt"`
-	AutoResume             bool   `json:"auto_resume"`
-	SkipUpdateCheck        bool   `json:"skip_update_check"`
+	DefaultDownloadDir string `json:"default_download_dir"`
+	WarnOnDuplicate    bool   `json:"warn_on_duplicate"`
+	ExtensionPrompt    bool   `json:"extension_prompt"`
+	AutoResume         bool   `json:"auto_resume"`
+	SkipUpdateCheck    bool   `json:"skip_update_check"`
 
-	ClipboardMonitor       bool   `json:"clipboard_monitor"`
-	Theme                  int    `json:"theme"`
-	LogRetentionCount      int    `json:"log_retention_count"`
+	ClipboardMonitor  bool `json:"clipboard_monitor"`
+	Theme             int  `json:"theme"`
+	LogRetentionCount int  `json:"log_retention_count"`
 }
 
 const (
@@ -36,12 +36,12 @@ const (
 
 // ConnectionSettings contains network connection parameters.
 type ConnectionSettings struct {
-	MaxConnectionsPerHost int    `json:"max_connections_per_host"`
+	MaxConnectionsPerHost  int    `json:"max_connections_per_host"`
 	MaxGlobalConnections   int    `json:"max_global_connections"`
 	MaxConcurrentDownloads int    `json:"max_concurrent_downloads"`
-	UserAgent             string `json:"user_agent"`
-	ProxyURL              string `json:"proxy_url"`
-	SequentialDownload    bool   `json:"sequential_download"`
+	UserAgent              string `json:"user_agent"`
+	ProxyURL               string `json:"proxy_url"`
+	SequentialDownload     bool   `json:"sequential_download"`
 }
 
 // ChunkSettings contains download chunk configuration.
@@ -71,32 +71,137 @@ type SettingMeta struct {
 func GetSettingsMetadata() map[string][]SettingMeta {
 	return map[string][]SettingMeta{
 		"General": {
-			{Key: "default_download_dir", Label: "Default Download Dir", Description: "Default directory for new downloads. Leave empty to use current directory.", Type: "string"},
-			{Key: "warn_on_duplicate", Label: "Warn on Duplicate", Description: "Show warning when adding a download that already exists.", Type: "bool"},
-			{Key: "extension_prompt", Label: "Extension Prompt", Description: "Prompt for confirmation when adding downloads via browser extension.", Type: "bool"},
-			{Key: "auto_resume", Label: "Auto Resume", Description: "Automatically resume paused downloads on startup.", Type: "bool"},
-			{Key: "skip_update_check", Label: "Skip Update Check", Description: "Disable automatic check for new versions on startup.", Type: "bool"},
+			{
+				Key:         "default_download_dir",
+				Label:       "Default Download Dir",
+				Description: "Default directory for new downloads. Leave empty to use current directory.",
+				Type:        "string",
+			},
+			{
+				Key:         "warn_on_duplicate",
+				Label:       "Warn on Duplicate",
+				Description: "Show warning when adding a download that already exists.",
+				Type:        "bool",
+			},
+			{
+				Key:         "extension_prompt",
+				Label:       "Extension Prompt",
+				Description: "Prompt for confirmation when adding downloads via browser extension.",
+				Type:        "bool",
+			},
+			{
+				Key:         "auto_resume",
+				Label:       "Auto Resume",
+				Description: "Automatically resume paused downloads on startup.",
+				Type:        "bool",
+			},
+			{
+				Key:         "skip_update_check",
+				Label:       "Skip Update Check",
+				Description: "Disable automatic check for new versions on startup.",
+				Type:        "bool",
+			},
 
-			{Key: "clipboard_monitor", Label: "Clipboard Monitor", Description: "Watch clipboard for URLs and prompt to download them.", Type: "bool"},
-			{Key: "theme", Label: "App Theme", Description: "UI Theme (System, Light, Dark).", Type: "int"},
-			{Key: "log_retention_count", Label: "Log Retention Count", Description: "Number of recent log files to keep.", Type: "int"},
+			{
+				Key:         "clipboard_monitor",
+				Label:       "Clipboard Monitor",
+				Description: "Watch clipboard for URLs and prompt to download them.",
+				Type:        "bool",
+			},
+			{
+				Key:         "theme",
+				Label:       "App Theme",
+				Description: "UI Theme (System, Light, Dark).",
+				Type:        "int",
+			},
+			{
+				Key:         "log_retention_count",
+				Label:       "Log Retention Count",
+				Description: "Number of recent log files to keep.",
+				Type:        "int",
+			},
 		},
 		"Network": {
-			{Key: "max_connections_per_host", Label: "Max Connections/Host", Description: "Maximum concurrent connections per host (1-64).", Type: "int"},
-			{Key: "max_global_connections", Label: "Max Global Connections", Description: "Maximum total concurrent connections across all downloads.", Type: "int"},
-			{Key: "max_concurrent_downloads", Label: "Max Concurrent Downloads", Description: "Maximum number of downloads running at once (1-10). Requires restart.", Type: "int"},
-			{Key: "user_agent", Label: "User Agent", Description: "Custom User-Agent string for HTTP requests. Leave empty for default.", Type: "string"},
-			{Key: "proxy_url", Label: "Proxy URL", Description: "HTTP/HTTPS proxy URL (e.g. http://127.0.0.1:8080). Leave empty to use system default.", Type: "string"},
-			{Key: "sequential_download", Label: "Sequential Download", Description: "Download pieces in order (Streaming Mode). May be slower.", Type: "bool"},
-			{Key: "min_chunk_size", Label: "Min Chunk Size", Description: "Minimum download chunk size in MB (e.g., 2).", Type: "int64"},
-			{Key: "worker_buffer_size", Label: "Worker Buffer Size", Description: "I/O buffer size per worker in KB (e.g., 512).", Type: "int"},
+			{
+				Key:         "max_connections_per_host",
+				Label:       "Max Connections/Host",
+				Description: "Maximum concurrent connections per host (1-64).",
+				Type:        "int",
+			},
+			{
+				Key:         "max_global_connections",
+				Label:       "Max Global Connections",
+				Description: "Maximum total concurrent connections across all downloads.",
+				Type:        "int",
+			},
+			{
+				Key:         "max_concurrent_downloads",
+				Label:       "Max Concurrent Downloads",
+				Description: "Maximum number of downloads running at once (1-10). Requires restart.",
+				Type:        "int",
+			},
+			{
+				Key:         "user_agent",
+				Label:       "User Agent",
+				Description: "Custom User-Agent string for HTTP requests. Leave empty for default.",
+				Type:        "string",
+			},
+			{
+				Key:         "proxy_url",
+				Label:       "Proxy URL",
+				Description: "HTTP/HTTPS proxy URL (e.g. http://127.0.0.1:8080). Leave empty to use system default.",
+				Type:        "string",
+			},
+			{
+				Key:         "sequential_download",
+				Label:       "Sequential Download",
+				Description: "Download pieces in order (Streaming Mode). May be slower.",
+				Type:        "bool",
+			},
+			{
+				Key:         "min_chunk_size",
+				Label:       "Min Chunk Size",
+				Description: "Minimum download chunk size in MB (e.g., 2).",
+				Type:        "int64",
+			},
+			{
+				Key:         "worker_buffer_size",
+				Label:       "Worker Buffer Size",
+				Description: "I/O buffer size per worker in KB (e.g., 512).",
+				Type:        "int",
+			},
 		},
 		"Performance": {
-			{Key: "max_task_retries", Label: "Max Task Retries", Description: "Number of times to retry a failed chunk before giving up.", Type: "int"},
-			{Key: "slow_worker_threshold", Label: "Slow Worker Threshold", Description: "Restart workers slower than this fraction of mean speed (0.0-1.0).", Type: "float64"},
-			{Key: "slow_worker_grace_period", Label: "Slow Worker Grace", Description: "Grace period before checking worker speed (e.g., 5s).", Type: "duration"},
-			{Key: "stall_timeout", Label: "Stall Timeout", Description: "Restart workers with no data for this duration (e.g., 5s).", Type: "duration"},
-			{Key: "speed_ema_alpha", Label: "Speed EMA Alpha", Description: "Exponential moving average smoothing factor (0.0-1.0).", Type: "float64"},
+			{
+				Key:         "max_task_retries",
+				Label:       "Max Task Retries",
+				Description: "Number of times to retry a failed chunk before giving up.",
+				Type:        "int",
+			},
+			{
+				Key:         "slow_worker_threshold",
+				Label:       "Slow Worker Threshold",
+				Description: "Restart workers slower than this fraction of mean speed (0.0-1.0).",
+				Type:        "float64",
+			},
+			{
+				Key:         "slow_worker_grace_period",
+				Label:       "Slow Worker Grace",
+				Description: "Grace period before checking worker speed (e.g., 5s).",
+				Type:        "duration",
+			},
+			{
+				Key:         "stall_timeout",
+				Label:       "Stall Timeout",
+				Description: "Restart workers with no data for this duration (e.g., 5s).",
+				Type:        "duration",
+			},
+			{
+				Key:         "speed_ema_alpha",
+				Label:       "Speed EMA Alpha",
+				Description: "Exponential moving average smoothing factor (0.0-1.0).",
+				Type:        "float64",
+			},
 		},
 	}
 }
@@ -118,21 +223,21 @@ func DefaultSettings() *Settings {
 
 	return &Settings{
 		General: GeneralSettings{
-			DefaultDownloadDir:     defaultDir,
-			WarnOnDuplicate:        true,
-			ExtensionPrompt:        false,
-			AutoResume:             false,
+			DefaultDownloadDir: defaultDir,
+			WarnOnDuplicate:    true,
+			ExtensionPrompt:    false,
+			AutoResume:         false,
 
-			ClipboardMonitor:       true,
-			Theme:                  ThemeAdaptive,
-			LogRetentionCount:      5,
+			ClipboardMonitor:  true,
+			Theme:             ThemeAdaptive,
+			LogRetentionCount: 5,
 		},
 		Connections: ConnectionSettings{
-			MaxConnectionsPerHost: 32,
+			MaxConnectionsPerHost:  32,
 			MaxGlobalConnections:   100,
 			MaxConcurrentDownloads: 3,
-			UserAgent:             "", // Empty means use default UA
-			SequentialDownload:    false,
+			UserAgent:              "", // Empty means use default UA
+			SequentialDownload:     false,
 		},
 		Chunks: ChunkSettings{
 			MinChunkSize:     2 * MB,

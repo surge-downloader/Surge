@@ -97,7 +97,11 @@ func TestHandleDownload_PathResolution(t *testing.T) {
 				Path:                 "nested/deep",
 				RelativeToDefaultDir: true,
 			},
-			expectedPathSuffix:   filepath.Join(filepath.Base(defaultDownloadDir), "nested", "deep"),
+			expectedPathSuffix: filepath.Join(
+				filepath.Base(defaultDownloadDir),
+				"nested",
+				"deep",
+			),
 			expectedPathAbsolute: true,
 		},
 		{
@@ -106,7 +110,9 @@ func TestHandleDownload_PathResolution(t *testing.T) {
 				URL:  "http://example.com/file5",
 				Path: "",
 			},
-			expectedPathSuffix:   filepath.Base(defaultDownloadDir), // Should be just the default dir
+			expectedPathSuffix: filepath.Base(
+				defaultDownloadDir,
+			), // Should be just the default dir
 			expectedPathAbsolute: true,
 		},
 	}

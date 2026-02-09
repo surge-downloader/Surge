@@ -106,7 +106,12 @@ func TestAlignedSplitSize(t *testing.T) {
 		}
 		// Verify alignment
 		if got != 0 && got%types.AlignSize != 0 {
-			t.Errorf("alignedSplitSize(%d) = %d, not aligned to %d", tt.remaining, got, types.AlignSize)
+			t.Errorf(
+				"alignedSplitSize(%d) = %d, not aligned to %d",
+				tt.remaining,
+				got,
+				types.AlignSize,
+			)
 		}
 	}
 }

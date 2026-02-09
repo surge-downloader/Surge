@@ -24,7 +24,12 @@ type SingleDownloader struct {
 }
 
 // NewSingleDownloader creates a new single-threaded downloader with all required parameters
-func NewSingleDownloader(id string, progressCh chan<- any, state *types.ProgressState, runtime *types.RuntimeConfig) *SingleDownloader {
+func NewSingleDownloader(
+	id string,
+	progressCh chan<- any,
+	state *types.ProgressState,
+	runtime *types.RuntimeConfig,
+) *SingleDownloader {
 	return &SingleDownloader{
 		Client:       &http.Client{Timeout: 0},
 		ProgressChan: progressCh,
@@ -37,7 +42,13 @@ func NewSingleDownloader(id string, progressCh chan<- any, state *types.Progress
 // Download downloads a file using a single connection.
 // This is used for servers that don't support Range requests.
 // If interrupted, the download cannot be resumed and must restart from the beginning.
-func (d *SingleDownloader) Download(ctx context.Context, rawurl, destPath string, fileSize int64, filename string, verbose bool) error {
+func (d *SingleDownloader) Download(
+	ctx context.Context,
+	rawurl, destPath string,
+	fileSize int64,
+	filename string,
+	verbose bool,
+) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawurl, nil)
 	if err != nil {
 		return err

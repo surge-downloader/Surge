@@ -48,7 +48,11 @@ func RenderTabBar(tabs []Tab, activeIndex int, activeStyle, inactiveStyle lipglo
 
 // RenderNumberedTabBar renders tabs with number prefixes like "[1] General"
 // Each tab is wrapped in a rounded border box
-func RenderNumberedTabBar(tabs []Tab, activeIndex int, activeStyle, inactiveStyle lipgloss.Style) string {
+func RenderNumberedTabBar(
+	tabs []Tab,
+	activeIndex int,
+	activeStyle, inactiveStyle lipgloss.Style,
+) string {
 	var rendered []string
 	for i, t := range tabs {
 		var label string

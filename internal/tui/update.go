@@ -34,11 +34,11 @@ type UpdateCheckResultMsg struct {
 }
 
 // notificationTickCmd waits briefly then sends a tick to check notification expiry
-func notificationTickCmd() tea.Cmd {
-	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
-		return notificationTickMsg{}
-	})
-}
+// func notificationTickCmd() tea.Cmd {
+// 	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
+// 		return notificationTickMsg{}
+// 	})
+// }
 
 // checkForUpdateCmd performs an async update check
 func checkForUpdateCmd(currentVersion string) tea.Cmd {
@@ -165,7 +165,11 @@ func (m RootModel) checkForDuplicate(url string) *DownloadModel {
 }
 
 // startDownload initiates a new download
-func (m RootModel) startDownload(url string, mirrors []string, path, filename, id string) (RootModel, tea.Cmd) {
+func (m RootModel) startDownload(
+	url string,
+	mirrors []string,
+	path, filename, id string,
+) (RootModel, tea.Cmd) {
 	// Enforce absolute path
 	path = utils.EnsureAbsPath(path)
 
@@ -178,7 +182,10 @@ func (m RootModel) startDownload(url string, mirrors []string, path, filename, i
 		nextID = uuid.New().String()
 	}
 	newDownload := NewDownloadModel(nextID, url, "Queued", 0)
-	newDownload.Destination = filepath.Join(path, finalFilename) // Store absolute full path immediately
+	newDownload.Destination = filepath.Join(
+		path,
+		finalFilename,
+	) // Store absolute full path immediately
 	m.downloads = append(m.downloads, newDownload)
 
 	cfg := types.DownloadConfig{
@@ -374,7 +381,11 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// Add log entry
 				speed := float64(d.Total) / msg.Elapsed.Seconds()
-				m.addLogEntry(LogStyleComplete.Render(fmt.Sprintf("✔ Done: %s (%.2f MB/s)", d.Filename, speed/Megabyte)))
+				m.addLogEntry(
+					LogStyleComplete.Render(
+						fmt.Sprintf("✔ Done: %s (%.2f MB/s)", d.Filename, speed/Megabyte),
+					),
+				)
 
 				break
 			}
@@ -436,10 +447,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Calculate list height (total height - header row - margins)
 		topHeight := 9
-		bottomHeight := msg.Height - topHeight - 5
-		if bottomHeight < 10 {
-			bottomHeight = 10
-		}
+		bottomHeight := max(msg.Height-topHeight-5, 10)
 
 		m.list.SetSize(leftWidth-2, bottomHeight-4)
 
@@ -492,7 +500,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Read URLs from file
 				urls, err := readURLsFromFile(path)
 				if err != nil {
-					m.addLogEntry(LogStyleError.Render("✖ Failed to read batch file: " + err.Error()))
+					m.addLogEntry(
+						LogStyleError.Render("✖ Failed to read batch file: " + err.Error()),
+					)
 					// Reset filepicker and return
 					m.filepicker.FileAllowed = false
 					m.filepicker.DirAllowed = true
@@ -664,7 +674,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							// Delete the .surge partial file with retries
 							// (worker may still hold file briefly after Cancel on Windows)
 							surgeFile := dl.Destination + types.IncompleteSuffix
-							for i := 0; i < 5; i++ {
+							for range 5 {
 								if err := os.Remove(surgeFile); err == nil {
 									break
 								}
@@ -741,7 +751,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if key.Matches(msg, m.keys.Dashboard.OpenFile) {
 				if d := m.GetSelectedDownload(); d != nil {
 					// Allow opening for completed downloads or sequential downloads in progress
-					canOpen := d.done || (m.Settings.Connections.SequentialDownload && !d.paused && d.Downloaded > 0)
+					canOpen := d.done ||
+						(m.Settings.Connections.SequentialDownload && !d.paused && d.Downloaded > 0)
 					if canOpen && d.Destination != "" {
 						// Open the file (use the partial file path if still downloading)
 						filePath := d.Destination
@@ -785,11 +796,11 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				if key.Matches(msg, m.keys.Dashboard.LogDown) {
-					m.logViewport.LineDown(1)
+					m.logViewport.ScrollDown(1)
 					return m, nil
 				}
 				if key.Matches(msg, m.keys.Dashboard.LogUp) {
-					m.logViewport.LineUp(1)
+					m.logViewport.ScrollUp(1)
 					return m, nil
 				}
 				if key.Matches(msg, m.keys.Dashboard.LogTop) {
@@ -873,8 +884,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Parse mirrors from dedicated input
 				mirrorsVal := m.inputs[1].Value()
 				if mirrorsVal != "" {
-					mirrorParts := strings.Split(mirrorsVal, ",")
-					for _, part := range mirrorParts {
+					mirrorParts := strings.SplitSeq(mirrorsVal, ",")
+					for part := range mirrorParts {
 						cleaned := strings.TrimSpace(part)
 						if cleaned != "" {
 							mirrors = append(mirrors, cleaned)
@@ -1027,7 +1038,13 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if key.Matches(msg, m.keys.Duplicate.Continue) {
 				// Continue anyway - startDownload handles unique filename generation
 				m.state = DashboardState
-				return m.startDownload(m.pendingURL, m.pendingMirrors, m.pendingPath, m.pendingFilename, "")
+				return m.startDownload(
+					m.pendingURL,
+					m.pendingMirrors,
+					m.pendingPath,
+					m.pendingFilename,
+					"",
+				)
 			}
 			if key.Matches(msg, m.keys.Duplicate.Cancel) {
 				// Cancel - don't add
@@ -1100,7 +1117,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Read URLs from file
 				urls, err := readURLsFromFile(path)
 				if err != nil {
-					m.addLogEntry(LogStyleError.Render("✖ Failed to read batch file: " + err.Error()))
+					m.addLogEntry(
+						LogStyleError.Render("✖ Failed to read batch file: " + err.Error()),
+					)
 					// Reset filepicker and return
 					m.filepicker.FileAllowed = false
 					m.filepicker.DirAllowed = true
@@ -1145,9 +1164,21 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				if skipped > 0 {
-					m.addLogEntry(LogStyleStarted.Render(fmt.Sprintf("⬇ Added %d downloads from batch (%d duplicates skipped)", added, skipped)))
+					m.addLogEntry(
+						LogStyleStarted.Render(
+							fmt.Sprintf(
+								"⬇ Added %d downloads from batch (%d duplicates skipped)",
+								added,
+								skipped,
+							),
+						),
+					)
 				} else {
-					m.addLogEntry(LogStyleStarted.Render(fmt.Sprintf("⬇ Added %d downloads from batch", added)))
+					m.addLogEntry(
+						LogStyleStarted.Render(
+							fmt.Sprintf("⬇ Added %d downloads from batch", added),
+						),
+					)
 				}
 				m.pendingBatchURLs = nil
 				m.batchFilePath = ""

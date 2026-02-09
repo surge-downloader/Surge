@@ -19,7 +19,11 @@ func TestUniqueFilePath_Preservation(t *testing.T) {
 	inputFile := filepath.Join(tmpDir, "file (1).txt")
 	got := uniqueFilePath(inputFile)
 	if got != inputFile {
-		t.Errorf("Scenario 1 Failed: Expected '%s', got '%s'. Should preserve unique filename.", inputFile, got)
+		t.Errorf(
+			"Scenario 1 Failed: Expected '%s', got '%s'. Should preserve unique filename.",
+			inputFile,
+			got,
+		)
 	}
 
 	// Scenario 2: "file (1).txt" comes in, and DOES exist.
@@ -31,7 +35,11 @@ func TestUniqueFilePath_Preservation(t *testing.T) {
 	expectedFile2 := filepath.Join(tmpDir, "file (2).txt")
 	got2 := uniqueFilePath(inputFile)
 	if got2 != expectedFile2 {
-		t.Errorf("Scenario 2 Failed: Expected '%s', got '%s'. Should increment existing counter.", expectedFile2, got2)
+		t.Errorf(
+			"Scenario 2 Failed: Expected '%s', got '%s'. Should increment existing counter.",
+			expectedFile2,
+			got2,
+		)
 	}
 
 	// Scenario 3: "file (2).txt" ALSO exists.
@@ -43,7 +51,11 @@ func TestUniqueFilePath_Preservation(t *testing.T) {
 	expectedFile3 := filepath.Join(tmpDir, "file (3).txt")
 	got3 := uniqueFilePath(inputFile) // Input is still "file (1).txt"
 	if got3 != expectedFile3 {
-		t.Errorf("Scenario 3 Failed: Expected '%s', got '%s'. Should skip to next available.", expectedFile3, got3)
+		t.Errorf(
+			"Scenario 3 Failed: Expected '%s', got '%s'. Should skip to next available.",
+			expectedFile3,
+			got3,
+		)
 	}
 }
 

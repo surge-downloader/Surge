@@ -15,7 +15,12 @@ type BoxRenderer func(leftTitle, rightTitle, content string, width, height int, 
 // Supports left and right titles (e.g., search on left, pane name on right).
 // Accepts pre-styled title strings.
 // Example: ╭─ 🔍 Search... ─────────── Downloads ─╮
-func RenderBtopBox(leftTitle, rightTitle string, content string, width, height int, borderColor lipgloss.TerminalColor) string {
+func RenderBtopBox(
+	leftTitle, rightTitle string,
+	content string,
+	width, height int,
+	borderColor lipgloss.TerminalColor,
+) string {
 	// Border characters
 	const (
 		topLeft     = "╭"
@@ -25,10 +30,7 @@ func RenderBtopBox(leftTitle, rightTitle string, content string, width, height i
 		horizontal  = "─"
 		vertical    = "│"
 	)
-	innerWidth := width - 2
-	if innerWidth < 1 {
-		innerWidth = 1
-	}
+	innerWidth := max(width-2, 1)
 
 	leftTitleWidth := lipgloss.Width(leftTitle)
 	rightTitleWidth := lipgloss.Width(rightTitle)
@@ -44,10 +46,7 @@ func RenderBtopBox(leftTitle, rightTitle string, content string, width, height i
 
 	// Case 1: Both Titles
 	if leftTitle != "" && rightTitle != "" {
-		remainingWidth := innerWidth - leftTitleWidth - rightTitleWidth - 1 // 1 for the start dash
-		if remainingWidth < 1 {
-			remainingWidth = 1 // overflow mitigation (might break layout but prevents crash)
-		}
+		remainingWidth := max(innerWidth-leftTitleWidth-rightTitleWidth-1, 1)
 
 		topBorder = borderStyler.Render(topLeft+horizontal) +
 			leftTitle +
@@ -57,10 +56,7 @@ func RenderBtopBox(leftTitle, rightTitle string, content string, width, height i
 
 	} else if leftTitle != "" {
 		// Case 2: Only Left Title
-		remainingWidth := innerWidth - leftTitleWidth - 1
-		if remainingWidth < 0 {
-			remainingWidth = 0
-		}
+		remainingWidth := max(innerWidth-leftTitleWidth-1, 0)
 
 		topBorder = borderStyler.Render(topLeft+horizontal) +
 			leftTitle +
@@ -68,10 +64,7 @@ func RenderBtopBox(leftTitle, rightTitle string, content string, width, height i
 
 	} else if rightTitle != "" {
 		// Case 3: Only Right Title
-		remainingWidth := innerWidth - rightTitleWidth - 1
-		if remainingWidth < 0 {
-			remainingWidth = 0
-		}
+		remainingWidth := max(innerWidth-rightTitleWidth-1, 0)
 
 		topBorder = borderStyler.Render(topLeft+strings.Repeat(horizontal, remainingWidth)) +
 			rightTitle +
@@ -95,7 +88,7 @@ func RenderBtopBox(leftTitle, rightTitle string, content string, width, height i
 	innerHeight := height - 2 // Account for top and bottom borders
 
 	var wrappedLines []string
-	for i := 0; i < innerHeight; i++ {
+	for i := range innerHeight {
 		var line string
 		if i < len(contentLines) {
 			line = contentLines[i]
@@ -113,10 +106,18 @@ func RenderBtopBox(leftTitle, rightTitle string, content string, width, height i
 				line = string(runes[:innerWidth])
 			}
 		}
-		wrappedLines = append(wrappedLines, borderStyle.Render(vertical)+line+borderStyle.Render(vertical))
+		wrappedLines = append(
+			wrappedLines,
+			borderStyle.Render(vertical)+line+borderStyle.Render(vertical),
+		)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, topBorder, strings.Join(wrappedLines, "\n"), bottomBorder)
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		topBorder,
+		strings.Join(wrappedLines, "\n"),
+		bottomBorder,
+	)
 }
 
 // Default colors for convenience (re-exported from colors package)

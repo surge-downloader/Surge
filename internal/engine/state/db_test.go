@@ -47,7 +47,9 @@ func TestDBLifecycle(t *testing.T) {
 		t.Fatal("Re-opened DB is nil")
 	}
 	if d3 == d {
-		t.Log("Re-opened DB instance address is same as old closed one (unlikely but possible if pointer reused)")
+		t.Log(
+			"Re-opened DB instance address is same as old closed one (unlikely but possible if pointer reused)",
+		)
 	}
 
 	// Test tables exist
@@ -73,7 +75,12 @@ func TestWithTx_Commit(t *testing.T) {
 	defer CloseDB()
 
 	err := withTx(func(tx *sql.Tx) error {
-		_, err := tx.Exec("INSERT INTO downloads (id, url, dest_path) VALUES (?, ?, ?)", "tx-test-1", "http://tx.com/1", "/tmp/1")
+		_, err := tx.Exec(
+			"INSERT INTO downloads (id, url, dest_path) VALUES (?, ?, ?)",
+			"tx-test-1",
+			"http://tx.com/1",
+			"/tmp/1",
+		)
 		return err
 	})
 	if err != nil {
@@ -103,7 +110,12 @@ func TestWithTx_Rollback(t *testing.T) {
 
 	expectedErr := fmt.Errorf("intentional error")
 	err := withTx(func(tx *sql.Tx) error {
-		_, err := tx.Exec("INSERT INTO downloads (id, url, dest_path) VALUES (?, ?, ?)", "tx-test-2", "http://tx.com/2", "/tmp/2")
+		_, err := tx.Exec(
+			"INSERT INTO downloads (id, url, dest_path) VALUES (?, ?, ?)",
+			"tx-test-2",
+			"http://tx.com/2",
+			"/tmp/2",
+		)
 		if err != nil {
 			return err
 		}

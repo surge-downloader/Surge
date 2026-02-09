@@ -175,7 +175,11 @@ func TestConcurrentDownloader_RespectServerConnectionLimit(t *testing.T) {
 	}
 
 	stats := server.Stats()
-	t.Logf("Server stats: TotalRequests=%d, RangeRequests=%d", stats.TotalRequests, stats.RangeRequests)
+	t.Logf(
+		"Server stats: TotalRequests=%d, RangeRequests=%d",
+		stats.TotalRequests,
+		stats.RangeRequests,
+	)
 }
 
 // =============================================================================

@@ -32,7 +32,8 @@ func (i DownloadItem) Description() string {
 		// Custom "Pausing..." style using existing colors
 		styledStatus = lipgloss.NewStyle().Foreground(colors.StatePaused).Render("⏸ Pausing...")
 	} else {
-		styledStatus = components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded).Render()
+		styledStatus = components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded).
+			Render()
 	}
 
 	// Build progress info
@@ -128,10 +129,7 @@ func (d downloadDelegate) Render(w io.Writer, m list.Model, index int, listItem 
 	}
 
 	// Truncate title if needed
-	width := m.Width() - 6
-	if width < 20 {
-		width = 20
-	}
+	width := max(m.Width()-6, 20)
 	title := i.Title()
 	maxTitleWidth := width - 10
 	if len(title) > maxTitleWidth {

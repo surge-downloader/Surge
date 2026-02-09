@@ -16,13 +16,7 @@ import (
 // viewSettings renders the Btop-style settings page
 func (m RootModel) viewSettings() string {
 	// Larger, more spacious modal size (responsive to terminal width)
-	width := int(float64(m.width) * 0.65) // 65% of terminal width
-	if width < 90 {
-		width = 90
-	}
-	if width > 120 {
-		width = 120
-	}
+	width := min(max(int(float64(m.width)*0.65), 90), 120)
 	height := 24
 	if m.width < width+4 {
 		width = m.width - 4
@@ -50,7 +44,12 @@ func (m RootModel) viewSettings() string {
 	}
 	// Purple theme for settings tabs
 	settingsActiveTab := lipgloss.NewStyle().Foreground(ColorNeonPurple)
-	tabBar := components.RenderNumberedTabBar(tabs, m.SettingsActiveTab, settingsActiveTab, TabStyle)
+	tabBar := components.RenderNumberedTabBar(
+		tabs,
+		m.SettingsActiveTab,
+		settingsActiveTab,
+		TabStyle,
+	)
 
 	// === CONTENT AREA ===
 	currentCategory := categories[m.SettingsActiveTab]
@@ -83,7 +82,9 @@ func (m RootModel) viewSettings() string {
 			style := lipgloss.NewStyle().Foreground(ColorLightGray)
 
 			if meta.Key == "max_global_connections" {
-				style = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#aaaaaa", Dark: "238"}) // Darker gray
+				style = lipgloss.NewStyle().
+					Foreground(lipgloss.AdaptiveColor{Light: "#aaaaaa", Dark: "238"})
+				// Darker gray
 			}
 
 			line = style.Render("  " + line)
@@ -119,7 +120,13 @@ func (m RootModel) viewSettings() string {
 			valueStr = m.SettingsInput.View() + unitStyle.Render(unit)
 		} else {
 			// Show formatted value with unit
-			valueStr = formatSettingValueForEdit(value, meta.Type, meta.Key) + unitStyle.Render(unit)
+			valueStr = formatSettingValueForEdit(
+				value,
+				meta.Type,
+				meta.Key,
+			) + unitStyle.Render(
+				unit,
+			)
 
 			if meta.Key == "max_global_connections" {
 				valueStr += " (Ignored)"
@@ -193,10 +200,7 @@ func (m RootModel) viewSettings() string {
 	// Used space: 1 (empty line) + tabBarHeight + 1 (empty line) + contentHeight + helpHeight
 	usedHeight := 1 + tabBarHeight + 1 + contentHeight + helpHeight
 	// Padding needed to push help to bottom
-	paddingLines := innerHeight - usedHeight
-	if paddingLines < 0 {
-		paddingLines = 0
-	}
+	paddingLines := max(innerHeight-usedHeight, 0)
 	padding := strings.Repeat("\n", paddingLines)
 
 	// === FINAL ASSEMBLY ===
@@ -208,14 +212,21 @@ func (m RootModel) viewSettings() string {
 		padding+helpText,
 	)
 
-	box := renderBtopBox(PaneTitleStyle.Render(" Settings "), "", fullContent, width, height, ColorNeonPurple)
+	box := renderBtopBox(
+		PaneTitleStyle.Render(" Settings "),
+		"",
+		fullContent,
+		width,
+		height,
+		ColorNeonPurple,
+	)
 
 	return m.renderModalWithOverlay(box)
 }
 
 // getSettingsValues returns a map of setting key -> value for a category
-func (m RootModel) getSettingsValues(category string) map[string]interface{} {
-	values := make(map[string]interface{})
+func (m RootModel) getSettingsValues(category string) map[string]any {
+	values := make(map[string]any)
 
 	switch category {
 	case "General":
@@ -250,35 +261,24 @@ func (m RootModel) getSettingsValues(category string) map[string]interface{} {
 
 // setSettingValue sets a setting value from string input
 func (m *RootModel) setSettingValue(category, key, value string) error {
-	metadata := config.GetSettingsMetadata()
-	metas := metadata[category]
-
-	var meta config.SettingMeta
-	for _, sm := range metas {
-		if sm.Key == key {
-			meta = sm
-			break
-		}
-	}
-
 	switch category {
 	case "General":
-		return m.setGeneralSetting(key, value, meta.Type)
+		return m.setGeneralSetting(key, value)
 	case "Network":
 		// Dispatch to appropriate setter based on key
 		if key == "min_chunk_size" || key == "worker_buffer_size" {
-			return m.setChunksSetting(key, value, meta.Type)
+			return m.setChunksSetting(key, value)
 		} else {
-			return m.setConnectionsSetting(key, value, meta.Type)
+			return m.setConnectionsSetting(key, value)
 		}
 	case "Performance":
-		return m.setPerformanceSetting(key, value, meta.Type)
+		return m.setPerformanceSetting(key, value)
 	}
 
 	return nil
 }
 
-func (m *RootModel) setGeneralSetting(key, value, typ string) error {
+func (m *RootModel) setGeneralSetting(key, value string) error {
 	switch key {
 	case "default_download_dir":
 		m.Settings.General.DefaultDownloadDir = value
@@ -296,13 +296,14 @@ func (m *RootModel) setGeneralSetting(key, value, typ string) error {
 	case "theme":
 		var theme int
 		valLower := strings.ToLower(value)
-		if valLower == "system" || valLower == "adaptive" || valLower == "0" {
+		switch valLower {
+		case "system", "adaptive", "0":
 			theme = config.ThemeAdaptive
-		} else if valLower == "light" || valLower == "1" {
+		case "light", "1":
 			theme = config.ThemeLight
-		} else if valLower == "dark" || valLower == "2" {
+		case "dark", "2":
 			theme = config.ThemeDark
-		} else {
+		default:
 			// Try parsing as int fallback
 			if v, err := strconv.Atoi(value); err == nil {
 				if v >= 0 && v <= 2 {
@@ -327,7 +328,7 @@ func (m *RootModel) setGeneralSetting(key, value, typ string) error {
 	return nil
 }
 
-func (m *RootModel) setConnectionsSetting(key, value, typ string) error {
+func (m *RootModel) setConnectionsSetting(key, value string) error {
 	switch key {
 	case "max_connections_per_host":
 		if v, err := strconv.Atoi(value); err == nil {
@@ -361,7 +362,7 @@ func (m *RootModel) setConnectionsSetting(key, value, typ string) error {
 	return nil
 }
 
-func (m *RootModel) setChunksSetting(key, value, typ string) error {
+func (m *RootModel) setChunksSetting(key, value string) error {
 	switch key {
 	case "min_chunk_size":
 		// Parse as MB and convert to bytes
@@ -377,7 +378,7 @@ func (m *RootModel) setChunksSetting(key, value, typ string) error {
 	return nil
 }
 
-func (m *RootModel) setPerformanceSetting(key, value, typ string) error {
+func (m *RootModel) setPerformanceSetting(key, value string) error {
 	switch key {
 	case "max_task_retries":
 		if v, err := strconv.Atoi(value); err == nil {
@@ -477,7 +478,7 @@ func (m RootModel) getSettingUnit() string {
 }
 
 // formatSettingValueForEdit returns a plain value without units for editing
-func formatSettingValueForEdit(value interface{}, typ, key string) string {
+func formatSettingValueForEdit(value any, typ, key string) string {
 	switch key {
 	case "min_chunk_size":
 		if v, ok := value.(int64); ok {
@@ -515,7 +516,7 @@ func formatSettingValueForEdit(value interface{}, typ, key string) string {
 }
 
 // formatSettingValue formats a setting value for display
-func formatSettingValue(value interface{}, typ string) string {
+func formatSettingValue(value any, typ string) string {
 	if value == nil {
 		return "-"
 	}

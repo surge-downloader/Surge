@@ -12,4 +12,8 @@ grab_bench*
 # Added by goreleaser init:
 dist/
 build/
+# [TODO]: Bro sometimes you really need to stop vibe coding.
 .github_token
+# [TODO]: You shouldn't push your TODO files into your github repo.
+TODO.md
+TODO

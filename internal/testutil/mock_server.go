@@ -285,10 +285,7 @@ func (m *MockServer) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 
 		dataStart := start + bytesWritten
-		dataEnd := dataStart + chunkSize
-		if dataEnd > m.FileSize {
-			dataEnd = m.FileSize
-		}
+		dataEnd := min(dataStart+chunkSize, m.FileSize)
 
 		n, err := w.Write(m.data[dataStart:dataEnd])
 		if err != nil {
@@ -458,10 +455,7 @@ func (s *StreamingMockServer) handleStreamingRequest(w http.ResponseWriter, r *h
 
 	for bytesWritten < length {
 		remaining := length - bytesWritten
-		chunkSize := bufLen
-		if remaining < chunkSize {
-			chunkSize = remaining
-		}
+		chunkSize := min(remaining, bufLen)
 
 		n, err := w.Write(s.data[:chunkSize])
 		if err != nil {

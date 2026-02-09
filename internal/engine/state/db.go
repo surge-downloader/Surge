@@ -47,6 +47,7 @@ func initDB() error {
 	}
 
 	// Create tables
+	// [TODO]: Fuck no we should use some proper solution.
 	query := `
 	CREATE TABLE IF NOT EXISTS downloads (
 		id TEXT PRIMARY KEY,

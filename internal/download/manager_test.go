@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -352,7 +353,12 @@ func TestProbeServer_InvalidURL(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := engine.ProbeServer(ctx, "http://invalid-host-that-does-not-exist.test:9999/file", "", nil)
+	_, err := engine.ProbeServer(
+		ctx,
+		"http://invalid-host-that-does-not-exist.test:9999/file",
+		"",
+		nil,
+	)
 	if err == nil {
 		t.Error("Expected error for invalid URL")
 	}
@@ -451,12 +457,14 @@ func TestProbeServer_ContentRangeFormats(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Range", tt.contentRange)
-				w.Header().Set("Content-Length", "1")
-				w.WriteHeader(http.StatusPartialContent)
-				w.Write([]byte("x"))
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Range", tt.contentRange)
+					w.Header().Set("Content-Length", "1")
+					w.WriteHeader(http.StatusPartialContent)
+					w.Write([]byte("x"))
+				}),
+			)
 			defer server.Close()
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -584,13 +592,13 @@ func TestUniqueFilePath_LongFilename(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Create a file with a long name (within OS limits)
-	longName := ""
-	for i := 0; i < 50; i++ {
-		longName += "a"
+	var longName strings.Builder
+	for range 50 {
+		longName.WriteString("a")
 	}
-	longName += ".txt"
+	longName.WriteString(".txt")
 
-	existingFile := filepath.Join(tmpDir, longName)
+	existingFile := filepath.Join(tmpDir, longName.String())
 	if err := os.WriteFile(existingFile, []byte("test"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -656,8 +664,7 @@ func BenchmarkUniqueFilePath_NoConflict(b *testing.B) {
 
 	path := filepath.Join(tmpDir, "nonexistent.txt")
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		uniqueFilePath(path)
 	}
 }
@@ -681,8 +688,7 @@ func BenchmarkUniqueFilePath_WithConflict(b *testing.B) {
 		os.WriteFile(name, []byte("test"), 0644)
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		uniqueFilePath(path)
 	}
 }

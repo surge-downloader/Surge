@@ -57,7 +57,10 @@ var rootCmd = &cobra.Command{
 		if err != nil {
 			settings = config.DefaultSettings()
 		}
-		GlobalPool = download.NewWorkerPool(GlobalProgressCh, settings.Connections.MaxConcurrentDownloads)
+		GlobalPool = download.NewWorkerPool(
+			GlobalProgressCh,
+			settings.Connections.MaxConcurrentDownloads,
+		)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 
@@ -72,7 +75,10 @@ var rootCmd = &cobra.Command{
 
 		if !isMaster {
 			fmt.Fprintln(os.Stderr, "Error: Surge is already running.")
-			fmt.Fprintln(os.Stderr, "Use 'surge add <url>' to add a download to the active instance.")
+			fmt.Fprintln(
+				os.Stderr,
+				"Use 'surge add <url>' to add a download to the active instance.",
+			)
 			os.Exit(1)
 		}
 		defer ReleaseLock()
@@ -246,7 +252,7 @@ func findAvailablePort(start int) (int, net.Listener) {
 // saveActivePort writes the active port to ~/.surge/port for extension discovery
 func saveActivePort(port int) {
 	portFile := filepath.Join(config.GetSurgeDir(), "port")
-	os.WriteFile(portFile, []byte(fmt.Sprintf("%d", port)), 0644)
+	os.WriteFile(portFile, fmt.Appendf(nil, "%d", port), 0644)
 	utils.Debug("HTTP server listening on port %d", port)
 }
 
@@ -263,7 +269,7 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"status": "ok",
 			"port":   port,
 		})
@@ -287,7 +293,11 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		}
 
 		if GlobalPool == nil {
-			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+			http.Error(
+				w,
+				"Server internal error: pool not initialized",
+				http.StatusInternalServerError,
+			)
 			return
 		}
 
@@ -304,7 +314,8 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		if err == nil && entry != nil {
 			// It exists, so we consider it "paused" (or at least stopped)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id, "message": "Download already stopped"})
+			json.NewEncoder(w).
+				Encode(map[string]string{"status": "paused", "id": id, "message": "Download already stopped"})
 			return
 		}
 
@@ -324,7 +335,11 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		}
 
 		if GlobalPool == nil {
-			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+			http.Error(
+				w,
+				"Server internal error: pool not initialized",
+				http.StatusInternalServerError,
+			)
 			return
 		}
 
@@ -344,7 +359,8 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 
 		if entry.Status == "completed" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "completed", "id": id, "message": "Download already completed"})
+			json.NewEncoder(w).
+				Encode(map[string]string{"status": "completed", "id": id, "message": "Download already completed"})
 			return
 		}
 
@@ -413,7 +429,8 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		atomic.AddInt32(&activeDownloads, 1)
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id, "message": "Download cold-resumed"})
+		json.NewEncoder(w).
+			Encode(map[string]string{"status": "resumed", "id": id, "message": "Download cold-resumed"})
 	})
 
 	// Delete endpoint
@@ -436,7 +453,11 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id})
 		} else {
-			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+			http.Error(
+				w,
+				"Server internal error: pool not initialized",
+				http.StatusInternalServerError,
+			)
 		}
 	})
 
@@ -464,14 +485,20 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 					status.TotalSize = cfg.State.TotalSize
 					status.Downloaded = cfg.State.Downloaded.Load()
 					if status.TotalSize > 0 {
-						status.Progress = float64(status.Downloaded) * 100 / float64(status.TotalSize)
+						status.Progress = float64(
+							status.Downloaded,
+						) * 100 / float64(
+							status.TotalSize,
+						)
 					}
 
 					// Calculate speed from progress
 					downloaded, _, _, sessionElapsed, connections, sessionStart := cfg.State.GetProgress()
 					sessionDownloaded := downloaded - sessionStart
 					if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
-						status.Speed = float64(sessionDownloaded) / sessionElapsed.Seconds() / (1024 * 1024)
+						status.Speed = float64(
+							sessionDownloaded,
+						) / sessionElapsed.Seconds() / (1024 * 1024)
 
 						// Calculate ETA (seconds remaining)
 						remaining := status.TotalSize - status.Downloaded
@@ -542,7 +569,8 @@ func corsMiddleware(next http.Handler) http.Handler {
 		// Set CORS headers
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS, PUT, PATCH")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+		w.Header().
+			Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 
 		// Handle preflight requests
 		if r.Method == "OPTIONS" {
@@ -715,7 +743,13 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		}
 	}
 
-	utils.Debug("Download request: URL=%s, SkipApproval=%v, isDuplicate=%v, isActive=%v", req.URL, req.SkipApproval, isDuplicate, isActive)
+	utils.Debug(
+		"Download request: URL=%s, SkipApproval=%v, isDuplicate=%v, isActive=%v",
+		req.URL,
+		req.SkipApproval,
+		isDuplicate,
+		isActive,
+	)
 
 	// EXTENSION VETTING SHORTCUT:
 	// If SkipApproval is true, we trust the extension completely.
@@ -727,12 +761,17 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		// Logic for prompting:
 		// 1. If ExtensionPrompt is enabled
 		// 2. OR if WarnOnDuplicate is enabled AND it is a duplicate
-		shouldPrompt := settings.General.ExtensionPrompt || (settings.General.WarnOnDuplicate && isDuplicate)
+		shouldPrompt := settings.General.ExtensionPrompt ||
+			(settings.General.WarnOnDuplicate && isDuplicate)
 
 		// Only prompt if we have a UI running (serverProgram != nil)
 		if shouldPrompt {
 			if serverProgram != nil {
-				utils.Debug("Requesting TUI confirmation for: %s (Duplicate: %v)", req.URL, isDuplicate)
+				utils.Debug(
+					"Requesting TUI confirmation for: %s (Duplicate: %v)",
+					req.URL,
+					isDuplicate,
+				)
 
 				// Send request to TUI
 				GlobalProgressCh <- events.DownloadRequestMsg{
@@ -753,7 +792,8 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 				return
 			} else {
 				// Headless mode check
-				if settings.General.ExtensionPrompt || (settings.General.WarnOnDuplicate && isDuplicate) {
+				if settings.General.ExtensionPrompt ||
+					(settings.General.WarnOnDuplicate && isDuplicate) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusConflict)
 					json.NewEncoder(w).Encode(map[string]string{
@@ -904,7 +944,7 @@ func init() {
 
 // initializeGlobalState sets up the environment and configures the engine state and logging
 func initializeGlobalState() {
-	stateDir := config.GetStateDir()
+	stateDir := config.GetDataDir()
 	logsDir := config.GetLogsDir()
 
 	// Ensure directories exist

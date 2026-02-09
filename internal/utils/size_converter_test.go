@@ -44,7 +44,12 @@ func TestConvertBytesToHumanReadable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ConvertBytesToHumanReadable(tt.bytes)
 			if got != tt.expected {
-				t.Errorf("ConvertBytesToHumanReadable(%d) = %q, want %q", tt.bytes, got, tt.expected)
+				t.Errorf(
+					"ConvertBytesToHumanReadable(%d) = %q, want %q",
+					tt.bytes,
+					got,
+					tt.expected,
+				)
 			}
 		})
 	}
@@ -79,7 +84,12 @@ func TestConvertBytesToHumanReadable_BoundaryValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ConvertBytesToHumanReadable(tt.bytes)
 			if got != tt.expected {
-				t.Errorf("ConvertBytesToHumanReadable(%d) = %q, want %q", tt.bytes, got, tt.expected)
+				t.Errorf(
+					"ConvertBytesToHumanReadable(%d) = %q, want %q",
+					tt.bytes,
+					got,
+					tt.expected,
+				)
 			}
 		})
 	}

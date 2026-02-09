@@ -9,7 +9,6 @@ import (
 
 func TestDownloadPausedMsg_Creation(t *testing.T) {
 	msg := DownloadPausedMsg{
-		DownloadID: "immediate-pause",
 		Downloaded: 0,
 	}
 
@@ -46,7 +45,7 @@ func TestDownloadResumedMsg_ZeroValues(t *testing.T) {
 
 func TestMessageTypes_AreDistinct(t *testing.T) {
 	// Verify all message types are distinct and can be type-switched
-	messages := []interface{}{
+	messages := []any{
 		ProgressMsg{DownloadID: "progress"},
 		DownloadCompleteMsg{DownloadID: "complete"},
 		DownloadErrorMsg{DownloadID: "error"},
@@ -70,7 +69,7 @@ func TestMessageTypes_AreDistinct(t *testing.T) {
 }
 
 func TestMessageTypes_TypeSwitch(t *testing.T) {
-	var msg interface{} = ProgressMsg{DownloadID: "test"}
+	var msg any = ProgressMsg{DownloadID: "test"}
 
 	switch m := msg.(type) {
 	case ProgressMsg:

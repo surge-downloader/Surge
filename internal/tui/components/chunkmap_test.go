@@ -78,7 +78,7 @@ func TestChunkMap_GhostPinkFix(t *testing.T) {
 	bitmap := make([]byte, 3)
 
 	// 0-4 Completed
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		setChunk(bitmap, i, int(types.ChunkCompleted))
 	}
 	// 5-9 Pending
@@ -88,11 +88,20 @@ func TestChunkMap_GhostPinkFix(t *testing.T) {
 
 	// 10 chunks, say 10KB total, 1KB each.
 	progress := make([]int64, chunkCount)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		progress[i] = 1024
 	} // Full
 
-	model := NewChunkMapModel(bitmap, chunkCount, 6, 0, false, 10240, 1024, progress) // 6 width -> 3 cols
+	model := NewChunkMapModel(
+		bitmap,
+		chunkCount,
+		6,
+		0,
+		false,
+		10240,
+		1024,
+		progress,
+	) // 6 width -> 3 cols
 	_ = model.View()
 
 	// We check if we have Pink in the output.

@@ -253,27 +253,16 @@ func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkSta
 	for i := startIdx; i <= endIdx; i++ {
 		// Calculate precise overlap with this chunk
 		chunkStart := int64(i) * ps.ActualChunkSize
-		chunkEnd := chunkStart + ps.ActualChunkSize
-		if chunkEnd > ps.TotalSize {
-			chunkEnd = ps.TotalSize
-		}
+		chunkEnd := min(chunkStart+ps.ActualChunkSize, ps.TotalSize)
 
-		updateStart := offset
-		if updateStart < chunkStart {
-			updateStart = chunkStart
-		}
+		updateStart := max(offset, chunkStart)
 
-		updateEnd := offset + length
-		if updateEnd > chunkEnd {
-			updateEnd = chunkEnd
-		}
+		updateEnd := min(offset+length, chunkEnd)
 
-		overlap := updateEnd - updateStart
-		if overlap < 0 {
-			overlap = 0
-		}
+		overlap := max(updateEnd-updateStart, 0)
 
-		if status == ChunkCompleted {
+		switch status {
+		case ChunkCompleted:
 			// Accumulate bytes
 			// Only add providing we don't exceed chunk size
 			increment := overlap
@@ -297,7 +286,7 @@ func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkSta
 					ps.SetChunkState(i, ChunkDownloading)
 				}
 			}
-		} else if status == ChunkDownloading {
+		case ChunkDownloading:
 			current := ps.GetChunkState(i)
 			if current != ChunkCompleted {
 				ps.SetChunkState(i, ChunkDownloading)
@@ -320,10 +309,7 @@ func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
 	var totalVerified int64
 	for i := 0; i < ps.BitmapWidth; i++ {
 		chunkStart := int64(i) * ps.ActualChunkSize
-		chunkEnd := chunkStart + ps.ActualChunkSize
-		if chunkEnd > ps.TotalSize {
-			chunkEnd = ps.TotalSize
-		}
+		chunkEnd := min(chunkStart+ps.ActualChunkSize, ps.TotalSize)
 		ps.ChunkProgress[i] = chunkEnd - chunkStart
 		totalVerified += ps.ChunkProgress[i]
 	}
@@ -345,20 +331,11 @@ func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
 
 		for i := startIdx; i <= endIdx; i++ {
 			chunkStart := int64(i) * ps.ActualChunkSize
-			chunkEnd := chunkStart + ps.ActualChunkSize
-			if chunkEnd > ps.TotalSize {
-				chunkEnd = ps.TotalSize
-			}
+			chunkEnd := min(chunkStart+ps.ActualChunkSize, ps.TotalSize)
 
-			taskStart := offset
-			if taskStart < chunkStart {
-				taskStart = chunkStart
-			}
+			taskStart := max(offset, chunkStart)
 
-			taskEnd := offset + length
-			if taskEnd > chunkEnd {
-				taskEnd = chunkEnd
-			}
+			taskEnd := min(offset+length, chunkEnd)
 
 			overlap := taskEnd - taskStart
 			if overlap > 0 {
@@ -374,10 +351,7 @@ func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
 	// 3. Update Bitmap based on calculated progress
 	for i := 0; i < ps.BitmapWidth; i++ {
 		chunkStart := int64(i) * ps.ActualChunkSize
-		chunkEnd := chunkStart + ps.ActualChunkSize
-		if chunkEnd > ps.TotalSize {
-			chunkEnd = ps.TotalSize
-		}
+		chunkEnd := min(chunkStart+ps.ActualChunkSize, ps.TotalSize)
 		chunkSize := chunkEnd - chunkStart
 
 		if ps.ChunkProgress[i] >= chunkSize {

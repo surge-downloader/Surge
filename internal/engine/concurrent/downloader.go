@@ -33,7 +33,12 @@ type ConcurrentDownloader struct {
 }
 
 // NewConcurrentDownloader creates a new concurrent downloader with all required parameters
-func NewConcurrentDownloader(id string, progressCh chan<- any, progState *types.ProgressState, runtime *types.RuntimeConfig) *ConcurrentDownloader {
+func NewConcurrentDownloader(
+	id string,
+	progressCh chan<- any,
+	progState *types.ProgressState,
+	runtime *types.RuntimeConfig,
+) *ConcurrentDownloader {
 	return &ConcurrentDownloader{
 		ID:           id,
 		ProgressChan: progressCh,
@@ -68,10 +73,7 @@ func (d *ConcurrentDownloader) getInitialConnections(fileSize int64) int {
 	// 2. Hard constraint: Don't create chunks smaller than MinChunkSize
 	// If file is 20MB and MinChunk is 10MB, we strictly can't have more than 2 workers
 	if minChunkSize > 0 {
-		maxPossibleChunks := int(fileSize / minChunkSize)
-		if maxPossibleChunks < 1 {
-			maxPossibleChunks = 1
-		}
+		maxPossibleChunks := max(int(fileSize/minChunkSize), 1)
 		if calculatedWorkers > maxPossibleChunks {
 			calculatedWorkers = maxPossibleChunks
 		}
@@ -173,10 +175,7 @@ func createTasks(fileSize, chunkSize int64) []types.Task {
 // newConcurrentClient creates an http.Client tuned for concurrent downloads
 func (d *ConcurrentDownloader) newConcurrentClient(numConns int) *http.Client {
 	// Ensure we have enough connections per host
-	maxConns := d.Runtime.GetMaxConnectionsPerHost()
-	if numConns > maxConns {
-		maxConns = numConns
-	}
+	maxConns := max(numConns, d.Runtime.GetMaxConnectionsPerHost())
 
 	var proxyFunc func(*http.Request) (*url.URL, error)
 	if d.Runtime.ProxyURL != "" {
@@ -242,8 +241,22 @@ func (d *ConcurrentDownloader) newConcurrentClient(numConns int) *http.Client {
 
 // Download downloads a file using multiple concurrent connections
 // Uses pre-probed metadata (file size already known)
-func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, candidateMirrors []string, activeMirrors []string, destPath string, fileSize int64, verbose bool) error {
-	utils.Debug("ConcurrentDownloader.Download: %s -> %s (size: %d, mirrors: %d)", rawurl, destPath, fileSize, len(activeMirrors))
+func (d *ConcurrentDownloader) Download(
+	ctx context.Context,
+	rawurl string,
+	candidateMirrors []string,
+	activeMirrors []string,
+	destPath string,
+	fileSize int64,
+	verbose bool,
+) error {
+	utils.Debug(
+		"ConcurrentDownloader.Download: %s -> %s (size: %d, mirrors: %d)",
+		rawurl,
+		destPath,
+		fileSize,
+		len(activeMirrors),
+	)
 
 	// Store URL and path for pause/resume (final path without .surge)
 	d.URL = rawurl
@@ -337,7 +350,11 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 				utils.Debug("Restored chunk map: size %d", savedState.ActualChunkSize)
 			}
 		}
-		utils.Debug("Resuming from saved state: %d tasks, %d bytes downloaded", len(tasks), savedState.Downloaded)
+		utils.Debug(
+			"Resuming from saved state: %d tasks, %d bytes downloaded",
+			len(tasks),
+			savedState.Downloaded,
+		)
 	} else {
 		// Fresh download: preallocate file and create new tasks
 		if err := outFile.Truncate(fileSize); err != nil {
@@ -405,7 +422,8 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 			case <-ticker.C:
 				// Ensure queue is empty (no pending retries) before considering byte count.
 				// This protects against cutting off active retries even if byte count seems high (due to overlaps etc).
-				if queue.Len() == 0 && (int(queue.IdleWorkers()) == numConns || d.State.Downloaded.Load() >= fileSize) {
+				if queue.Len() == 0 &&
+					(int(queue.IdleWorkers()) == numConns || d.State.Downloaded.Load() >= fileSize) {
 					queue.Close()
 					return
 				}
@@ -453,11 +471,19 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		workerMirrors = []string{rawurl}
 	}
 
-	for i := 0; i < numConns; i++ {
+	for i := range numConns {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			err := d.worker(downloadCtx, workerID, workerMirrors, outFile, queue, fileSize, startTime, verbose, client)
+			err := d.worker(
+				downloadCtx,
+				workerID,
+				workerMirrors,
+				outFile,
+				queue,
+				fileSize,
+				client,
+			)
 			if err != nil && err != context.Canceled {
 				workerErrors <- err
 			}
@@ -535,8 +561,12 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 			utils.Debug("Failed to save pause state: %v", err)
 		}
 
-		utils.Debug("Download paused, state saved (Downloaded=%d, RemainingTasks=%d, RemainingBytes=%d)",
-			computedDownloaded, len(remainingTasks), remainingBytes)
+		utils.Debug(
+			"Download paused, state saved (Downloaded=%d, RemainingTasks=%d, RemainingBytes=%d)",
+			computedDownloaded,
+			len(remainingTasks),
+			remainingBytes,
+		)
 		return types.ErrPaused // Signal valid pause to caller
 	}
 
@@ -563,7 +593,9 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		// Check for race condition: did someone else already rename it?
 		if os.IsNotExist(err) {
 			if info, statErr := os.Stat(destPath); statErr == nil && info.Size() == fileSize {
-				utils.Debug("Race condition detected: File already exists and has correct size. Treating as success.")
+				utils.Debug(
+					"Race condition detected: File already exists and has correct size. Treating as success.",
+				)
 				// Clean up state just in case, though usually done by caller
 				_ = state.DeleteState(d.ID, d.URL, destPath)
 				return nil

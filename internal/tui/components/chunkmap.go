@@ -21,7 +21,15 @@ type ChunkMapModel struct {
 }
 
 // NewChunkMapModel creates a new chunk map visualization
-func NewChunkMapModel(bitmap []byte, bitmapWidth int, width, height int, paused bool, totalSize int64, actualChunkSize int64, chunkProgress []int64) ChunkMapModel {
+func NewChunkMapModel(
+	bitmap []byte,
+	bitmapWidth int,
+	width, height int,
+	paused bool,
+	totalSize int64,
+	actualChunkSize int64,
+	chunkProgress []int64,
+) ChunkMapModel {
 	return ChunkMapModel{
 		Bitmap:          bitmap,
 		BitmapWidth:     bitmapWidth,
@@ -55,10 +63,7 @@ func (m ChunkMapModel) View() string {
 
 	// Calculate available width for block rendering
 	// We use 2 chars per block (char + space)
-	cols := m.Width / 2
-	if cols < 1 {
-		cols = 1
-	}
+	cols := max(m.Width/2, 1)
 
 	// Use provided height for rows (screen-based sizing)
 	// Grid size is ONLY based on screen dimensions, not file chunk count
@@ -82,13 +87,10 @@ func (m ChunkMapModel) View() string {
 	// We calculate progress based on byte ranges of the visual blocks
 	bytesPerBlock := float64(m.TotalSize) / float64(targetChunks)
 
-	for i := 0; i < targetChunks; i++ {
+	for i := range targetChunks {
 		// Calculate byte range for this visual block
 		blockStartByte := int64(float64(i) * bytesPerBlock)
-		blockEndByte := int64(float64(i+1) * bytesPerBlock)
-		if blockEndByte > m.TotalSize {
-			blockEndByte = m.TotalSize
-		}
+		blockEndByte := min(int64(float64(i+1)*bytesPerBlock), m.TotalSize)
 
 		blockSize := blockEndByte - blockStartByte
 		if blockSize <= 0 {
@@ -124,15 +126,9 @@ func (m ChunkMapModel) View() string {
 			}
 
 			// Intersection of Chunk and VisualBlock
-			intersectStart := blockStartByte
-			if chunkStartByte > intersectStart {
-				intersectStart = chunkStartByte
-			}
+			intersectStart := max(chunkStartByte, blockStartByte)
 
-			intersectEnd := blockEndByte
-			if chunkEndByte < intersectEnd {
-				intersectEnd = chunkEndByte
-			}
+			intersectEnd := min(chunkEndByte, blockEndByte)
 
 			overlap := intersectEnd - intersectStart
 			if overlap <= 0 {
@@ -155,10 +151,7 @@ func (m ChunkMapModel) View() string {
 				// Calculate overlap of [intersectStart, intersectEnd) with [chunkStartByte, validEndByte)
 				// Since chunkStartByte <= intersectStart (mostly), we focus on the end.
 
-				validIntersectEnd := intersectEnd
-				if validEndByte < validIntersectEnd {
-					validIntersectEnd = validEndByte
-				}
+				validIntersectEnd := min(validEndByte, intersectEnd)
 
 				validOverlap := validIntersectEnd - intersectStart
 				if validOverlap > 0 {
@@ -182,9 +175,11 @@ func (m ChunkMapModel) View() string {
 	var s strings.Builder
 
 	// Styles
-	pendingStyle := lipgloss.NewStyle().Foreground(colors.DarkGray)           // Dark gray
-	downloadingStyle := lipgloss.NewStyle().Foreground(colors.NeonPink)       // Neon Pink
-	pausedStyle := lipgloss.NewStyle().Foreground(colors.StatePaused)         // Yellow/Gold for paused Partial
+	pendingStyle := lipgloss.NewStyle().Foreground(colors.DarkGray)     // Dark gray
+	downloadingStyle := lipgloss.NewStyle().Foreground(colors.NeonPink) // Neon Pink
+	pausedStyle := lipgloss.NewStyle().
+		Foreground(colors.StatePaused)
+		// Yellow/Gold for paused Partial
 	completedStyle := lipgloss.NewStyle().Foreground(colors.StateDownloading) // Neon Green / Cyan
 
 	block := "■"
@@ -221,12 +216,6 @@ func CalculateHeight(count int, width int, availableHeight int) int {
 	}
 	// Use all available height (screen-based sizing)
 	// Minimum 3, maximum 5 for compact look
-	rows := availableHeight
-	if rows < 3 {
-		rows = 3
-	}
-	if rows > 5 {
-		rows = 5
-	}
+	rows := min(max(availableHeight, 3), 5)
 	return rows
 }

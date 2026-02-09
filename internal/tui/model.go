@@ -162,7 +162,13 @@ func NewDownloadModel(id string, url string, filename string, total int64) *Down
 	}
 }
 
-func InitialRootModel(serverPort int, currentVersion string, pool *download.WorkerPool, progressChan chan any, noResume bool) RootModel {
+func InitialRootModel(
+	serverPort int,
+	currentVersion string,
+	pool *download.WorkerPool,
+	progressChan chan any,
+	noResume bool,
+) RootModel {
 	// Initialize inputs
 	urlInput := textinput.New()
 	urlInput.Placeholder = "https://example.com/file.zip"
@@ -351,17 +357,20 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 	searchInput.Prompt = ""
 
 	m := RootModel{
-		downloads:             downloads,
-		inputs:                []textinput.Model{urlInput, mirrorsInput, pathInput, filenameInput},
-		state:                 DashboardState,
-		progressChan:          progressChan,
-		filepicker:            fp,
-		help:                  helpModel,
-		list:                  downloadList,
-		Pool:                  pool,
-		PWD:                   pwd,
-		SpeedHistory:          make([]float64, GraphHistoryPoints), // 60 points of history (30s at 0.5s interval)
-		logViewport:           viewport.New(40, 5),                 // Default size, will be resized
+		downloads:    downloads,
+		inputs:       []textinput.Model{urlInput, mirrorsInput, pathInput, filenameInput},
+		state:        DashboardState,
+		progressChan: progressChan,
+		filepicker:   fp,
+		help:         helpModel,
+		list:         downloadList,
+		Pool:         pool,
+		PWD:          pwd,
+		SpeedHistory: make(
+			[]float64,
+			GraphHistoryPoints,
+		), // 60 points of history (30s at 0.5s interval)
+		logViewport:           viewport.New(40, 5), // Default size, will be resized
 		logEntries:            make([]string, 0),
 		Settings:              settings,
 		SettingsInput:         settingsInput,
@@ -428,11 +437,11 @@ func (m RootModel) getFilteredDownloads() []*DownloadModel {
 }
 
 // resetFilepicker resets the filepicker to default directory-only mode
-func (m *RootModel) resetFilepicker() {
-	m.filepicker.FileAllowed = false
-	m.filepicker.DirAllowed = true
-	m.filepicker.AllowedTypes = nil
-}
+// func (m *RootModel) resetFilepicker() {
+// 	m.filepicker.FileAllowed = false
+// 	m.filepicker.DirAllowed = true
+// 	m.filepicker.AllowedTypes = nil
+// }
 
 // newFilepicker creates a fresh filepicker instance with consistent settings.
 // This is necessary to avoid cursor desync issues that cause "index out of range"

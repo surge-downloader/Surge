@@ -41,7 +41,9 @@ func Debug(format string, args ...any) {
 
 	debugOnce.Do(func() {
 		os.MkdirAll(dir, 0755)
-		debugFile, _ = os.Create(filepath.Join(dir, fmt.Sprintf("debug-%s.log", time.Now().Format("20060102-150405"))))
+		debugFile, _ = os.Create(
+			filepath.Join(dir, fmt.Sprintf("debug-%s.log", time.Now().Format("20060102-150405"))),
+		)
 	})
 
 	if debugFile != nil {
@@ -71,7 +73,8 @@ func CleanupLogs(retentionCount int) {
 
 	var logs []fs.DirEntry
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "debug-") && strings.HasSuffix(entry.Name(), ".log") {
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "debug-") &&
+			strings.HasSuffix(entry.Name(), ".log") {
 			logs = append(logs, entry)
 		}
 	}

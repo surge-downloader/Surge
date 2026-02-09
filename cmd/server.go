@@ -54,7 +54,7 @@ var serverStartCmd = &cobra.Command{
 		// Determine Port
 		// Logic moved to startServerLogic, or we need to pass flags.
 		// Use startServerLogic
-		startServerLogic(cmd, args, portFlag, batchFile, outputDir, exitWhenDone, noResume)
+		startServerLogic(args, portFlag, batchFile, outputDir, exitWhenDone, noResume)
 	},
 }
 
@@ -125,13 +125,14 @@ func init() {
 	serverStartCmd.Flags().IntP("port", "p", 0, "Port to listen on")
 	serverStartCmd.Flags().StringP("output", "o", "", "Default output directory")
 	serverStartCmd.Flags().Bool("exit-when-done", false, "Exit when all downloads complete")
-	serverStartCmd.Flags().Bool("no-resume", false, "Do not auto-resume paused downloads on startup")
+	serverStartCmd.Flags().
+		Bool("no-resume", false, "Do not auto-resume paused downloads on startup")
 }
 
 func savePID() {
 	pid := os.Getpid()
 	pidFile := filepath.Join(config.GetSurgeDir(), "pid")
-	os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", pid)), 0644)
+	os.WriteFile(pidFile, fmt.Appendf(nil, "%d", pid), 0644)
 }
 
 func removePID() {
@@ -149,7 +150,14 @@ func readPID() int {
 	return pid
 }
 
-func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile string, outputDir string, exitWhenDone bool, noResume bool) {
+func startServerLogic(
+	args []string,
+	portFlag int,
+	batchFile string,
+	outputDir string,
+	exitWhenDone bool,
+	noResume bool,
+) {
 	var port int
 	var listener net.Listener
 

@@ -53,7 +53,7 @@ func TestBenchmarkMetrics_RecordFirstByte(t *testing.T) {
 func TestBenchmarkMetrics_RecordRetry(t *testing.T) {
 	m := NewBenchmarkMetrics()
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		m.RecordRetry()
 	}
 
@@ -352,12 +352,12 @@ func TestReplaceFirst(t *testing.T) {
 func TestSprintf(t *testing.T) {
 	tests := []struct {
 		format   string
-		args     []interface{}
+		args     []any
 		expected string
 	}{
-		{"%d items", []interface{}{5}, "5 items"},
-		{"%.1f MB/s", []interface{}{10.5}, "10.5 MB/s"},
-		{"%c", []interface{}{byte('K')}, "K"},
+		{"%d items", []any{5}, "5 items"},
+		{"%.1f MB/s", []any{10.5}, "10.5 MB/s"},
+		{"%c", []any{byte('K')}, "K"},
 	}
 
 	for _, tt := range tests {
@@ -385,27 +385,24 @@ func containsString(s, substr string) bool {
 
 func BenchmarkRecordBytes(b *testing.B) {
 	m := NewBenchmarkMetrics()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		m.RecordBytes(1024)
 	}
 }
 
 func BenchmarkRecordConnections(b *testing.B) {
 	m := NewBenchmarkMetrics()
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		m.RecordConnections(int32(i % 32))
 	}
 }
 
 func BenchmarkFormatBytes(b *testing.B) {
 	sizes := []int64{0, 1024, 1048576, 1073741824}
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		formatBytes(sizes[i%len(sizes)])
 	}
 }

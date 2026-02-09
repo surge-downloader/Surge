@@ -94,7 +94,7 @@ func isNewerVersion(latest, current string) bool {
 	latestParts := parseVersion(latest)
 	currentParts := parseVersion(current)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if latestParts[i] > currentParts[i] {
 			return true
 		}

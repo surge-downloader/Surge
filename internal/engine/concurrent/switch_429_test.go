@@ -73,7 +73,10 @@ func TestConcurrentDownloader_SwitchOn429(t *testing.T) {
 	// But since we have 2 mirrors, we SKIP backoff.
 	// So it should be very fast (< 200ms).
 	if elapsed > 200*time.Millisecond {
-		t.Errorf("Download took %v, indicating backoff was applied via sleep (expected skip)", elapsed)
+		t.Errorf(
+			"Download took %v, indicating backoff was applied via sleep (expected skip)",
+			elapsed,
+		)
 	}
 }
 
@@ -81,7 +84,9 @@ func TestConcurrentDownloader_BackoffOnSingleMirror(t *testing.T) {
 	tmpDir, cleanup := initTestState(t)
 	defer cleanup()
 
-	fileSize := int64(1 * types.MB) // Use enough size so it doesn't just finish instantly on 1st byte
+	fileSize := int64(
+		1 * types.MB,
+	) // Use enough size so it doesn't just finish instantly on 1st byte
 
 	// Server: Returns 429 once, then succeeds
 	// This forces a retry.

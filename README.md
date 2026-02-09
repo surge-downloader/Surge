@@ -21,7 +21,7 @@
 
 Surge is designed for power users who prefer a keyboard-driven workflow. It features a beautiful **Terminal User Interface (TUI)**, as well as a background **Headless Server** and a **CLI tool** for automation.
 
-![Surge Demo](assets/demo.gif)
+![Surge Demo](extra/assets/demo.gif)
 
 ## Why use Surge?
 

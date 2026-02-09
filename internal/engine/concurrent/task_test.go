@@ -119,10 +119,8 @@ func TestActiveTask_Cancel(t *testing.T) {
 }
 
 func TestActiveTask_WindowTracking(t *testing.T) {
-	now := time.Now()
 	at := &ActiveTask{
 		Task:        types.Task{Offset: 0, Length: 1000},
-		WindowStart: now,
 		WindowBytes: 0,
 	}
 

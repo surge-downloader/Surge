@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/surge-downloader/surge/internal/config"
@@ -60,13 +61,7 @@ func TestResolveDownloadID_Remote(t *testing.T) {
 
 // TestLsCmd_Alias verify 'l' alias exists
 func TestLsCmd_Alias(t *testing.T) {
-	found := false
-	for _, alias := range lsCmd.Aliases {
-		if alias == "l" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(lsCmd.Aliases, "l")
 	if !found {
 		t.Error("lsCmd should have 'l' alias")
 	}

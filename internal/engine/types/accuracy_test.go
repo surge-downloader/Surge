@@ -33,10 +33,11 @@ func TestChunkAccuracy(t *testing.T) {
 		byteIndex := idx / 4
 		bitOffset := (idx % 4) * 2
 		val := (bitmap[byteIndex] >> bitOffset) & 3
-		return types.ChunkStatus(val) == types.ChunkDownloading || types.ChunkStatus(val) == types.ChunkCompleted
+		return types.ChunkStatus(val) == types.ChunkDownloading ||
+			types.ChunkStatus(val) == types.ChunkCompleted
 	}
 
-	for i := 0; i < width; i++ {
+	for i := range width {
 		if getComp(i) {
 			activeCount++
 		}

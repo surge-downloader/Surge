@@ -38,7 +38,9 @@ func TestAcquireLock(t *testing.T) {
 		if locked {
 			// Clean up this second lock if it succeeded
 			instanceLock.flock.Unlock()
-			t.Log("Warning: Same-process re-locking succeeded. Subprocess test needed for strict verification.")
+			t.Log(
+				"Warning: Same-process re-locking succeeded. Subprocess test needed for strict verification.",
+			)
 		} else {
 			assert.False(t, locked, "Should not acquire lock if already held")
 		}

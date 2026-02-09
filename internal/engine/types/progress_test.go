@@ -154,14 +154,14 @@ func TestProgressState_AtomicOperations(t *testing.T) {
 
 	// Test concurrent increment
 	done := make(chan bool, 10)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			ps.Downloaded.Add(100)
 			done <- true
 		}()
 	}
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -426,7 +427,7 @@ func TestHealthEndpoint(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"status": "ok",
 			"port":   8080,
 		})
@@ -445,7 +446,7 @@ func TestHealthEndpoint(t *testing.T) {
 		t.Errorf("Expected 200, got %d", resp.StatusCode)
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
@@ -532,13 +533,7 @@ func TestAddCmd_Use(t *testing.T) {
 
 func TestAddCmd_HasGetAlias(t *testing.T) {
 	// addCmd should have 'get' as alias
-	found := false
-	for _, alias := range addCmd.Aliases {
-		if alias == "get" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(addCmd.Aliases, "get")
 	if !found {
 		t.Error("addCmd should have 'get' alias")
 	}
@@ -573,7 +568,7 @@ func TestStartHTTPServer_HealthEndpoint(t *testing.T) {
 		t.Errorf("Expected 200, got %d", resp.StatusCode)
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode: %v", err)
 	}
@@ -617,7 +612,11 @@ func TestStartHTTPServer_OptionsRequest(t *testing.T) {
 	go startHTTPServer(ln, port, "")
 	time.Sleep(50 * time.Millisecond)
 
-	req, _ := http.NewRequest(http.MethodOptions, fmt.Sprintf("http://127.0.0.1:%d/download", port), nil)
+	req, _ := http.NewRequest(
+		http.MethodOptions,
+		fmt.Sprintf("http://127.0.0.1:%d/download", port),
+		nil,
+	)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
@@ -641,7 +640,11 @@ func TestStartHTTPServer_DownloadEndpoint_MethodNotAllowed(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// PUT should not be allowed
-	req, _ := http.NewRequest(http.MethodPut, fmt.Sprintf("http://127.0.0.1:%d/download", port), nil)
+	req, _ := http.NewRequest(
+		http.MethodPut,
+		fmt.Sprintf("http://127.0.0.1:%d/download", port),
+		nil,
+	)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
@@ -880,7 +883,7 @@ func TestFindAvailablePort_MultipleSequential(t *testing.T) {
 
 	// Get 5 sequential ports
 	startPort := 53000
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		port, ln := findAvailablePort(startPort)
 		if ln == nil {
 			t.Fatalf("Failed to find port on iteration %d", i)
@@ -957,13 +960,7 @@ func TestRmCmd_Use(t *testing.T) {
 }
 
 func TestRmCmd_HasKillAlias(t *testing.T) {
-	found := false
-	for _, alias := range rmCmd.Aliases {
-		if alias == "kill" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(rmCmd.Aliases, "kill")
 	if !found {
 		t.Error("rmCmd should have 'kill' alias")
 	}

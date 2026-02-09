@@ -14,7 +14,15 @@ import (
 )
 
 // worker downloads tasks from the queue
-func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []string, file *os.File, queue *TaskQueue, totalSize int64, startTime time.Time, verbose bool, client *http.Client) error {
+func (d *ConcurrentDownloader) worker(
+	ctx context.Context,
+	id int,
+	mirrors []string,
+	file *os.File,
+	queue *TaskQueue,
+	totalSize int64,
+	client *http.Client,
+) error {
 	// Get pooled buffer
 	bufPtr := d.bufPool.Get().(*[]byte)
 	defer d.bufPool.Put(bufPtr)
@@ -41,11 +49,13 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 
 		var lastErr error
 		maxRetries := d.Runtime.GetMaxTaskRetries()
-		for attempt := 0; attempt < maxRetries; attempt++ {
+		for attempt := range maxRetries {
 			if attempt > 0 {
 
 				if len(mirrors) == 1 {
-					time.Sleep(time.Duration(1<<attempt) * types.RetryBaseDelay) //Exponential backoff incase of failure
+					time.Sleep(
+						time.Duration(1<<attempt) * types.RetryBaseDelay,
+					) //Exponential backoff incase of failure
 				}
 
 				// FAILOVER: Switch mirror on retry
@@ -53,7 +63,12 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 				d.ReportMirrorError(mirrors[currentMirrorIdx])
 
 				currentMirrorIdx = (currentMirrorIdx + 1) % len(mirrors)
-				utils.Debug("Worker %d: switching to mirror %s (attempt %d)", id, mirrors[currentMirrorIdx], attempt+1)
+				utils.Debug(
+					"Worker %d: switching to mirror %s (attempt %d)",
+					id,
+					mirrors[currentMirrorIdx],
+					attempt+1,
+				)
 			}
 
 			// Use current mirror
@@ -81,14 +96,28 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 			}
 
 			taskStart := time.Now()
-			lastErr = d.downloadTask(taskCtx, currentURL, file, activeTask, buf, verbose, client, totalSize)
+			lastErr = d.downloadTask(
+				taskCtx,
+				currentURL,
+				file,
+				activeTask,
+				buf,
+				client,
+				totalSize,
+			)
 
 			// CRITICAL: Capture external cancellation state BEFORE calling taskCancel()
 			// If we call taskCancel() first, taskCtx.Err() will always be non-nil
 			wasExternallyCancelled := taskCtx.Err() != nil
 
 			taskCancel() // Clean up context resources
-			utils.Debug("Worker %d: Task offset=%d length=%d took %v", id, task.Offset, task.Length, time.Since(taskStart))
+			utils.Debug(
+				"Worker %d: Task offset=%d length=%d took %v",
+				id,
+				task.Offset,
+				task.Length,
+				time.Since(taskStart),
+			)
 
 			// Check for PARENT context cancellation (pause/shutdown)
 			// This preserves active task info for pause handler to collect
@@ -107,7 +136,12 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 
 				// Force rotation to next mirror to avoid getting stuck on the slow one
 				currentMirrorIdx = (currentMirrorIdx + 1) % len(mirrors)
-				utils.Debug("Worker %d: Health check cancelled task, rotating from mirror %s to %s", id, mirrors[(currentMirrorIdx+len(mirrors)-1)%len(mirrors)], mirrors[currentMirrorIdx])
+				utils.Debug(
+					"Worker %d: Health check cancelled task, rotating from mirror %s to %s",
+					id,
+					mirrors[(currentMirrorIdx+len(mirrors)-1)%len(mirrors)],
+					mirrors[currentMirrorIdx],
+				)
 
 				if remaining := activeTask.RemainingTask(); remaining != nil {
 					// Clamp to original task end (don't go past original boundary)
@@ -117,8 +151,12 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 					}
 					if remaining.Length > 0 {
 						queue.Push(*remaining)
-						utils.Debug("Worker %d: health-cancelled task requeued (remaining: %d bytes from offset %d)",
-							id, remaining.Length, remaining.Offset)
+						utils.Debug(
+							"Worker %d: health-cancelled task requeued (remaining: %d bytes from offset %d)",
+							id,
+							remaining.Length,
+							remaining.Offset,
+						)
 					}
 				}
 				// Delete from active tasks and move to next task (don't retry from scratch)
@@ -164,13 +202,26 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 			// If we modified StopAt we should probably reset it or push the remaining part?
 			// TODO: Could optimize by pushing only remaining part if we track that.
 			queue.Push(task)
-			utils.Debug("task at offset %d failed after %d retries: %v", task.Offset, maxRetries, lastErr)
+			utils.Debug(
+				"task at offset %d failed after %d retries: %v",
+				task.Offset,
+				maxRetries,
+				lastErr,
+			)
 		}
 	}
 }
 
 // downloadTask downloads a single byte range and writes to file at offset
-func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, file *os.File, activeTask *ActiveTask, buf []byte, verbose bool, client *http.Client, totalSize int64) error {
+func (d *ConcurrentDownloader) downloadTask(
+	ctx context.Context,
+	rawurl string,
+	file *os.File,
+	activeTask *ActiveTask,
+	buf []byte,
+	client *http.Client,
+	totalSize int64,
+) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawurl, nil)
 	if err != nil {
 		return err
@@ -209,7 +260,9 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 		// Valid only if we requested the full file
 		// If we wanted a partial range but got the whole file (200), that's an error because we can't handle the full stream at a non-zero offset
 		if task.Offset != 0 || task.Length != totalSize {
-			return fmt.Errorf("server indicated success (200) but ignored range request (expected 206)")
+			return fmt.Errorf(
+				"server indicated success (200) but ignored range request (expected 206)",
+			)
 		}
 	} else if resp.StatusCode != http.StatusPartialContent {
 		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
@@ -258,10 +311,7 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 			return nil
 		}
 
-		readSize := int64(len(buf))
-		if readSize > remaining {
-			readSize = remaining
-		}
+		readSize := min(int64(len(buf)), remaining)
 
 		readSoFar := 0
 		var readErr error
@@ -397,10 +447,7 @@ func (d *ConcurrentDownloader) StealWork(queue *TaskQueue) bool {
 	finalCurrent := atomic.LoadInt64(&active.CurrentOffset)
 
 	// The actual start of the stolen chunk must be after where the worker effectively stops.
-	stolenStart := newStopAt
-	if finalCurrent > newStopAt {
-		stolenStart = finalCurrent
-	}
+	stolenStart := max(finalCurrent, newStopAt)
 
 	// Double check: ensure we didn't race and lose the chunk
 	currentStopAt := atomic.LoadInt64(&active.StopAt)
@@ -419,8 +466,15 @@ func (d *ConcurrentDownloader) StealWork(queue *TaskQueue) bool {
 	}
 
 	queue.Push(stolenTask)
-	utils.Debug("Balancer: stole %s from worker %d (new range: %d-%d)",
-		utils.ConvertBytesToHumanReadable(stolenTask.Length), bestID, stolenTask.Offset, stolenTask.Offset+stolenTask.Length)
+	utils.Debug(
+		"Balancer: stole %s from worker %d (new range: %d-%d)",
+		utils.ConvertBytesToHumanReadable(
+			stolenTask.Length,
+		),
+		bestID,
+		stolenTask.Offset,
+		stolenTask.Offset+stolenTask.Length,
+	)
 
 	return true
 }

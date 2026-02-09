@@ -38,6 +38,7 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 
 	return withTx(func(tx *sql.Tx) error {
 		// 1. Upsert into downloads table
+		// [TODO]: Properly handle the database stuff. (The whole file)
 		_, err := tx.Exec(`
 			INSERT INTO downloads (
 				id, url, dest_path, filename, status, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors, chunk_bitmap, actual_chunk_size
@@ -115,7 +116,10 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// Try finding without status constraint (just in case)
-			return nil, fmt.Errorf("state not found: %w", os.ErrNotExist) // mimic os.ErrNotExist for compatibility
+			return nil, fmt.Errorf(
+				"state not found: %w",
+				os.ErrNotExist,
+			) // mimic os.ErrNotExist for compatibility
 		}
 		return nil, fmt.Errorf("failed to query download: %w", err)
 	}
@@ -169,7 +173,11 @@ func DeleteState(id string, url string, destPath string) error {
 		result, err = db.Exec("DELETE FROM downloads WHERE id = ?", id)
 	} else {
 		// Fallback for legacy calls without ID
-		result, err = db.Exec("DELETE FROM downloads WHERE url = ? AND dest_path = ?", url, destPath)
+		result, err = db.Exec(
+			"DELETE FROM downloads WHERE url = ? AND dest_path = ?",
+			url,
+			destPath,
+		)
 	}
 
 	if err != nil {
@@ -260,7 +268,8 @@ func AddToMasterList(entry types.DownloadEntry) error {
 	}
 
 	return withTx(func(tx *sql.Tx) error {
-		_, err := tx.Exec(`
+		_, err := tx.Exec(
+			`
 			INSERT INTO downloads (
 				id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -276,8 +285,18 @@ func AddToMasterList(entry types.DownloadEntry) error {
 				url_hash=excluded.url_hash,
 				mirrors=excluded.mirrors
 		`,
-			entry.ID, entry.URL, entry.DestPath, entry.Filename, entry.Status, entry.TotalSize, entry.Downloaded,
-			entry.CompletedAt, entry.TimeTaken, entry.URLHash, strings.Join(entry.Mirrors, ","))
+			entry.ID,
+			entry.URL,
+			entry.DestPath,
+			entry.Filename,
+			entry.Status,
+			entry.TotalSize,
+			entry.Downloaded,
+			entry.CompletedAt,
+			entry.TimeTaken,
+			entry.URLHash,
+			strings.Join(entry.Mirrors, ","),
+		)
 
 		return err
 	})

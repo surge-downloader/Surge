@@ -70,7 +70,13 @@ func (s DownloadStatus) RenderIcon() string {
 
 // DetermineStatus determines the DownloadStatus based on download state
 // This centralizes the status determination logic that was duplicated in view.go and list.go
-func DetermineStatus(done bool, paused bool, hasError bool, speed float64, downloaded int64) DownloadStatus {
+func DetermineStatus(
+	done bool,
+	paused bool,
+	hasError bool,
+	speed float64,
+	downloaded int64,
+) DownloadStatus {
 	switch {
 	case hasError:
 		return StatusError

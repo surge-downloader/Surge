@@ -41,7 +41,12 @@ func (k ConfirmationKeyMap) FullHelp() [][]key.Binding {
 }
 
 // NewConfirmationModal creates a modal with default styling
-func NewConfirmationModal(title, message, detail string, keys help.KeyMap, helpModel help.Model, borderColor lipgloss.TerminalColor) ConfirmationModal {
+func NewConfirmationModal(
+	title, message, detail string,
+	keys help.KeyMap,
+	helpModel help.Model,
+	borderColor lipgloss.TerminalColor,
+) ConfirmationModal {
 	return ConfirmationModal{
 		Title:       title,
 		Message:     message,
@@ -99,24 +104,21 @@ func (m ConfirmationModal) RenderWithBtopBox(
 
 	// Space above content to vertically center the main content in remaining space
 	remainingHeight := innerHeight - helpHeight - 1 // -1 for spacing before help
-	topPadding := (remainingHeight - mainContentHeight) / 2
-	if topPadding < 0 {
-		topPadding = 0
-	}
+	topPadding := max((remainingHeight-mainContentHeight)/2, 0)
 
 	// Center main content horizontally
 	centeredMain := lipgloss.NewStyle().Width(innerWidth).Align(lipgloss.Center).Render(mainContent)
 
 	// Build final content with help at bottom
 	var lines []string
-	for i := 0; i < topPadding; i++ {
+	for range topPadding {
 		lines = append(lines, "")
 	}
 	lines = append(lines, centeredMain)
 
 	// Add padding to push help to bottom
 	spacingNeeded := innerHeight - topPadding - mainContentHeight - helpHeight
-	for i := 0; i < spacingNeeded; i++ {
+	for range spacingNeeded {
 		lines = append(lines, "")
 	}
 	lines = append(lines, helpText)
@@ -124,7 +126,14 @@ func (m ConfirmationModal) RenderWithBtopBox(
 	fullContent := lipgloss.JoinVertical(lipgloss.Left, lines...)
 
 	// Title goes in the box border
-	return renderBox(titleStyle.Render(" "+m.Title+" "), "", fullContent, m.Width, m.Height, m.BorderColor)
+	return renderBox(
+		titleStyle.Render(" "+m.Title+" "),
+		"",
+		fullContent,
+		m.Width,
+		m.Height,
+		m.BorderColor,
+	)
 }
 
 // Centered returns the modal centered in the given dimensions (for standalone use)

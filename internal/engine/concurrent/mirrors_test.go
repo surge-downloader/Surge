@@ -62,7 +62,11 @@ func TestMirrors_HappyPath(t *testing.T) {
 	t.Logf("Server 2 requests: %d", stats2.TotalRequests)
 
 	if stats1.TotalRequests == 0 || stats2.TotalRequests == 0 {
-		t.Errorf("Expected requests to both servers. Server1: %d, Server2: %d", stats1.TotalRequests, stats2.TotalRequests)
+		t.Errorf(
+			"Expected requests to both servers. Server1: %d, Server2: %d",
+			stats1.TotalRequests,
+			stats2.TotalRequests,
+		)
 	}
 }
 
@@ -83,7 +87,9 @@ func TestMirrors_Failover(t *testing.T) {
 	goodServer := testutil.NewMockServer(
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
-		testutil.WithLatency(10*time.Millisecond), // Little latency to give bad server a chance to be picked first
+		testutil.WithLatency(
+			10*time.Millisecond,
+		), // Little latency to give bad server a chance to be picked first
 	)
 	defer goodServer.Close()
 

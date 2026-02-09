@@ -106,7 +106,7 @@ func TestCleanupLogs(t *testing.T) {
 
 	// Create 10 dummy log files
 	baseTime := time.Now()
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		// Use file name format matching debug.go: debug-YYYYMMDD-HHMMSS.log
 		// We add 'i' to time to ensure uniqueness and order
 		ts := baseTime.Add(time.Duration(i) * time.Hour)

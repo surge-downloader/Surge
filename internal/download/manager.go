@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,11 +19,11 @@ import (
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
-var probeClient = &http.Client{Timeout: types.ProbeTimeout}
+// var probeClient = &http.Client{Timeout: types.ProbeTimeout}
 
-var ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-	"AppleWebKit/537.36 (KHTML, like Gecko) " +
-	"Chrome/120.0.0.0 Safari/537.36"
+// var ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+// 	"AppleWebKit/537.36 (KHTML, like Gecko) " +
+// 	"Chrome/120.0.0.0 Safari/537.36"
 
 // ProbeResult contains all metadata from server probe
 type ProbeResult struct {
@@ -71,7 +70,7 @@ func uniqueFilePath(path string) string {
 		}
 	}
 
-	for i := 0; i < 100; i++ { // Try next 100 numbers
+	for i := range 100 { // Try next 100 numbers
 		candidate := filepath.Join(dir, fmt.Sprintf("%s(%d)%s", base, counter+i, ext))
 		if _, err := os.Stat(candidate); os.IsNotExist(err) {
 			if _, err := os.Stat(candidate + types.IncompleteSuffix); os.IsNotExist(err) {
@@ -204,18 +203,37 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 					activeMirrors = append(activeMirrors, v)
 				}
 			}
-			utils.Debug("Found %d active mirrors from %d candidates", len(activeMirrors), len(cfg.Mirrors))
+			utils.Debug(
+				"Found %d active mirrors from %d candidates",
+				len(activeMirrors),
+				len(cfg.Mirrors),
+			)
 		}
 
 		d := concurrent.NewConcurrentDownloader(cfg.ID, cfg.ProgressCh, cfg.State, cfg.Runtime)
 		d.Headers = cfg.Headers // Forward custom headers from browser extension
 		utils.Debug("Calling Download with mirrors: %v", cfg.Mirrors)
-		downloadErr = d.Download(ctx, cfg.URL, cfg.Mirrors, activeMirrors, destPath, probe.FileSize, cfg.Verbose)
+		downloadErr = d.Download(
+			ctx,
+			cfg.URL,
+			cfg.Mirrors,
+			activeMirrors,
+			destPath,
+			probe.FileSize,
+			cfg.Verbose,
+		)
 	} else {
 		// Fallback to single-threaded downloader
 		utils.Debug("Using single-threaded downloader")
 		d := single.NewSingleDownloader(cfg.ID, cfg.ProgressCh, cfg.State, cfg.Runtime)
-		downloadErr = d.Download(ctx, cfg.URL, destPath, probe.FileSize, probe.Filename, cfg.Verbose)
+		downloadErr = d.Download(
+			ctx,
+			cfg.URL,
+			destPath,
+			probe.FileSize,
+			probe.Filename,
+			cfg.Verbose,
+		)
 	}
 
 	// Only send completion if NO error AND not paused
@@ -277,7 +295,13 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 }
 
 // Download is the CLI entry point (non-TUI) - convenience wrapper
-func Download(ctx context.Context, url, outPath string, verbose bool, progressCh chan<- any, id string) error {
+func Download(
+	ctx context.Context,
+	url, outPath string,
+	verbose bool,
+	progressCh chan<- any,
+	id string,
+) error {
 	cfg := types.DownloadConfig{
 		URL:        url,
 		OutputPath: outPath,

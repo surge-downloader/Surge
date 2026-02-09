@@ -50,7 +50,11 @@ var resumeCmd = &cobra.Command{
 
 		if port > 0 {
 			// Send to running server
-			resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/resume?id=%s", port, id), "application/json", nil)
+			resp, err := http.Post(
+				fmt.Sprintf("http://127.0.0.1:%d/resume?id=%s", port, id),
+				"application/json",
+				nil,
+			)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error connecting to server: %v\n", err)
 				os.Exit(1)
@@ -67,7 +71,10 @@ var resumeCmd = &cobra.Command{
 				fmt.Fprintf(os.Stderr, "Error resuming download: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Printf("Resumed download %s (offline mode). Start Surge to begin downloading.\n", id[:8])
+			fmt.Printf(
+				"Resumed download %s (offline mode). Start Surge to begin downloading.\n",
+				id[:8],
+			)
 		}
 	},
 }

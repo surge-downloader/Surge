@@ -76,7 +76,11 @@ func TestResume_RespectsOriginalPath_WhenDefaultChanges(t *testing.T) {
 		evalA, _ := filepath.EvalSymlinks(expectedPathA)
 		evalDest, _ := filepath.EvalSymlinks(dm.Destination)
 		if evalDest != evalA {
-			t.Errorf("Initial download path mismatch.\nGot:  %s\nWant: %s", dm.Destination, expectedPathA)
+			t.Errorf(
+				"Initial download path mismatch.\nGot:  %s\nWant: %s",
+				dm.Destination,
+				expectedPathA,
+			)
 		}
 	}
 

@@ -23,7 +23,10 @@ func TestDefaultSettings(t *testing.T) {
 		}
 		// Should contain Downloads folder
 		if !strings.Contains(strings.ToLower(settings.General.DefaultDownloadDir), "downloads") {
-			t.Errorf("Default download dir should contain 'Downloads', got: %s", settings.General.DefaultDownloadDir)
+			t.Errorf(
+				"Default download dir should contain 'Downloads', got: %s",
+				settings.General.DefaultDownloadDir,
+			)
 		}
 		if !settings.General.WarnOnDuplicate {
 			t.Error("WarnOnDuplicate should be true by default")
@@ -39,13 +42,22 @@ func TestDefaultSettings(t *testing.T) {
 	// Verify Connection settings
 	t.Run("ConnectionSettings", func(t *testing.T) {
 		if settings.Connections.MaxConnectionsPerHost <= 0 {
-			t.Errorf("MaxConnectionsPerHost should be positive, got: %d", settings.Connections.MaxConnectionsPerHost)
+			t.Errorf(
+				"MaxConnectionsPerHost should be positive, got: %d",
+				settings.Connections.MaxConnectionsPerHost,
+			)
 		}
 		if settings.Connections.MaxConnectionsPerHost > 64 {
-			t.Errorf("MaxConnectionsPerHost shouldn't exceed 64, got: %d", settings.Connections.MaxConnectionsPerHost)
+			t.Errorf(
+				"MaxConnectionsPerHost shouldn't exceed 64, got: %d",
+				settings.Connections.MaxConnectionsPerHost,
+			)
 		}
 		if settings.Connections.MaxGlobalConnections <= 0 {
-			t.Errorf("MaxGlobalConnections should be positive, got: %d", settings.Connections.MaxGlobalConnections)
+			t.Errorf(
+				"MaxGlobalConnections should be positive, got: %d",
+				settings.Connections.MaxGlobalConnections,
+			)
 		}
 		// UserAgent can be empty (means use default)
 		if settings.Connections.SequentialDownload {
@@ -60,26 +72,42 @@ func TestDefaultSettings(t *testing.T) {
 		}
 
 		if settings.Chunks.WorkerBufferSize <= 0 {
-			t.Errorf("WorkerBufferSize should be positive, got: %d", settings.Chunks.WorkerBufferSize)
+			t.Errorf(
+				"WorkerBufferSize should be positive, got: %d",
+				settings.Chunks.WorkerBufferSize,
+			)
 		}
 	})
 
 	// Verify Performance settings
 	t.Run("PerformanceSettings", func(t *testing.T) {
 		if settings.Performance.MaxTaskRetries < 0 {
-			t.Errorf("MaxTaskRetries should be non-negative, got: %d", settings.Performance.MaxTaskRetries)
+			t.Errorf(
+				"MaxTaskRetries should be non-negative, got: %d",
+				settings.Performance.MaxTaskRetries,
+			)
 		}
-		if settings.Performance.SlowWorkerThreshold < 0 || settings.Performance.SlowWorkerThreshold > 1 {
-			t.Errorf("SlowWorkerThreshold should be between 0 and 1, got: %f", settings.Performance.SlowWorkerThreshold)
+		if settings.Performance.SlowWorkerThreshold < 0 ||
+			settings.Performance.SlowWorkerThreshold > 1 {
+			t.Errorf(
+				"SlowWorkerThreshold should be between 0 and 1, got: %f",
+				settings.Performance.SlowWorkerThreshold,
+			)
 		}
 		if settings.Performance.SlowWorkerGracePeriod <= 0 {
-			t.Errorf("SlowWorkerGracePeriod should be positive, got: %v", settings.Performance.SlowWorkerGracePeriod)
+			t.Errorf(
+				"SlowWorkerGracePeriod should be positive, got: %v",
+				settings.Performance.SlowWorkerGracePeriod,
+			)
 		}
 		if settings.Performance.StallTimeout <= 0 {
 			t.Errorf("StallTimeout should be positive, got: %v", settings.Performance.StallTimeout)
 		}
 		if settings.Performance.SpeedEmaAlpha < 0 || settings.Performance.SpeedEmaAlpha > 1 {
-			t.Errorf("SpeedEmaAlpha should be between 0 and 1, got: %f", settings.Performance.SpeedEmaAlpha)
+			t.Errorf(
+				"SpeedEmaAlpha should be between 0 and 1, got: %f",
+				settings.Performance.SpeedEmaAlpha,
+			)
 		}
 	})
 }
@@ -193,7 +221,11 @@ func TestSaveAndLoadSettings(t *testing.T) {
 		t.Error("ExtensionPrompt mismatch")
 	}
 	if loaded.Connections.MaxConcurrentDownloads != original.Connections.MaxConcurrentDownloads {
-		t.Errorf("MaxConcurrentDownloads mismatch: got %d, want %d", loaded.Connections.MaxConcurrentDownloads, original.Connections.MaxConcurrentDownloads)
+		t.Errorf(
+			"MaxConcurrentDownloads mismatch: got %d, want %d",
+			loaded.Connections.MaxConcurrentDownloads,
+			original.Connections.MaxConcurrentDownloads,
+		)
 	}
 	if loaded.Connections.MaxConnectionsPerHost != original.Connections.MaxConnectionsPerHost {
 		t.Error("MaxConnectionsPerHost mismatch")
@@ -350,7 +382,12 @@ func TestGetSettingsMetadata(t *testing.T) {
 				"bool": true, "duration": true, "float64": true,
 			}
 			if !validTypes[setting.Type] {
-				t.Errorf("Category %s, key %s: Invalid type %q", category, setting.Key, setting.Type)
+				t.Errorf(
+					"Category %s, key %s: Invalid type %q",
+					category,
+					setting.Key,
+					setting.Type,
+				)
 			}
 		}
 	}
@@ -445,13 +482,20 @@ func TestSaveSettings_RealFunction(t *testing.T) {
 
 	// Verify values match
 	if loaded.Connections.MaxConnectionsPerHost != 48 {
-		t.Errorf("MaxConnectionsPerHost mismatch: got %d, want 48", loaded.Connections.MaxConnectionsPerHost)
+		t.Errorf(
+			"MaxConnectionsPerHost mismatch: got %d, want 48",
+			loaded.Connections.MaxConnectionsPerHost,
+		)
 	}
 	if !loaded.General.AutoResume {
 		t.Error("AutoResume should be true")
 	}
 	if loaded.Connections.UserAgent != "TestAgent/3.0" {
-		t.Errorf("UserAgent mismatch: got %q, want %q", loaded.Connections.UserAgent, "TestAgent/3.0")
+		t.Errorf(
+			"UserAgent mismatch: got %q, want %q",
+			loaded.Connections.UserAgent,
+			"TestAgent/3.0",
+		)
 	}
 
 	// Cleanup: restore defaults

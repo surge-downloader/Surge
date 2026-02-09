@@ -57,7 +57,13 @@ func TestTaskRangeAssignment(t *testing.T) {
 			chunkSize := d.calculateChunkSize(tt.fileSize, tt.numConns)
 
 			// Verify chunk size is close to expected (allow for alignment)
-			assert.InDelta(t, tt.wantChunk, chunkSize, float64(types.AlignSize), "Chunk size mismatch")
+			assert.InDelta(
+				t,
+				tt.wantChunk,
+				chunkSize,
+				float64(types.AlignSize),
+				"Chunk size mismatch",
+			)
 
 			// specific verification for task creation
 			tasks := createTasks(tt.fileSize, chunkSize)

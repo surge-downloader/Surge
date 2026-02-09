@@ -19,7 +19,7 @@ func TestGetSurgeDir(t *testing.T) {
 }
 
 func TestGetStateDir(t *testing.T) {
-	dir := GetStateDir()
+	dir := GetDataDir()
 	if dir == "" {
 		t.Error("GetStateDir returned empty string")
 	}
@@ -55,7 +55,7 @@ func TestEnsureDirs(t *testing.T) {
 	}
 
 	// Verify all directories exist
-	dirs := []string{GetSurgeDir(), GetStateDir(), GetLogsDir()}
+	dirs := []string{GetSurgeDir(), GetDataDir(), GetLogsDir()}
 	for _, dir := range dirs {
 		info, err := os.Stat(dir)
 		if os.IsNotExist(err) {
@@ -78,7 +78,7 @@ func TestGetSurgeDir_AbsolutePath(t *testing.T) {
 }
 
 func TestGetStateDir_AbsolutePath(t *testing.T) {
-	dir := GetStateDir()
+	dir := GetDataDir()
 	if !filepath.IsAbs(dir) {
 		t.Errorf("GetStateDir should return absolute path, got: %s", dir)
 	}
@@ -99,8 +99,8 @@ func TestPathConsistency(t *testing.T) {
 		t.Errorf("GetSurgeDir should return consistent paths: %s vs %s", dir1, dir2)
 	}
 
-	state1 := GetStateDir()
-	state2 := GetStateDir()
+	state1 := GetDataDir()
+	state2 := GetDataDir()
 	if state1 != state2 {
 		t.Errorf("GetStateDir should return consistent paths: %s vs %s", state1, state2)
 	}
@@ -114,7 +114,7 @@ func TestPathConsistency(t *testing.T) {
 
 func TestDirectoryHierarchy(t *testing.T) {
 	surgeDir := GetSurgeDir()
-	stateDir := GetStateDir()
+	stateDir := GetDataDir()
 	logsDir := GetLogsDir()
 
 	// State and logs should be subdirectories of surge dir
@@ -132,7 +132,7 @@ func TestDirectoryHierarchy(t *testing.T) {
 
 func TestEnsureDirs_Idempotent(t *testing.T) {
 	// EnsureDirs should be safe to call multiple times
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		err := EnsureDirs()
 		if err != nil {
 			t.Errorf("EnsureDirs failed on call %d: %v", i+1, err)
@@ -146,7 +146,7 @@ func TestPathsNoTrailingSlash(t *testing.T) {
 		path string
 	}{
 		{"SurgeDir", GetSurgeDir()},
-		{"StateDir", GetStateDir()},
+		{"StateDir", GetDataDir()},
 		{"LogsDir", GetLogsDir()},
 	}
 

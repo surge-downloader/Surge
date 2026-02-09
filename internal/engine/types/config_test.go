@@ -171,9 +171,7 @@ func TestDownloadConfig_Fields(t *testing.T) {
 		URL:        "https://example.com/file.zip",
 		OutputPath: "/tmp/file.zip",
 		ID:         "download-123",
-		Filename:   "file.zip",
 		Verbose:    true,
-		ProgressCh: nil,
 		State:      state,
 		Runtime:    runtime,
 	}
