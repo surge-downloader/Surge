@@ -17,3 +17,4 @@ build/
 # [TODO]: You shouldn't push your TODO files into your github repo.
 TODO.md
 TODO
+build/
