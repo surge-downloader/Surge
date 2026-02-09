@@ -149,7 +149,7 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 			{
 				Key:         "proxy_url",
 				Label:       "Proxy URL",
-				Description: "HTTP/HTTPS proxy URL (e.g. http://127.0.0.1:8080). Leave empty to use system default.",
+				Description: "HTTP/HTTPS proxy URL (e.g. http://127.0.0.1:33658). Leave empty to use system default.",
 				Type:        "string",
 			},
 			{

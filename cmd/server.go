@@ -170,7 +170,7 @@ func startServerLogic(
 			os.Exit(1)
 		}
 	} else {
-		port, listener = findAvailablePort(8080)
+		port, listener = findAvailablePort(33658)
 		if listener == nil {
 			fmt.Fprintf(os.Stderr, "Error: could not find available port\n")
 			os.Exit(1)

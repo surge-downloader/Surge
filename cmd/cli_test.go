@@ -39,8 +39,10 @@ func TestResolveDownloadID_Remote(t *testing.T) {
 	// 2. Mock active port file
 
 	tempDir := t.TempDir()
+	runtimeDir := filepath.Join(tempDir, "runtime")
 	t.Setenv("XDG_CONFIG_HOME", tempDir)
 	t.Setenv("HOME", tempDir)
+	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
 
 	config.EnsureDirs()
 	state.Configure(filepath.Join(tempDir, "surge.db"))

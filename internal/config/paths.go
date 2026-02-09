@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 )
 
 // [TODO]: clean the code here using os.UserConfigDir and os.UserCacheDir.
@@ -45,9 +46,41 @@ func GetLogsDir() string {
 	return filepath.Join(GetSurgeDir(), "logs")
 }
 
+func GetRuntimeDir() string {
+	var base string
+
+	// XDG_RUNTIME_DIR or /run/user/<uid>
+	if runtime.GOOS == "linux" {
+		if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
+			base = dir
+		} else {
+			uid := os.Getuid()
+			if uid >= 0 {
+				path := filepath.Join("/run/user", strconv.Itoa(uid))
+				if stat, err := os.Stat(path); err == nil && stat.IsDir() {
+					base = path
+				}
+			}
+		}
+	}
+
+	// fallback for windows and macos
+	if base == "" {
+		base = os.TempDir()
+	}
+
+	runtimeDir := filepath.Join(base, "surge")
+
+	if err := os.MkdirAll(runtimeDir, 0700); err != nil {
+		panic(err)
+	}
+
+	return runtimeDir
+}
+
 // EnsureDirs creates all required directories
 func EnsureDirs() error {
-	dirs := []string{GetSurgeDir(), GetDataDir(), GetLogsDir()}
+	dirs := []string{GetSurgeDir(), GetDataDir(), GetLogsDir(), GetRuntimeDir()}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return err

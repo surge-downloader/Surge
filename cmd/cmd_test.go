@@ -104,7 +104,7 @@ func TestSaveAndRemoveActivePort(t *testing.T) {
 	saveActivePort(testPort)
 
 	// Verify file exists and contains correct port
-	portFile := filepath.Join(config.GetSurgeDir(), "port")
+	portFile := filepath.Join(config.GetRuntimeDir(), "port")
 	data, err := os.ReadFile(portFile)
 	if err != nil {
 		t.Fatalf("Failed to read port file: %v", err)
@@ -429,7 +429,7 @@ func TestHealthEndpoint(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"status": "ok",
-			"port":   8080,
+			"port":   33658,
 		})
 	})
 
@@ -840,7 +840,7 @@ func TestPortFileLifecycle(t *testing.T) {
 	// Clean up first
 	removeActivePort()
 
-	portFile := filepath.Join(config.GetSurgeDir(), "port")
+	portFile := filepath.Join(config.GetRuntimeDir(), "port")
 
 	// Verify no port file initially
 	if _, err := os.Stat(portFile); !os.IsNotExist(err) {

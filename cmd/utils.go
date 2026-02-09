@@ -18,7 +18,7 @@ import (
 
 // readActivePort reads the port from the port file
 func readActivePort() int {
-	portFile := filepath.Join(config.GetSurgeDir(), "port")
+	portFile := filepath.Join(config.GetRuntimeDir(), "port")
 	data, err := os.ReadFile(portFile)
 	if err != nil {
 		return 0

@@ -2,7 +2,7 @@
 // Handles UI rendering and communication with background service worker
 // Also supports standalone testing via direct HTTP calls
 
-const SURGE_API_BASE = 'http://127.0.0.1:8080';
+const SURGE_API_BASE = 'http://127.0.0.1:33658';
 
 // === State ===
 let downloads = new Map();

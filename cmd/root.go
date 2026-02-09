@@ -103,7 +103,7 @@ var rootCmd = &cobra.Command{
 			}
 		} else {
 			// Auto-discovery mode
-			port, listener = findAvailablePort(8080)
+			port, listener = findAvailablePort(33658)
 			if listener == nil {
 				fmt.Fprintf(os.Stderr, "Error: could not find available port\n")
 				os.Exit(1)
@@ -251,14 +251,14 @@ func findAvailablePort(start int) (int, net.Listener) {
 
 // saveActivePort writes the active port to ~/.surge/port for extension discovery
 func saveActivePort(port int) {
-	portFile := filepath.Join(config.GetSurgeDir(), "port")
+	portFile := filepath.Join(config.GetRuntimeDir(), "port")
 	os.WriteFile(portFile, fmt.Appendf(nil, "%d", port), 0644)
 	utils.Debug("HTTP server listening on port %d", port)
 }
 
 // removeActivePort cleans up the port file on exit
 func removeActivePort() {
-	portFile := filepath.Join(config.GetSurgeDir(), "port")
+	portFile := filepath.Join(config.GetRuntimeDir(), "port")
 	os.Remove(portFile)
 }
 
@@ -935,7 +935,7 @@ func Execute() {
 
 func init() {
 	rootCmd.Flags().StringP("batch", "b", "", "File containing URLs to download (one per line)")
-	rootCmd.Flags().IntP("port", "p", 0, "Port to listen on (default: 8080 or first available)")
+	rootCmd.Flags().IntP("port", "p", 0, "Port to listen on (default: 33658 or first available)")
 	rootCmd.Flags().StringP("output", "o", "", "Default output directory")
 	rootCmd.Flags().Bool("no-resume", false, "Do not auto-resume paused downloads on startup")
 	rootCmd.Flags().Bool("exit-when-done", false, "Exit when all downloads complete")

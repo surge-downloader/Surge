@@ -1,7 +1,7 @@
 // Surge Download Manager - Background Script (Firefox)
 // Intercepts downloads and sends them to local Surge instance
 
-const DEFAULT_PORT = 8080;
+const DEFAULT_PORT = 33658;
 const MAX_PORT_SCAN = 100;
 const INTERCEPT_ENABLED_KEY = 'interceptEnabled';
 

@@ -172,7 +172,7 @@ func TestDownloadStartedMsg_URLVariants(t *testing.T) {
 	}{
 		{"http", "http://example.com/file"},
 		{"https", "https://example.com/file"},
-		{"with port", "https://example.com:8080/file"},
+		{"with port", "https://example.com:33658/file"},
 		{"with query", "https://example.com/file?key=value"},
 		{"with fragment", "https://example.com/file#section"},
 		{"ftp", "ftp://example.com/file"},
