@@ -18,13 +18,13 @@ func TestDefaultSettings(t *testing.T) {
 
 	// Verify General settings
 	t.Run("GeneralSettings", func(t *testing.T) {
-		if settings.General.DefaultDownloadDir == "" {
-			t.Error("Default download directory should not be empty")
+		// DefaultDownloadDir can be empty (for current directory) or a valid path
+		if settings.General.DefaultDownloadDir != "" {
+			if info, err := os.Stat(settings.General.DefaultDownloadDir); err != nil || !info.IsDir() {
+				t.Errorf("DefaultDownloadDir set to invalid path: %s", settings.General.DefaultDownloadDir)
+			}
 		}
-		// Should contain Downloads folder
-		if !strings.Contains(strings.ToLower(settings.General.DefaultDownloadDir), "downloads") {
-			t.Errorf("Default download dir should contain 'Downloads', got: %s", settings.General.DefaultDownloadDir)
-		}
+
 		if !settings.General.WarnOnDuplicate {
 			t.Error("WarnOnDuplicate should be true by default")
 		}
@@ -541,4 +541,38 @@ func TestSaveAndLoadSettings_RoundTrip(t *testing.T) {
 
 	// Cleanup
 	_ = SaveSettings(DefaultSettings())
+}
+func TestDefaultSettings_XDG(t *testing.T) {
+	// Create temp dir to simulate XDG_DOWNLOAD_DIR
+	tmpDir, err := os.MkdirTemp("", "surge-xdg-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Set env var
+	t.Setenv("XDG_DOWNLOAD_DIR", tmpDir)
+
+	// Get settings
+	settings := DefaultSettings()
+
+	if settings.General.DefaultDownloadDir != tmpDir {
+		t.Errorf("DefaultDownloadDir should match XDG_DOWNLOAD_DIR. Got: %s, Want: %s", settings.General.DefaultDownloadDir, tmpDir)
+	}
+}
+
+func TestDefaultSettings_Fallback(t *testing.T) {
+	// Unset XDG_DOWNLOAD_DIR
+	t.Setenv("XDG_DOWNLOAD_DIR", "")
+
+	// We can't easily unset HOME or delete ~/Downloads in a test without affecting the system user or mocking os functions.
+	// But we can verify that the result is either empty or a valid directory.
+	settings := DefaultSettings()
+	dir := settings.General.DefaultDownloadDir
+
+	if dir != "" {
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			t.Errorf("DefaultDownloadDir fallback returned invalid path: %s", dir)
+		}
+	}
 }
