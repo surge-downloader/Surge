@@ -146,10 +146,29 @@ We would love to see you benchmark surge on your system!
 
 ## Browser Extension
 
-The Surge extension intercepts browser downloads and sends them straight to your terminal.
+The Surge extension intercepts browser downloads and sends them straight to your terminal. It communicates with the Surge client on port **1700** by default.
 
-- **Chrome / Edge:** Enable "Developer Mode" in extensions and load the `extension-chrome` folder unpacked.
-- **Firefox:** [Get the Add-on](https://addons.mozilla.org/en-US/firefox/addon/surge/)
+### Chrome / Edge / Brave
+
+1.  Clone or download this repository.
+2.  Open your browser and navigate to `chrome://extensions`.
+3.  Enable **"Developer mode"** in the top right corner.
+4.  Click **"Load unpacked"**.
+5.  Select the `extension-chrome` folder from the `surge` directory.
+
+### Firefox
+
+1.  **Stable:** [Get the Add-on](https://addons.mozilla.org/en-US/firefox/addon/surge/)
+2.  **Development:**
+    - Navigate to `about:debugging#/runtime/this-firefox`.
+    - Click **"Load Temporary Add-on..."**.
+    - Select the `manifest.json` file inside the `extension-firefox` folder.
+
+### Connection & Troubleshooting
+
+- Ensure Surge is running (either TUI `surge` or Server `surge server start`).
+- The extension icon should show a green dot when connected.
+- If the dot is red, check if Surge is running and listening on port 1700.
 
 ---
 
