@@ -172,7 +172,9 @@ func copyFile(src, dst string) error {
 		}
 	}()
 
-	if _, err := io.Copy(out, in); err != nil {
+	// Use a 1MB buffer to reduce syscalls for large files
+	buf := make([]byte, 1*types.MB)
+	if _, err := io.CopyBuffer(out, in, buf); err != nil {
 		return err
 	}
 	return out.Sync()
