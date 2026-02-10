@@ -320,14 +320,30 @@ func (m RootModel) Init() tea.Cmd {
 	}
 
 	// Async resume of downloads
+	var resumeIDs []string
 	for _, d := range m.downloads {
 		if d.pendingResume {
-			id := d.ID
-			cmds = append(cmds, func() tea.Msg {
-				err := m.Service.Resume(id)
-				return resumeResultMsg{id: id, err: err}
-			})
+			resumeIDs = append(resumeIDs, d.ID)
 		}
+	}
+
+	if len(resumeIDs) > 0 {
+		cmds = append(cmds, func() tea.Msg {
+			errs := m.Service.ResumeBatch(resumeIDs)
+
+			// Dispatch individual messages for UI updates
+			var batch []tea.Cmd
+			for i, id := range resumeIDs {
+				err := errs[i]
+				// Capture for closure
+				currentID := id
+				currentErr := err
+				batch = append(batch, func() tea.Msg {
+					return resumeResultMsg{id: currentID, err: currentErr}
+				})
+			}
+			return tea.Batch(batch...)()
+		})
 	}
 
 	return tea.Batch(cmds...)

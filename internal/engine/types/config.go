@@ -57,6 +57,7 @@ type DownloadConfig struct {
 	IsResume   bool // True if this is explicitly a resume, not a fresh download
 	ProgressCh chan<- any
 	State      *ProgressState
+	SavedState *DownloadState    // Pre-loaded state for resume optimization
 	Runtime    *RuntimeConfig    // Dynamic settings from user config
 	Mirrors    []string          // List of mirror URLs (including primary)
 	Headers    map[string]string // Custom HTTP headers from browser (cookies, auth, etc.)
