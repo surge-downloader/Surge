@@ -201,6 +201,20 @@ func (ps *ProgressState) RestoreBitmap(bitmap []byte, actualChunkSize int64) {
 	}
 }
 
+// SetChunkProgress updates chunk progress array from external sources (e.g. remote events).
+func (ps *ProgressState) SetChunkProgress(progress []int64) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	if len(progress) == 0 {
+		return
+	}
+	if len(ps.ChunkProgress) != len(progress) {
+		ps.ChunkProgress = make([]int64, len(progress))
+	}
+	copy(ps.ChunkProgress, progress)
+}
+
 // SetChunkState sets the 2-bit state for a specific chunk index
 // State: 0=Pending, 1=Downloading, 2=Completed
 func (ps *ProgressState) SetChunkState(index int, status ChunkStatus) {

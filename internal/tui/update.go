@@ -278,6 +278,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// We only get bitmap, no progress array (to save bandwidth)
 					// State needs to be updated carefully
 					d.state.RestoreBitmap(msg.ChunkBitmap, msg.ActualChunkSize)
+					if len(msg.ChunkProgress) > 0 {
+						d.state.SetChunkProgress(msg.ChunkProgress)
+					}
 				}
 
 				if d.Total > 0 {

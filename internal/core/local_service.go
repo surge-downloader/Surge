@@ -138,6 +138,7 @@ func (s *LocalDownloadService) broadcastLoop() {
 
 func (s *LocalDownloadService) reportProgressLoop() {
 	lastSpeeds := make(map[string]float64)
+	lastChunkProgress := make(map[string]time.Time)
 
 	for range s.reportTicker.C {
 		if s.Pool == nil {
@@ -182,11 +183,18 @@ func (s *LocalDownloadService) reportProgressLoop() {
 			}
 
 			// Add Chunk Bitmap for visualization (if initialized)
-			bitmap, width, _, chunkSize, _ := cfg.State.GetBitmap()
+			bitmap, width, _, chunkSize, chunkProgress := cfg.State.GetBitmap()
 			if width > 0 && len(bitmap) > 0 {
 				msg.ChunkBitmap = bitmap
 				msg.BitmapWidth = width
 				msg.ActualChunkSize = chunkSize
+
+				// Send chunk progress less frequently to keep updates lightweight.
+				// Chunk map is meant to be intuitive, not perfectly accurate.
+				if time.Since(lastChunkProgress[cfg.ID]) >= 500*time.Millisecond {
+					msg.ChunkProgress = chunkProgress
+					lastChunkProgress[cfg.ID] = time.Now()
+				}
 			}
 
 			// Send to InputCh (non-blocking)
