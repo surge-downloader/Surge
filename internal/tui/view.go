@@ -222,13 +222,13 @@ func (m RootModel) View() string {
 	if selected != nil {
 		// Show Chunk Map only if:
 		// 1. Not Done (Completed)
-		// 2. Not Queued (Speed > 0 OR Paused OR Has Chunks)
+		// 2. Has Chunks (Bitmap initialized)
+		// We prioritize showing the map if data is available, even if speed is 0 (connecting/queued)
 
 		bitmap, width, _, _, _ := selected.state.GetBitmap()
 		hasChunks := selected.state != nil && len(bitmap) > 0 && width > 0
-		isQueued := !selected.paused && selected.Speed == 0 && !hasChunks
 
-		if !selected.done && !isQueued {
+		if !selected.done && hasChunks {
 			showChunkMap = true
 		}
 	}

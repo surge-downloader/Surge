@@ -5,6 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/surge-downloader/surge/internal/utils"
 )
 
 type ProgressState struct {
@@ -233,11 +235,13 @@ func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkSta
 	defer ps.mu.Unlock()
 
 	if ps.ActualChunkSize == 0 || len(ps.ChunkBitmap) == 0 {
+		// fmt.Printf("UpdateChunkStatus skipped: ActualChunkSize=%d, BitmapLen=%d\n", ps.ActualChunkSize, len(ps.ChunkBitmap))
 		return
 	}
 
 	// Lazily init progress array if missing
 	if len(ps.ChunkProgress) != ps.BitmapWidth {
+		utils.Debug("UpdateChunkStatus: Initializing ChunkProgress array (width=%d)", ps.BitmapWidth)
 		ps.ChunkProgress = make([]int64, ps.BitmapWidth)
 	}
 
@@ -293,6 +297,7 @@ func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkSta
 			if ps.ChunkProgress[i] >= (chunkEnd - chunkStart) {
 				ps.ChunkProgress[i] = chunkEnd - chunkStart // clamp
 				ps.SetChunkState(i, ChunkCompleted)
+				// utils.Debug("Chunk %d completed (size=%d)", i, ps.ChunkProgress[i])
 			} else {
 				// Partial progress -> Downloading
 				if ps.GetChunkState(i) != ChunkCompleted {

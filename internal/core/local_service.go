@@ -173,10 +173,11 @@ func (s *LocalDownloadService) reportProgressLoop() {
 			}
 
 			// Add Chunk Bitmap for visualization (if initialized)
-			bitmap, width, _, _, _ := cfg.State.GetBitmap()
+			bitmap, width, _, chunkSize, _ := cfg.State.GetBitmap()
 			if width > 0 && len(bitmap) > 0 {
 				msg.ChunkBitmap = bitmap
 				msg.BitmapWidth = width
+				msg.ActualChunkSize = chunkSize
 			}
 
 			// Send to InputCh (non-blocking)

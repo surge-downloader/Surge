@@ -77,7 +77,10 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 
 			// Update chunk status to Downloading
 			if d.State != nil {
+				utils.Debug("Worker %d: Setting range %d-%d to Downloading", id, task.Offset, task.Offset+task.Length)
 				d.State.UpdateChunkStatus(task.Offset, task.Length, types.ChunkDownloading)
+			} else {
+				utils.Debug("Worker %d: d.State is nil, cannot update chunk status", id)
 			}
 
 			taskStart := time.Now()

@@ -16,6 +16,7 @@ type ProgressMsg struct {
 	ActiveConnections int
 	ChunkBitmap       []byte
 	BitmapWidth       int
+	ActualChunkSize   int64
 }
 
 // DownloadCompleteMsg signals that the download finished successfully
