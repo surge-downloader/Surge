@@ -177,31 +177,45 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	if probe.SupportsRange && probe.FileSize > 0 {
 		utils.Debug("Using concurrent downloader")
 
-		// We probe all candidate mirrors (cfg.Mirrors) to filter out invalid ones
+		// PERF: Do NOT probe mirrors before starting download.
+		// Start download immediately with primary, and probe mirrors in background.
 		var activeMirrors []string
-		if len(cfg.Mirrors) > 0 {
-			utils.Debug("Probing %d mirrors", len(cfg.Mirrors))
-			// Always check primary + mirrors to ensure we are using the best set
-			allToCheck := append([]string{cfg.URL}, cfg.Mirrors...)
-			valid, errs := engine.ProbeMirrors(ctx, allToCheck)
-
-			// Log errors
-			for u, e := range errs {
-				utils.Debug("Mirror probe failed for %s: %v", u, e)
-			}
-
-			// Filter valid mirrors (excluding primary as it is handled separately)
-			for _, v := range valid {
-				if v != cfg.URL {
-					activeMirrors = append(activeMirrors, v)
-				}
-			}
-			utils.Debug("Found %d active mirrors from %d candidates", len(activeMirrors), len(cfg.Mirrors))
-		}
 
 		d := concurrent.NewConcurrentDownloader(cfg.ID, cfg.ProgressCh, cfg.State, cfg.Runtime)
 		d.Headers = cfg.Headers // Forward custom headers from browser extension
-		utils.Debug("Calling Download with mirrors: %v", cfg.Mirrors)
+
+		if len(cfg.Mirrors) > 0 {
+			// Start background probing
+			go func() {
+				// Create detached context for probing so it doesn't block or get cancelled if main context cancels quickly
+				// But we want it to stop if the download finishes/cancels, so actually deriving from ctx is fine
+				// provided we handle the error.
+				probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+
+				utils.Debug("Background probing %d mirrors", len(cfg.Mirrors))
+
+				// We only probe mirrors here, primary is already known good (or we are trying it now)
+				valid, errs := engine.ProbeMirrors(probeCtx, cfg.Mirrors)
+
+				for u, e := range errs {
+					utils.Debug("Background mirror probe failed for %s: %v", u, e)
+				}
+
+				if len(valid) > 0 {
+					// Add primary to the valid list for the worker pool
+					allValid := append([]string{cfg.URL}, valid...)
+					utils.Debug("Background probe found %d valid mirrors, updating downloader", len(valid))
+					d.SetMirrors(allValid)
+					// Note: We don't update d.State here which might show mirrors as "error" or "inactive" until next state refresh
+					// Ideally we should update d.State too but ConcurrentDownloader doesn't expose a method for that easily yet
+					// without race conditions on the state object.
+					// For now, the speedup is worth the minor UI inconsistency.
+				}
+			}()
+		}
+
+		utils.Debug("Calling Download with primary only initially")
 		downloadErr = d.Download(ctx, cfg.URL, cfg.Mirrors, activeMirrors, destPath, probe.FileSize, cfg.Verbose)
 	} else {
 		// Fallback to single-threaded downloader

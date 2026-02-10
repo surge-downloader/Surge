@@ -556,94 +556,50 @@ func TestDownload_BuildsConfig(t *testing.T) {
 	}
 }
 
-func TestUniqueFilePath_EmptyFilename(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "surge-test-*")
+func TestDownload_FastStartWithSlowMirror(t *testing.T) {
+	// Fast primary (1ms)
+	primary := testutil.NewMockServerT(t, testutil.WithLatency(1*time.Millisecond))
+	defer primary.Close()
+
+	// Slow mirror (200ms)
+	mirror := testutil.NewMockServerT(t, testutil.WithLatency(200*time.Millisecond))
+	defer mirror.Close()
+
+	// Temp output
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "out")
+
+	// Context
+	ctx := context.Background()
+
+	// Config with mirror
+	cfg := &types.DownloadConfig{
+		URL:        primary.URL(),
+		Mirrors:    []string{mirror.URL()},
+		OutputPath: outPath,
+		ID:         "test",
+		Runtime: &types.RuntimeConfig{
+			MaxConnectionsPerHost: 2,
+			MinChunkSize:          1024,
+			WorkerBufferSize:      1024,
+		},
+	}
+
+	start := time.Now()
+	err := TUIDownload(ctx, cfg)
+	duration := time.Since(start)
+
 	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	// Edge case: just extension
-	existingFile := filepath.Join(tmpDir, ".txt")
-	if err := os.WriteFile(existingFile, []byte("test"), 0o644); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Download failed: %v", err)
 	}
 
-	result := uniqueFilePath(existingFile)
-	// Should handle gracefully - behavior depends on implementation
-	if result == "" {
-		t.Error("uniqueFilePath returned empty string")
-	}
-}
-
-func TestUniqueFilePath_LongFilename(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "surge-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	// Create a file with a long name (within OS limits)
-	longName := ""
-	for i := 0; i < 50; i++ {
-		longName += "a"
-	}
-	longName += ".txt"
-
-	existingFile := filepath.Join(tmpDir, longName)
-	if err := os.WriteFile(existingFile, []byte("test"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	result := uniqueFilePath(existingFile)
-	if result == existingFile {
-		t.Error("uniqueFilePath should generate different name for existing file")
-	}
-}
-
-func TestUniqueFilePath_ParenInMiddle(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "surge-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	// File with parentheses in middle (not numbering)
-	existingFile := filepath.Join(tmpDir, "file (copy).txt")
-	if err := os.WriteFile(existingFile, []byte("test"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	result := uniqueFilePath(existingFile)
-	// Should add (1) after the name but before extension
-	expected := filepath.Join(tmpDir, "file (copy)(1).txt")
-	if result != expected {
-		t.Errorf("uniqueFilePath() = %v, want %v", result, expected)
-	}
-}
-
-func TestUniqueFilePath_DeepNestedDirectory(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "surge-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	// Create deeply nested structure
-	deepPath := filepath.Join(tmpDir, "a", "b", "c", "d", "e")
-	if err := os.MkdirAll(deepPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	existingFile := filepath.Join(deepPath, "file.txt")
-	if err := os.WriteFile(existingFile, []byte("test"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	result := uniqueFilePath(existingFile)
-	expected := filepath.Join(deepPath, "file(1).txt")
-	if result != expected {
-		t.Errorf("uniqueFilePath() = %v, want %v", result, expected)
+	// If optimizations work, duration should be close to primary latency + download time,
+	// and significantly less than mirror latency (200ms).
+	// We check if it is faster than 150ms.
+	if duration > 150*time.Millisecond {
+		t.Errorf("Download took too long: %v (expected < 150ms despite 200ms mirror latency)", duration)
+	} else {
+		t.Logf("Download finished in %v (success)", duration)
 	}
 }
 

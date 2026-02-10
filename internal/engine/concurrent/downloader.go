@@ -30,6 +30,28 @@ type ConcurrentDownloader struct {
 	Runtime      *types.RuntimeConfig
 	bufPool      sync.Pool
 	Headers      map[string]string // Custom HTTP headers from browser (cookies, auth, etc.)
+	mirrors      []string
+	mirrorsMu    sync.RWMutex
+}
+
+// SetMirrors updates the list of active mirrors safely
+func (d *ConcurrentDownloader) SetMirrors(mirrors []string) {
+	d.mirrorsMu.Lock()
+	defer d.mirrorsMu.Unlock()
+	d.mirrors = make([]string, len(mirrors))
+	copy(d.mirrors, mirrors)
+}
+
+// GetMirrors retrieves the current list of active mirrors safely
+func (d *ConcurrentDownloader) GetMirrors() []string {
+	d.mirrorsMu.RLock()
+	defer d.mirrorsMu.RUnlock()
+	if len(d.mirrors) == 0 {
+		return nil
+	}
+	mirrors := make([]string, len(d.mirrors))
+	copy(mirrors, d.mirrors)
+	return mirrors
 }
 
 // NewConcurrentDownloader creates a new concurrent downloader with all required parameters
@@ -457,11 +479,14 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		workerMirrors = []string{rawurl}
 	}
 
+	// Initialize mirrors field
+	d.SetMirrors(workerMirrors)
+
 	for i := 0; i < numConns; i++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			err := d.worker(downloadCtx, workerID, workerMirrors, outFile, queue, fileSize, startTime, verbose, client)
+			err := d.worker(downloadCtx, workerID, outFile, queue, fileSize, startTime, verbose, client)
 			if err != nil && err != context.Canceled {
 				workerErrors <- err
 			}
