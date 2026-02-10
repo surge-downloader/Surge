@@ -1,6 +1,8 @@
 package events
 
 import (
+	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/surge-downloader/surge/internal/engine/types"
@@ -35,14 +37,67 @@ type DownloadErrorMsg struct {
 	Err        error
 }
 
+func (m DownloadErrorMsg) MarshalJSON() ([]byte, error) {
+	type encoded struct {
+		DownloadID string `json:"DownloadID"`
+		Filename   string `json:"Filename,omitempty"`
+		Err        string `json:"Err,omitempty"`
+	}
+
+	out := encoded{
+		DownloadID: m.DownloadID,
+		Filename:   m.Filename,
+	}
+	if m.Err != nil {
+		out.Err = m.Err.Error()
+	}
+
+	return json.Marshal(out)
+}
+
+func (m *DownloadErrorMsg) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		DownloadID string          `json:"DownloadID"`
+		Filename   string          `json:"Filename"`
+		Err        json.RawMessage `json:"Err"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	m.DownloadID = aux.DownloadID
+	m.Filename = aux.Filename
+	m.Err = nil
+
+	if len(aux.Err) == 0 {
+		return nil
+	}
+
+	// Most common case: server sends Err as a string.
+	var errStr string
+	if err := json.Unmarshal(aux.Err, &errStr); err == nil {
+		if errStr != "" {
+			m.Err = errors.New(errStr)
+		}
+		return nil
+	}
+
+	// Backward/forward compatibility: accept non-string payloads (e.g. {}).
+	raw := string(aux.Err)
+	if raw != "" && raw != "null" {
+		m.Err = errors.New(raw)
+	}
+	return nil
+}
+
 // DownloadStartedMsg is sent when a download actually starts (after metadata fetch)
 type DownloadStartedMsg struct {
 	DownloadID string
 	URL        string
 	Filename   string
 	Total      int64
-	DestPath   string // Full path to the destination file
-	State      *types.ProgressState
+	DestPath   string               // Full path to the destination file
+	State      *types.ProgressState `json:"-"`
 }
 
 type DownloadPausedMsg struct {

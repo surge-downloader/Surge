@@ -191,14 +191,14 @@ async function fetchDownloadList() {
       const contentType = response.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
         isConnected = false;
-        return [];
+        return { list: [], authError: false };
       }
       let list;
       try {
         list = await response.json();
       } catch {
         isConnected = false;
-        return [];
+        return { list: [], authError: false };
       }
 
       // Handle null or non-array response
@@ -384,10 +384,10 @@ async function isInterceptEnabled() {
 // Check if URL is already being downloaded by Surge
 async function isDuplicateDownload(url) {
   try {
-    const downloadsList = await fetchDownloadList();
-    if (downloadsList && downloadsList.length > 0) {
+    const { list } = await fetchDownloadList();
+    if (Array.isArray(list) && list.length > 0) {
       const normalizedUrl = url.replace(/\/$/, ""); // Remove trailing slash
-      for (const dl of downloadsList) {
+      for (const dl of list) {
         const normalizedDlUrl = (dl.url || "").replace(/\/$/, "");
         // Flag as duplicate if URL exists in Surge's download list (any status)
         if (normalizedDlUrl === normalizedUrl) {
@@ -705,9 +705,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         case "getDownloads": {
-          const downloadsList = await fetchDownloadList();
+          const { list, authError } = await fetchDownloadList();
           sendResponse({
-            downloads: downloadsList,
+            downloads: list,
+            authError,
             connected: isConnected,
           });
           break;
