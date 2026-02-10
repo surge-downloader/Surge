@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/utils"
 )
@@ -21,7 +22,7 @@ func TestStartDownload_EnforcesAbsolutePath(t *testing.T) {
 
 	m := RootModel{
 		Settings:     config.DefaultSettings(),
-		Pool:         pool,
+		Service:      core.NewLocalDownloadService(pool, ch),
 		progressChan: ch,
 		downloads:    []*DownloadModel{},
 		list:         NewDownloadList(80, 20), // Initialize list

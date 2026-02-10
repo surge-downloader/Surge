@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
@@ -80,7 +81,7 @@ func TestAutoResume_Enabled(t *testing.T) {
 	ch := make(chan any, 10)
 	pool := download.NewWorkerPool(ch, 1)
 
-	m := InitialRootModel(1700, "test-version", pool, ch, false)
+	m := InitialRootModel(1700, "test-version", core.NewLocalDownloadService(pool, ch), ch, false)
 
 	// 6. Verify Download is Resumed
 	found := false
@@ -162,9 +163,9 @@ func TestAutoResume_Disabled(t *testing.T) {
 	ch := make(chan any, 10)
 	pool := download.NewWorkerPool(ch, 1)
 
-	m := InitialRootModel(1700, "test-version", pool, ch, false)
+	m := InitialRootModel(1700, "test-version", core.NewLocalDownloadService(pool, ch), ch, false)
 
-	// 6. Verify Download is Paused
+	// 6. Verify Download is Resumed
 	found := false
 	for _, d := range m.downloads {
 		if d.ID == testID {

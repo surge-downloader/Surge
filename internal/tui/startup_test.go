@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
@@ -35,7 +36,7 @@ func TestTUI_Startup_HandlesResume(t *testing.T) {
 	pool := download.NewWorkerPool(progressChan, 3)
 
 	// PASSING noResume=false (default)
-	m := InitialRootModel(0, "v0.0.0", pool, progressChan, false)
+	m := InitialRootModel(0, "v0.0.0", core.NewLocalDownloadService(pool, progressChan), progressChan, false)
 
 	// 4. Verify Download is Active in Model
 	// InitialRootModel loads downloads and should set paused=false for "queued" items

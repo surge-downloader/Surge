@@ -11,6 +11,7 @@ type ProgressState struct {
 	ID            string
 	Downloaded    atomic.Int64
 	TotalSize     int64
+	DestPath      string // Full absolute path
 	StartTime     time.Time
 	ActiveWorkers atomic.Int32
 	Done          atomic.Bool

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/state"
@@ -31,8 +32,8 @@ func TestStateSync(t *testing.T) {
 	progressChan := make(chan any, 10)
 	pool := download.NewWorkerPool(progressChan, 1)
 
-	// Initialize model with progress channel and pool
-	m := InitialRootModel(1700, "test-version", pool, progressChan, false)
+	// Initialize model with progress channel and service
+	m := InitialRootModel(1700, "test-version", core.NewLocalDownloadService(pool, progressChan), progressChan, false)
 
 	downloadID := "external-id"
 	// Create the "worker" state - this is the source of truth
@@ -54,11 +55,17 @@ func TestStateSync(t *testing.T) {
 			State:      workerState,
 		})
 
-		// Simulate worker updating the state
-		// Note: The ProgressReporter reads from VerifiedProgress (via GetProgress),
-		// not Downloaded. This matches how the real engine updates progress.
+		// Simulate worker updating the state -> Send Progress Event
+		// Note: The ProgressReporter reads from VerifiedProgress (via GetProgress)
 		time.Sleep(300 * time.Millisecond)
 		workerState.VerifiedProgress.Store(500)
+		p.Send(events.ProgressMsg{
+			DownloadID: downloadID,
+			Downloaded: 500,
+			Total:      1000,
+			Speed:      100, // Dummy speed
+			Elapsed:    10 * time.Second,
+		})
 
 		// Wait effectively for 2 poll cycles (150ms * 2 = 300ms) + buffer
 		time.Sleep(500 * time.Millisecond)

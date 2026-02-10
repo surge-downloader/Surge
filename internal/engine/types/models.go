@@ -51,6 +51,7 @@ type DownloadStatus struct {
 	ID          string  `json:"id"`
 	URL         string  `json:"url"`
 	Filename    string  `json:"filename"`
+	DestPath    string  `json:"dest_path,omitempty"` // Full absolute path to file
 	TotalSize   int64   `json:"total_size"`
 	Downloaded  int64   `json:"downloaded"`
 	Progress    float64 `json:"progress"` // Percentage 0-100

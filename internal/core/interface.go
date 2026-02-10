@@ -27,4 +27,7 @@ type DownloadService interface {
 	// For local mode, this is a direct channel.
 	// For remote mode, this is sourced from SSE.
 	StreamEvents() (<-chan interface{}, error)
+
+	// Shutdown handles graceful shutdown of the service
+	Shutdown() error
 }

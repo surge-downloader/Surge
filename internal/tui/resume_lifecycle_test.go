@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
@@ -44,7 +45,7 @@ func TestResume_RespectsOriginalPath_WhenDefaultChanges(t *testing.T) {
 
 	m := RootModel{
 		Settings:     settings,
-		Pool:         pool,
+		Service:      core.NewLocalDownloadService(pool, ch),
 		progressChan: ch,
 		downloads:    []*DownloadModel{},
 		list:         NewDownloadList(80, 20), // Initialize list to prevent panic

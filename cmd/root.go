@@ -146,9 +146,9 @@ var rootCmd = &cobra.Command{
 // startTUI initializes and runs the TUI program
 func startTUI(port int, exitWhenDone bool, noResume bool) {
 	// Initialize TUI
-	// GlobalPool and GlobalProgressCh are already initialized in PersistentPreRun or Run
+	// GlobalService and GlobalProgressCh are already initialized in PersistentPreRun or Run
 
-	m := tui.InitialRootModel(port, Version, GlobalPool, GlobalProgressCh, noResume)
+	m := tui.InitialRootModel(port, Version, GlobalService, GlobalProgressCh, noResume)
 	// m := tui.InitialRootModel(port, Version)
 	// No need to instantiate separate pool
 

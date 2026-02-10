@@ -16,8 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/surge-downloader/surge/internal/config"
-	"github.com/surge-downloader/surge/internal/download"
-	"github.com/surge-downloader/surge/internal/engine/state"
+	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/version"
 )
@@ -60,9 +59,9 @@ type DownloadModel struct {
 
 	progress progress.Model
 
-	// Hybrid architecture: atomic state + polling reporter
-	state    *types.ProgressState
-	reporter *ProgressReporter
+	// Unified architecture: View Model updated by events
+	// No direct state access or polling reporter
+	state *types.ProgressState // Keep for now if needed for details view, but mostly passive
 
 	done    bool
 	err     error
@@ -78,7 +77,10 @@ type RootModel struct {
 	activeTab    int // 0=Queued, 1=Active, 2=Done
 	inputs       []textinput.Model
 	focusedInput int
-	progressChan chan any // Channel for events only (start/complete/error)
+	progressChan <-chan any // Channel for events (from Service)
+
+	// Service Interface (replaces Pool)
+	Service core.DownloadService
 
 	// File picker for directory selection
 	filepicker filepicker.Model
@@ -89,8 +91,7 @@ type RootModel struct {
 	// Bubbles list component for download listing
 	list list.Model
 
-	Pool *download.WorkerPool // Works as the download queue
-	PWD  string
+	PWD string
 
 	// History view
 	historyEntries []types.DownloadEntry
@@ -147,8 +148,9 @@ type RootModel struct {
 	InitialDarkBackground bool // Captured at startup for "System" theme
 }
 
-// NewDownloadModel creates a new download model with progress state and reporter
+// NewDownloadModel creates a new download model
 func NewDownloadModel(id string, url string, filename string, total int64) *DownloadModel {
+	// Create dummy state container for compatibility if needed
 	state := types.NewProgressState(id, total)
 	return &DownloadModel{
 		ID:        id,
@@ -158,11 +160,10 @@ func NewDownloadModel(id string, url string, filename string, total int64) *Down
 		StartTime: time.Now(),
 		progress:  progress.New(progress.WithSpringOptions(0.5, 0.1)),
 		state:     state,
-		reporter:  NewProgressReporter(state),
 	}
 }
 
-func InitialRootModel(serverPort int, currentVersion string, pool *download.WorkerPool, progressChan chan any, noResume bool) RootModel {
+func InitialRootModel(serverPort int, currentVersion string, service core.DownloadService, progressChan <-chan any, noResume bool) RootModel {
 	// Initialize inputs
 	urlInput := textinput.New()
 	urlInput.Placeholder = "https://example.com/file.zip"
@@ -213,121 +214,53 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 
 	// Load paused downloads from master list (now uses global config directory)
 	var downloads []*DownloadModel
-	if pausedEntries, err := state.LoadPausedDownloads(); err == nil {
-		for _, entry := range pausedEntries {
-			var id string
-			if entry.ID != "" {
-				id = entry.ID
-			}
-			dm := NewDownloadModel(id, entry.URL, entry.Filename, 0)
-			dm.paused = (entry.Status == "paused")
-			dm.Destination = entry.DestPath // Store destination for state lookup on resume
+	// Note: With Service abstraction, we might want to let the Service handle loading.
+	// But LocalDownloadService's List() calls state.ListAllDownloads().
+	// For TUI initialization, we should probably call Service.List() to populate the model.
+	// However, Service.List() returns []DownloadStatus, which we need to convert to []*DownloadModel.
 
-			// Load actual progress from state file (using URL+DestPath for unique lookup)
-			if state, err := state.LoadState(entry.URL, entry.DestPath); err == nil {
-				dm.Downloaded = state.Downloaded
-				dm.Total = state.TotalSize
-				dm.state.Downloaded.Store(state.Downloaded)
-				dm.state.SetTotalSize(state.TotalSize)
-				// Set progress bar to correct position
-				if state.TotalSize > 0 {
-					dm.progress.SetPercent(float64(state.Downloaded) / float64(state.TotalSize))
-				}
-				// Restore total accumulated time
-				if state.Elapsed > 0 {
-					dm.Elapsed = time.Duration(state.Elapsed)
-					dm.StartTime = time.Now().Add(-dm.Elapsed)
-				}
-				// Restore mirrors
-				if len(state.Mirrors) > 0 {
-					var mirrors []types.MirrorStatus
-					for _, u := range state.Mirrors {
-						mirrors = append(mirrors, types.MirrorStatus{URL: u, Active: true})
-					}
-					dm.state.SetMirrors(mirrors)
-				}
-				// Restore chunk map for paused downloads
-				if len(state.ChunkBitmap) > 0 && state.ActualChunkSize > 0 {
-					dm.state.RestoreBitmap(state.ChunkBitmap, state.ActualChunkSize)
-				}
-			}
-
-			// Decide if we should resume based on status and settings
-			shouldResume := false
-			if entry.Status == "queued" && !noResume {
-				shouldResume = true // Always resume explicit queue (unless --no-resume forced)
-			} else if entry.Status == "paused" && settings.General.AutoResume {
-				shouldResume = true // Only auto-resume paused if enabled (and not overridden)
-			}
-
-			// Auto resume if enabled
-			if shouldResume {
-				dm.paused = false
-				dm.state.Resume()
-
-				// Re add to pool
-				// Note: We need to reconstruct the config. ideally this logic should be shared
-				runtimeConfig := convertRuntimeConfig(settings.ToRuntimeConfig())
-				outputPath := filepath.Dir(entry.DestPath)
-				if outputPath == "" || outputPath == "." {
-					outputPath = settings.General.DefaultDownloadDir
-				}
-
-				// Re-use mirrors from state if available, otherwise just URL
-				var mirrorURLs []string
-				if ms := dm.state.GetMirrors(); len(ms) > 0 {
-					for _, m := range ms {
-						mirrorURLs = append(mirrorURLs, m.URL)
-					}
+	// Let's use service.List() if available
+	if service != nil {
+		statuses, err := service.List()
+		if err == nil {
+			for _, s := range statuses {
+				dm := NewDownloadModel(s.ID, s.URL, s.Filename, s.TotalSize)
+				dm.Downloaded = s.Downloaded
+				if s.DestPath != "" {
+					dm.Destination = s.DestPath
 				} else {
-					mirrorURLs = []string{entry.URL}
+					dm.Destination = s.Filename // Fallback
+				}
+				// Status mapping
+				if s.Status == "completed" {
+					dm.done = true
+					dm.progress.SetPercent(1.0)
+				} else if s.Status == "paused" {
+					if settings.General.AutoResume {
+						// Auto-resume if enabled
+						if err := service.Resume(s.ID); err == nil {
+							dm.paused = false
+						} else {
+							dm.paused = true
+						}
+					} else {
+						dm.paused = true
+					}
+				} else if s.Status == "queued" {
+					// Always resume queued items
+					if err := service.Resume(s.ID); err == nil {
+						dm.paused = false
+					} else {
+						dm.paused = true // Should act as paused if fail to resume
+					}
 				}
 
-				cfg := types.DownloadConfig{
-					URL:        entry.URL,
-					OutputPath: outputPath,
-					DestPath:   entry.DestPath,
-					ID:         id,
-					Filename:   entry.Filename,
-					Verbose:    false,
-					IsResume:   true,
-					ProgressCh: progressChan,
-					State:      dm.state,
-					Runtime:    runtimeConfig,
-					Mirrors:    mirrorURLs,
+				if s.TotalSize > 0 {
+					dm.progress.SetPercent(s.Progress / 100.0)
 				}
 
-				pool.Add(cfg)
+				downloads = append(downloads, dm)
 			}
-
-			downloads = append(downloads, dm)
-		}
-	}
-
-	// Load completed downloads from master list (for Done tab persistence)
-	if completedEntries, err := state.LoadCompletedDownloads(); err == nil {
-		for _, entry := range completedEntries {
-			var id string
-			if entry.ID != "" {
-				id = entry.ID
-			}
-			dm := NewDownloadModel(id, entry.URL, entry.Filename, entry.TotalSize)
-			dm.done = true
-			dm.Destination = entry.DestPath
-			dm.Elapsed = time.Duration(entry.TimeTaken) * time.Millisecond
-			dm.Downloaded = entry.TotalSize
-			dm.progress.SetPercent(1.0)
-
-			// Populate mirrors for completed downloads
-			if len(entry.Mirrors) > 0 {
-				var mirrors []types.MirrorStatus
-				for _, u := range entry.Mirrors {
-					mirrors = append(mirrors, types.MirrorStatus{URL: u, Active: true})
-				}
-				dm.state.SetMirrors(mirrors)
-			}
-
-			downloads = append(downloads, dm)
 		}
 	}
 
@@ -358,7 +291,7 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 		filepicker:            fp,
 		help:                  helpModel,
 		list:                  downloadList,
-		Pool:                  pool,
+		Service:               service,
 		PWD:                   pwd,
 		SpeedHistory:          make([]float64, GraphHistoryPoints), // 60 points of history (30s at 0.5s interval)
 		logViewport:           viewport.New(40, 5),                 // Default size, will be resized

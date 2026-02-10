@@ -2,12 +2,14 @@ package core
 
 import (
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/download"
+	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/utils"
@@ -21,17 +23,35 @@ type LocalDownloadService struct {
 	// Broadcast fields
 	listeners  []chan interface{}
 	listenerMu sync.Mutex
+
+	// Speed tracking
+	lastSpeeds   map[string]float64
+	speedMu      sync.Mutex
+	reportTicker *time.Ticker
 }
+
+const (
+	SpeedSmoothingAlpha = 0.3
+	ReportInterval      = 150 * time.Millisecond
+)
 
 // NewLocalDownloadService creates a new specific service instance.
 func NewLocalDownloadService(pool *download.WorkerPool, progressCh chan interface{}) *LocalDownloadService {
 	s := &LocalDownloadService{
-		Pool:      pool,
-		InputCh:   progressCh,
-		listeners: make([]chan interface{}, 0),
+		Pool:       pool,
+		InputCh:    progressCh,
+		listeners:  make([]chan interface{}, 0),
+		lastSpeeds: make(map[string]float64),
 	}
 	// Start broadcaster
 	go s.broadcastLoop()
+
+	// Start progress reporter
+	if pool != nil {
+		s.reportTicker = time.NewTicker(ReportInterval)
+		go s.reportProgressLoop()
+	}
+
 	return s
 }
 
@@ -55,6 +75,66 @@ func (s *LocalDownloadService) broadcastLoop() {
 	}
 	s.listeners = nil
 	s.listenerMu.Unlock()
+
+	if s.reportTicker != nil {
+		s.reportTicker.Stop()
+	}
+}
+
+func (s *LocalDownloadService) reportProgressLoop() {
+	for range s.reportTicker.C {
+		if s.Pool == nil {
+			continue
+		}
+
+		activeConfigs := s.Pool.GetAll()
+		for _, cfg := range activeConfigs {
+			if cfg.State == nil || cfg.State.IsPaused() || cfg.State.Done.Load() {
+				// Clean up speed history for inactive
+				s.speedMu.Lock()
+				delete(s.lastSpeeds, cfg.ID)
+				s.speedMu.Unlock()
+				continue
+			}
+
+			// Calculate Progress
+			downloaded, total, totalElapsed, sessionElapsed, connections, sessionStart := cfg.State.GetProgress()
+
+			// Calculate Speed with EMA
+			sessionDownloaded := downloaded - sessionStart
+			var instantSpeed float64
+			if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
+				instantSpeed = float64(sessionDownloaded) / sessionElapsed.Seconds()
+			}
+
+			s.speedMu.Lock()
+			lastSpeed := s.lastSpeeds[cfg.ID]
+			var currentSpeed float64
+			if lastSpeed == 0 {
+				currentSpeed = instantSpeed
+			} else {
+				currentSpeed = SpeedSmoothingAlpha*instantSpeed + (1-SpeedSmoothingAlpha)*lastSpeed
+			}
+			s.lastSpeeds[cfg.ID] = currentSpeed
+			s.speedMu.Unlock()
+
+			// Create Message
+			msg := events.ProgressMsg{
+				DownloadID:        cfg.ID,
+				Downloaded:        downloaded,
+				Total:             total,
+				Speed:             currentSpeed,
+				Elapsed:           totalElapsed,
+				ActiveConnections: int(connections),
+			}
+
+			// Send to InputCh (non-blocking)
+			select {
+			case s.InputCh <- msg:
+			default:
+			}
+		}
+	}
 }
 
 // StreamEvents returns a channel that receives real-time download events.
@@ -64,6 +144,19 @@ func (s *LocalDownloadService) StreamEvents() (<-chan interface{}, error) {
 	s.listeners = append(s.listeners, ch)
 	s.listenerMu.Unlock()
 	return ch, nil
+}
+
+// Shutdown stops the service.
+func (s *LocalDownloadService) Shutdown() error {
+	if s.reportTicker != nil {
+		s.reportTicker.Stop()
+	}
+	if s.Pool != nil {
+		s.Pool.GracefulShutdown()
+	}
+	// Close input channel to stop broadcaster
+	close(s.InputCh)
+	return nil
 }
 
 // List returns the status of all active and completed downloads.
@@ -78,12 +171,17 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 				ID:       cfg.ID,
 				URL:      cfg.URL,
 				Filename: cfg.Filename,
+				DestPath: cfg.State.DestPath,
 				Status:   "downloading",
 			}
 
 			if cfg.State != nil {
 				status.TotalSize = cfg.State.TotalSize
 				status.Downloaded = cfg.State.Downloaded.Load()
+				if status.DestPath == "" && cfg.State.DestPath != "" {
+					status.DestPath = cfg.State.DestPath
+				}
+
 				if status.TotalSize > 0 {
 					status.Progress = float64(status.Downloaded) * 100 / float64(status.TotalSize)
 				}
@@ -149,6 +247,7 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 				ID:          d.ID,
 				URL:         d.URL,
 				Filename:    d.Filename,
+				DestPath:    d.DestPath,
 				Status:      d.Status,
 				TotalSize:   d.TotalSize,
 				Downloaded:  d.Downloaded,
@@ -187,6 +286,9 @@ func (s *LocalDownloadService) Add(url string, path string, filename string, mir
 	id := uuid.New().String()
 
 	// Create configuration
+	state := types.NewProgressState(id, 0)
+	state.DestPath = filepath.Join(outPath, filename) // Best guess until download starts
+
 	cfg := types.DownloadConfig{
 		URL:        url,
 		Mirrors:    mirrors,
@@ -195,7 +297,7 @@ func (s *LocalDownloadService) Add(url string, path string, filename string, mir
 		Filename:   filename, // If empty, will be auto-detected
 		Verbose:    false,
 		ProgressCh: s.InputCh,
-		State:      types.NewProgressState(id, 0),
+		State:      state,
 		Runtime:    convertRuntimeConfig(settings.ToRuntimeConfig()),
 	}
 
@@ -275,9 +377,11 @@ func (s *LocalDownloadService) Resume(id string) error {
 			}
 			dmState.SetMirrors(mirrors)
 		}
+		dmState.DestPath = entry.DestPath
 	} else {
 		dmState = types.NewProgressState(id, entry.TotalSize)
 		dmState.Downloaded.Store(entry.Downloaded)
+		dmState.DestPath = entry.DestPath
 		mirrorURLs = []string{entry.URL}
 	}
 

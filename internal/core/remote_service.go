@@ -132,6 +132,16 @@ func (s *RemoteDownloadService) Delete(id string) error {
 	return nil
 }
 
+// Shutdown stops the service.
+func (s *RemoteDownloadService) Shutdown() error {
+	resp, err := s.doRequest("POST", "/shutdown", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
 // StreamEvents returns a channel that receives real-time download events via SSE.
 func (s *RemoteDownloadService) StreamEvents() (<-chan interface{}, error) {
 	req, err := http.NewRequest("GET", s.BaseURL+"/events", nil)

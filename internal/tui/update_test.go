@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/types"
@@ -159,7 +160,7 @@ func TestUpdate_DownloadRequestMsg(t *testing.T) {
 
 	m := RootModel{
 		Settings:     config.DefaultSettings(),
-		Pool:         pool,
+		Service:      core.NewLocalDownloadService(pool, ch),
 		progressChan: ch,
 		logViewport:  viewport.New(40, 5),
 		list:         NewDownloadList(40, 10),

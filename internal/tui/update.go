@@ -22,7 +22,6 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/google/uuid"
 )
 
 // notificationTickMsg is sent to check if a notification should be cleared
@@ -161,41 +160,44 @@ func (m RootModel) checkForDuplicate(url string) *DownloadModel {
 	return nil
 }
 
+// waitForActivity returns a command that waits for a message on the channel
+func waitForActivity(sub <-chan any) tea.Cmd {
+	return func() tea.Msg {
+		return <-sub
+	}
+}
+
 // startDownload initiates a new download
 func (m RootModel) startDownload(url string, mirrors []string, path, filename, id string) (RootModel, tea.Cmd) {
 	// Enforce absolute path
 	path = utils.EnsureAbsPath(path)
 
-	// Generate unique filename to avoid overwriting
-	// Note: We do this check here because it applies to ALL new downloads
+	// Generate unique filename to avoid overwriting (if not provided)
+	// For Local Service, we can generate it here. For Remote, the server might do it,
+	// but sending a unique filename is safer.
 	finalFilename := m.generateUniqueFilename(path, filename)
 
-	nextID := id
-	if nextID == "" {
-		nextID = uuid.New().String()
+	// Call Service Add
+	// Note: We don't construct DownloadConfig/DownloadModel manually here for the queue
+	// We rely on the event stream to update the UI, OR we add it optimistically.
+	// Optimistic addition gives better UX.
+
+	newID, err := m.Service.Add(url, path, finalFilename, mirrors)
+	if err != nil {
+		m.addLogEntry(LogStyleError.Render("✖ Failed to add download: " + err.Error()))
+		return m, nil
 	}
-	newDownload := NewDownloadModel(nextID, url, "Queued", 0)
-	newDownload.Destination = filepath.Join(path, finalFilename) // Store absolute full path immediately
+
+	// Create optimistic model
+	newDownload := NewDownloadModel(newID, url, "Queued", 0)
+	newDownload.Destination = filepath.Join(path, finalFilename)
 	m.downloads = append(m.downloads, newDownload)
 
-	cfg := types.DownloadConfig{
-		URL:        url,
-		Mirrors:    mirrors,
-		OutputPath: path,
-		ID:         nextID,
-		Filename:   finalFilename,
-		Verbose:    false,
-		ProgressCh: m.progressChan,
-		State:      newDownload.state,
-		Runtime:    convertRuntimeConfig(m.Settings.ToRuntimeConfig()),
-	}
-
-	utils.Debug("Adding to Queue: %s -> %s", url, finalFilename)
-	m.Pool.Add(cfg)
-
-	m.SelectedDownloadID = nextID
+	m.SelectedDownloadID = newID
 	m.activeTab = TabQueued
 	m.UpdateListItems()
+
+	utils.Debug("Added to Queue (via Service): %s -> %s", url, finalFilename)
 
 	return m, nil
 }
@@ -207,9 +209,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case events.DownloadRequestMsg:
-		// Handle download request from HTTP server (extension)
-		// This message is only sent if user confirmation is required (ExtensionPrompt=true or Duplicate=true)
-
+		// ... existing logic ...
 		path := msg.Path
 		if path == "" {
 			path = m.Settings.General.DefaultDownloadDir
@@ -218,8 +218,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Check for specific duplicate warning case
-		// Even though root.go checks this, we re-check to determine WHICH screen to show
 		duplicate := m.checkForDuplicate(msg.URL)
 
 		if duplicate != nil && m.Settings.General.WarnOnDuplicate {
@@ -233,7 +231,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Otherwise it's a general extension prompt
 		if m.Settings.General.ExtensionPrompt {
 			m.pendingURL = msg.URL
 			m.pendingMirrors = nil
@@ -243,70 +240,48 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Fallback: Just start it if for some reason we got here without needing a prompt
-		// (Should not happen given root.go logic, but safe fallback)
-		// Fallback: Just start it if for some reason we got here without needing a prompt
-		// (Should not happen given root.go logic, but safe fallback)
 		return m.startDownload(msg.URL, nil, path, msg.Filename, msg.ID)
 
 	case events.DownloadStartedMsg:
+		// Listen for next event
+		cmds = append(cmds, waitForActivity(m.progressChan))
 
-		// Check if we already have this download
 		found := false
-		for _, d := range m.downloads {
-			if d.ID == msg.DownloadID {
-				found = true
-				break
-			}
-		}
-
-		// If not found (external download), add it
-		if !found {
-			// Create new model matching the started download
-			newDownload := NewDownloadModel(msg.DownloadID, msg.URL, msg.Filename, msg.Total)
-			if msg.State != nil {
-				newDownload.state = msg.State
-				newDownload.reporter = NewProgressReporter(msg.State)
-			}
-			newDownload.Destination = msg.DestPath
-			newDownload.state.SetTotalSize(msg.Total)
-
-			m.downloads = append(m.downloads, newDownload)
-			// Ensure polling starts for this new download
-			// Note: PollCmd will be added in the loop below to handle both new and existing downloads uniformly
-		}
-
-		// Update metadata for all matching downloads (including the one just added)
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.Filename = msg.Filename
 				d.Total = msg.Total
 				d.Destination = msg.DestPath
-				// Reset start time to exclude probing
 				d.StartTime = time.Now()
-				// Update the progress state with real total size
-				d.state.SetTotalSize(msg.Total)
-				// Start polling for this download (ensures UI updates speed/progress)
-				cmds = append(cmds, d.reporter.PollCmd())
+				// Update progress bar
+				if d.Total > 0 {
+					d.progress.SetPercent(0)
+				}
+				d.state.SetTotalSize(msg.Total) // Keep state updated for verification if needed
+				found = true
 				break
 			}
 		}
-		// Update list items to reflect new filename
-		m.UpdateListItems()
-		// Switch to active tab so user sees it
-		if m.Settings.General.AutoResume {
-			// Optional: switch tab logic if desired
-			_ = true // prevent empty branch lint
+
+		if !found {
+			newDownload := NewDownloadModel(msg.DownloadID, msg.URL, msg.Filename, msg.Total)
+			newDownload.Destination = msg.DestPath
+			if msg.State != nil {
+				newDownload.state = msg.State
+			}
+			m.downloads = append(m.downloads, newDownload)
 		}
-		// Add log entry
+
+		m.UpdateListItems()
 		m.addLogEntry(LogStyleStarted.Render("⬇ Started: " + msg.Filename))
 		return m, tea.Batch(cmds...)
 
 	case events.ProgressMsg:
-		// Progress from polling reporter
+		// Listen for next event immediately
+		cmds = append(cmds, waitForActivity(m.progressChan))
+
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
-				// Don't update if already done or paused
 				if d.done || d.paused {
 					break
 				}
@@ -314,7 +289,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d.Downloaded = msg.Downloaded
 				d.Total = msg.Total
 				d.Speed = msg.Speed
-				d.Elapsed = msg.Elapsed // Use total elapsed from engine
+				d.Elapsed = msg.Elapsed
 				d.Connections = msg.ActiveConnections
 
 				if d.Total > 0 {
@@ -322,22 +297,15 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cmd := d.progress.SetPercent(percentage)
 					cmds = append(cmds, cmd)
 				}
-				// Continue polling only if not done and not paused
-				if !d.done && !d.paused {
-					cmds = append(cmds, d.reporter.PollCmd())
-				}
 
-				// Add current speed to buffer for rolling average
+				// Rolling average history logic
 				totalSpeed := m.calcTotalSpeed()
 				m.speedBuffer = append(m.speedBuffer, totalSpeed)
-				// Keep only last 10 samples (10 polls × 150ms = 1.5s window)
 				if len(m.speedBuffer) > 10 {
 					m.speedBuffer = m.speedBuffer[1:]
 				}
 
-				// Update global speed history every 500ms with rolling average
 				if time.Since(m.lastSpeedHistoryUpdate) >= GraphUpdateInterval {
-					// Calculate average of buffer
 					var avgSpeed float64
 					if len(m.speedBuffer) > 0 {
 						for _, s := range m.speedBuffer {
@@ -351,13 +319,16 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.lastSpeedHistoryUpdate = time.Now()
 				}
 
-				// Update list to show current progress
 				m.UpdateListItems()
 				break
 			}
 		}
+		return m, tea.Batch(cmds...)
 
 	case events.DownloadCompleteMsg:
+		// Listen for next event
+		cmds = append(cmds, waitForActivity(m.progressChan))
+
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				if d.done {
@@ -367,60 +338,89 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d.Downloaded = d.Total
 				d.Elapsed = msg.Elapsed
 				d.done = true
-				// Set progress to 100%
 				cmds = append(cmds, d.progress.SetPercent(1.0))
 
-				// Add log entry
-				speed := float64(d.Total) / msg.Elapsed.Seconds()
+				speed := 0.0
+				if msg.Elapsed.Seconds() > 0 {
+					speed = float64(d.Total) / msg.Elapsed.Seconds()
+				}
 				m.addLogEntry(LogStyleComplete.Render(fmt.Sprintf("✔ Done: %s (%.2f MB/s)", d.Filename, speed/Megabyte)))
-
 				break
 			}
 		}
-		// Update list items
 		m.UpdateListItems()
 		return m, tea.Batch(cmds...)
 
 	case events.DownloadErrorMsg:
+		// Listen for next event
+		cmds = append(cmds, waitForActivity(m.progressChan))
+
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.err = msg.Err
 				d.done = true
-				// Add log entry
 				m.addLogEntry(LogStyleError.Render("✖ Error: " + d.Filename))
 				break
 			}
 		}
 		m.UpdateListItems()
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case events.DownloadPausedMsg:
+		// Listen for next event
+		cmds = append(cmds, waitForActivity(m.progressChan))
+
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.paused = true
-				d.pausing = false // Transition complete
+				d.pausing = false
 				d.Downloaded = msg.Downloaded
-				d.Speed = 0 // Clear speed when paused
-				// Add log entry
+				d.Speed = 0
 				m.addLogEntry(LogStylePaused.Render("⏸ Paused: " + d.Filename))
 				break
 			}
 		}
 		m.UpdateListItems()
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case events.DownloadResumedMsg:
+		// Listen for next event
+		cmds = append(cmds, waitForActivity(m.progressChan))
+
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.paused = false
-				// Add log entry
 				m.addLogEntry(LogStyleStarted.Render("▶ Resumed: " + d.Filename))
-				// Restart polling
-				cmds = append(cmds, d.reporter.PollCmd())
 				break
 			}
 		}
 		m.UpdateListItems()
+		return m, tea.Batch(cmds...)
+
+	case events.DownloadQueuedMsg:
+		// Listen for next event
+		cmds = append(cmds, waitForActivity(m.progressChan))
+		// We optimistically added it, but if it came from elsewhere, handle it
+		found := false
+		for _, d := range m.downloads {
+			if d.ID == msg.DownloadID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			// Add placeholder
+			newDownload := NewDownloadModel(msg.DownloadID, "", msg.Filename, 0)
+			m.downloads = append(m.downloads, newDownload)
+			m.UpdateListItems()
+		}
+		return m, tea.Batch(cmds...)
+
+	case events.DownloadRemovedMsg:
+		// Listen for next event
+		cmds = append(cmds, waitForActivity(m.progressChan))
+		// Handled via list refresh usually, but we can explicitly remove if needed
+		// For now, rely on list refresh or explicit Delete action removal
 		return m, tea.Batch(cmds...)
 
 	case tea.WindowSizeMsg:
@@ -451,7 +451,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case UpdateCheckResultMsg:
-		// Handle update check result
 		if msg.Info != nil && msg.Info.UpdateAvailable {
 			m.UpdateInfo = msg.Info
 			m.state = UpdateAvailableState
@@ -581,12 +580,13 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Quit
 			if key.Matches(msg, m.keys.Dashboard.Quit) {
-				// Graceful shutdown: pause all active downloads to save state
-				m.Pool.GracefulShutdown()
+				// Graceful shutdown
+				_ = m.Service.Shutdown()
 				return m, tea.Quit
 			}
 			if key.Matches(msg, m.keys.Dashboard.ForceQuit) {
-				m.Pool.PauseAll()
+				// Force quit (same as shutdown for now, or just exit)
+				_ = m.Service.Shutdown()
 				return m, tea.Quit
 			}
 
@@ -607,7 +607,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inputs[1].SetValue("") // Clear mirrors
 				m.inputs[1].Blur()
 
-				// Check clipboard for URL if setting is enabled
 				if m.Settings.General.ClipboardMonitor {
 					if url := clipboard.ReadURL(); url != "" {
 						m.inputs[0].SetValue(url)
@@ -631,52 +630,26 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Delete download
 			if key.Matches(msg, m.keys.Dashboard.Delete) {
-				// Don't process delete if list is filtering
 				if m.list.FilterState() == list.Filtering {
-					// Fall through to let list handle it
+					// Fall through
 				} else if d := m.GetSelectedDownload(); d != nil {
 					targetID := d.ID
 
-					// Find index in real list
-					realIdx := -1
-					for i, dl := range m.downloads {
-						if dl.ID == targetID {
-							realIdx = i
-							break
-						}
-					}
-
-					if realIdx != -1 {
-						dl := m.downloads[realIdx]
-
-						// Cancel if active
-						m.Pool.Cancel(dl.ID)
-
-						// Delete state files
-						if dl.URL != "" && dl.Destination != "" {
-							_ = state.DeleteState(dl.ID, dl.URL, dl.Destination)
-						}
-
-						// Delete partial/incomplete files (only for non-completed downloads)
-						if !dl.done && dl.Destination != "" {
-							// Delete the .surge partial file with retries
-							// (worker may still hold file briefly after Cancel on Windows)
-							surgeFile := dl.Destination + types.IncompleteSuffix
-							for i := 0; i < 5; i++ {
-								if err := os.Remove(surgeFile); err == nil {
-									break
-								}
-								time.Sleep(50 * time.Millisecond)
+					// Call Service Delete
+					if err := m.Service.Delete(targetID); err != nil {
+						m.addLogEntry(LogStyleError.Render("✖ Delete failed: " + err.Error()))
+					} else {
+						// Remove from list
+						realIdx := -1
+						for i, dl := range m.downloads {
+							if dl.ID == targetID {
+								realIdx = i
+								break
 							}
 						}
-
-						// Remove completed downloads from master list (for Done tab persistence)
-						if dl.done && dl.URL != "" {
-							_ = state.RemoveFromMasterList(dl.ID)
+						if realIdx != -1 {
+							m.downloads = append(m.downloads[:realIdx], m.downloads[realIdx+1:]...)
 						}
-
-						// Remove from list
-						m.downloads = append(m.downloads[:realIdx], m.downloads[realIdx+1:]...)
 					}
 					m.UpdateListItems()
 					return m, nil
@@ -685,7 +658,10 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// History
 			if key.Matches(msg, m.keys.Dashboard.History) {
-				// Open history view
+				// Note: accessing state directly here breaks abstraction.
+				// Ideally Service should provide History.
+				// For now, let's keep it as is, knowing "History" might only work for local DB.
+				// If Remote Service, we might need an API for history.
 				if entries, err := state.LoadCompletedDownloads(); err == nil {
 					m.historyEntries = entries
 					m.historyCursor = 0
@@ -694,54 +670,36 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Pause/Resume toggle - get selected download from list
+			// Pause/Resume toggle
 			if key.Matches(msg, m.keys.Dashboard.Pause) {
 				if d := m.GetSelectedDownload(); d != nil {
 					if !d.done {
 						if d.paused {
-							// Resume: create config and add to pool
+							// Resume
 							d.paused = false
-							d.state.Resume()
-							// Use the download's actual destination directory
-							outputPath := filepath.Dir(d.Destination)
-							if outputPath == "" || outputPath == "." {
-								outputPath = m.Settings.General.DefaultDownloadDir
-								if outputPath == "" {
-									outputPath = m.PWD
-								}
+							if err := m.Service.Resume(d.ID); err != nil {
+								m.addLogEntry(LogStyleError.Render("✖ Resume failed: " + err.Error()))
+								d.paused = true // Revert
 							}
-							cfg := types.DownloadConfig{
-								URL:        d.URL,
-								OutputPath: outputPath,
-								DestPath:   d.Destination, // Full path for state lookup
-								ID:         d.ID,
-								Filename:   d.Filename,
-								Verbose:    false,
-								IsResume:   true, // Explicit resume - use saved state
-								ProgressCh: m.progressChan,
-								State:      d.state,
-								Runtime:    convertRuntimeConfig(m.Settings.ToRuntimeConfig()),
-							}
-							m.Pool.Add(cfg)
-							// Restart polling
-							cmds = append(cmds, d.reporter.PollCmd())
 						} else {
-							m.Pool.Pause(d.ID)
-							d.pausing = true // Show immediate feedback
+							// Pause
+							if err := m.Service.Pause(d.ID); err != nil {
+								m.addLogEntry(LogStyleError.Render("✖ Pause failed: " + err.Error()))
+							} else {
+								d.pausing = true
+							}
 						}
 					}
 				}
 				m.UpdateListItems()
-				return m, tea.Batch(cmds...)
+				return m, nil
 			}
 
-			// Open file (for completed downloads or sequential downloads)
+			// Open file
 			if key.Matches(msg, m.keys.Dashboard.OpenFile) {
 				if d := m.GetSelectedDownload(); d != nil {
-					// Allow opening for completed downloads or sequential downloads in progress
 					canOpen := d.done || (m.Settings.Connections.SequentialDownload && !d.paused && d.Downloaded > 0)
 					if canOpen && d.Destination != "" {
-						// Open the file (use the partial file path if still downloading)
 						filePath := d.Destination
 						if !d.done {
 							filePath = d.Destination + types.IncompleteSuffix
@@ -752,13 +710,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Toggle log focus
+			// Other keys...
 			if key.Matches(msg, m.keys.Dashboard.Log) {
 				m.logFocused = !m.logFocused
 				return m, nil
 			}
 
-			// Open settings
 			if key.Matches(msg, m.keys.Dashboard.Settings) {
 				m.state = SettingsState
 				m.SettingsActiveTab = 0
@@ -767,7 +724,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Batch import
 			if key.Matches(msg, m.keys.Dashboard.BatchImport) {
 				m.state = BatchFilePickerState
 				m.filepicker = newFilepicker(m.PWD)
@@ -776,7 +732,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.filepicker.Init()
 			}
 
-			// If log is focused, handle viewport scrolling
 			if m.logFocused {
 				if key.Matches(msg, m.keys.Dashboard.LogClose) {
 					m.logFocused = false
