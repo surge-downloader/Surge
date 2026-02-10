@@ -11,6 +11,9 @@ type DownloadService interface {
 	// List returns the status of all active and completed downloads.
 	List() ([]types.DownloadStatus, error)
 
+	// History returns completed downloads
+	History() ([]types.DownloadEntry, error)
+
 	// Add queues a new download.
 	Add(url string, path string, filename string, mirrors []string) (string, error)
 

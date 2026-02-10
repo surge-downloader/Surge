@@ -643,9 +643,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if key.Matches(msg, m.keys.Dashboard.History) {
 				// Note: accessing state directly here breaks abstraction.
 				// Ideally Service should provide History.
-				// For now, let's keep it as is, knowing "History" might only work for local DB.
+				// For now, let's keep it as is, knowing "History"
 				// If Remote Service, we might need an API for history.
-				if entries, err := state.LoadCompletedDownloads(); err == nil {
+				if entries, err := m.Service.History(); err == nil {
 					m.historyEntries = entries
 					m.historyCursor = 0
 					m.state = HistoryState

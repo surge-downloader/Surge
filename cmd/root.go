@@ -792,7 +792,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		ProgressCh: GlobalProgressCh, // Shared channel (headless consumer or TUI)
 		State:      types.NewProgressState(downloadID, 0),
 		// Runtime config loaded from settings
-		Runtime: convertRuntimeConfig(settings.ToRuntimeConfig()),
+		Runtime: types.ConvertRuntimeConfig(settings.ToRuntimeConfig()),
 		Headers: req.Headers, // Forward browser headers (cookies, auth, etc.)
 	}
 
@@ -894,7 +894,7 @@ func processDownloads(urls []string, outputDir string, port int) int {
 			Verbose:    false,
 			ProgressCh: GlobalProgressCh,
 			State:      types.NewProgressState(downloadID, 0),
-			Runtime:    convertRuntimeConfig(settings.ToRuntimeConfig()),
+			Runtime:    types.ConvertRuntimeConfig(settings.ToRuntimeConfig()),
 		}
 
 		GlobalPool.Add(cfg)
@@ -946,24 +946,6 @@ func initializeGlobalState() {
 	utils.CleanupLogs(retention)
 }
 
-// convertRuntimeConfig converts config.RuntimeConfig to types.RuntimeConfig
-func convertRuntimeConfig(rc *config.RuntimeConfig) *types.RuntimeConfig {
-	return &types.RuntimeConfig{
-		MaxConnectionsPerHost: rc.MaxConnectionsPerHost,
-		MaxGlobalConnections:  rc.MaxGlobalConnections,
-		UserAgent:             rc.UserAgent,
-		ProxyURL:              rc.ProxyURL,
-		SequentialDownload:    rc.SequentialDownload,
-		MinChunkSize:          rc.MinChunkSize,
-		WorkerBufferSize:      rc.WorkerBufferSize,
-		MaxTaskRetries:        rc.MaxTaskRetries,
-		SlowWorkerThreshold:   rc.SlowWorkerThreshold,
-		SlowWorkerGracePeriod: rc.SlowWorkerGracePeriod,
-		StallTimeout:          rc.StallTimeout,
-		SpeedEmaAlpha:         rc.SpeedEmaAlpha,
-	}
-}
-
 func resumePausedDownloads() {
 	settings, err := config.LoadSettings()
 	if err != nil {
@@ -988,7 +970,7 @@ func resumePausedDownloads() {
 		}
 
 		// Reconstruct config
-		runtimeConfig := convertRuntimeConfig(settings.ToRuntimeConfig())
+		runtimeConfig := types.ConvertRuntimeConfig(settings.ToRuntimeConfig())
 		outputPath := filepath.Dir(entry.DestPath)
 		// If outputPath is empty or dot, use default
 		if outputPath == "" || outputPath == "." {

@@ -79,6 +79,21 @@ func (s *RemoteDownloadService) List() ([]types.DownloadStatus, error) {
 	return statuses, nil
 }
 
+// History returns completed downloads
+func (s *RemoteDownloadService) History() ([]types.DownloadEntry, error) {
+	resp, err := s.doRequest("GET", "/history", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var history []types.DownloadEntry
+	if err := json.NewDecoder(resp.Body).Decode(&history); err != nil {
+		return nil, err
+	}
+	return history, nil
+}
+
 // Add queues a new download.
 func (s *RemoteDownloadService) Add(url string, path string, filename string, mirrors []string) (string, error) {
 	req := map[string]interface{}{

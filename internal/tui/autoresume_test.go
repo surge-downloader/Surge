@@ -81,7 +81,7 @@ func TestAutoResume_Enabled(t *testing.T) {
 	ch := make(chan any, 10)
 	pool := download.NewWorkerPool(ch, 1)
 
-	m := InitialRootModel(1700, "test-version", core.NewLocalDownloadService(pool, ch), ch, false)
+	m := InitialRootModel(1700, "test-version", core.NewLocalDownloadService(pool), ch, false)
 
 	// 6. Verify Download is Resumed
 	found := false
@@ -163,7 +163,7 @@ func TestAutoResume_Disabled(t *testing.T) {
 	ch := make(chan any, 10)
 	pool := download.NewWorkerPool(ch, 1)
 
-	m := InitialRootModel(1700, "test-version", core.NewLocalDownloadService(pool, ch), ch, false)
+	m := InitialRootModel(1700, "test-version", core.NewLocalDownloadService(pool), ch, false)
 
 	// 6. Verify Download is Resumed
 	found := false

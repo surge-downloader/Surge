@@ -16,6 +16,18 @@ import (
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
+// ReloadSettings reloads settings from disk
+func (s *LocalDownloadService) ReloadSettings() error {
+	settings, err := config.LoadSettings()
+	if err != nil {
+		return err
+	}
+	s.settingsMu.Lock()
+	s.settings = settings
+	s.settingsMu.Unlock()
+	return nil
+}
+
 // LocalDownloadService implements DownloadService for the local embedded engine.
 type LocalDownloadService struct {
 	Pool    *download.WorkerPool
@@ -33,6 +45,10 @@ type LocalDownloadService struct {
 	// Lifecycle
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// Settings Cache
+	settings   *config.Settings
+	settingsMu sync.RWMutex
 }
 
 const (
@@ -49,6 +65,17 @@ func NewLocalDownloadService(pool *download.WorkerPool) *LocalDownloadService {
 		listeners:  make([]chan interface{}, 0),
 		lastSpeeds: make(map[string]float64),
 	}
+
+	// Load initial settings
+	if s.settings, _ = config.LoadSettings(); s.settings == nil {
+		s.settings = config.DefaultSettings()
+	}
+
+	// Lifecycle
+	ctx, cancel := context.WithCancel(context.Background())
+	s.ctx = ctx
+	s.cancel = cancel
+
 	// Start broadcaster
 	go s.broadcastLoop()
 
@@ -149,6 +176,21 @@ func (s *LocalDownloadService) StreamEvents() (<-chan interface{}, error) {
 	s.listenerMu.Lock()
 	s.listeners = append(s.listeners, ch)
 	s.listenerMu.Unlock()
+
+	// Cleanup listener on context cancellation
+	go func() {
+		<-s.ctx.Done()
+		s.listenerMu.Lock()
+		defer s.listenerMu.Unlock()
+		for i, listener := range s.listeners {
+			if listener == ch {
+				s.listeners = append(s.listeners[:i], s.listeners[i+1:]...)
+				close(ch)
+				break
+			}
+		}
+	}()
+
 	return ch, nil
 }
 
@@ -160,6 +202,10 @@ func (s *LocalDownloadService) Shutdown() error {
 	if s.Pool != nil {
 		s.Pool.GracefulShutdown()
 	}
+
+	// Stop listeners and broadcaster
+	s.cancel()
+
 	// Close input channel to stop broadcaster
 	close(s.InputCh)
 	return nil
@@ -272,10 +318,9 @@ func (s *LocalDownloadService) Add(url string, path string, filename string, mir
 		return "", fmt.Errorf("worker pool not initialized")
 	}
 
-	settings, err := config.LoadSettings()
-	if err != nil {
-		settings = config.DefaultSettings()
-	}
+	s.settingsMu.RLock()
+	settings := s.settings
+	s.settingsMu.RUnlock()
 
 	// Prepare output path
 	outPath := path
@@ -303,7 +348,7 @@ func (s *LocalDownloadService) Add(url string, path string, filename string, mir
 		Verbose:    false,
 		ProgressCh: s.InputCh,
 		State:      state,
-		Runtime:    convertRuntimeConfig(settings.ToRuntimeConfig()),
+		Runtime:    types.ConvertRuntimeConfig(settings.ToRuntimeConfig()),
 	}
 
 	s.Pool.Add(cfg)
@@ -351,10 +396,13 @@ func (s *LocalDownloadService) Resume(id string) error {
 		return fmt.Errorf("download already completed")
 	}
 
-	settings, _ := config.LoadSettings()
-	if settings == nil {
-		settings = config.DefaultSettings()
+	if entry.Status == "completed" {
+		return fmt.Errorf("download already completed")
 	}
+
+	s.settingsMu.RLock()
+	settings := s.settings
+	s.settingsMu.RUnlock()
 
 	// Reconstruct configuration
 	outputPath := settings.General.DefaultDownloadDir
@@ -400,7 +448,7 @@ func (s *LocalDownloadService) Resume(id string) error {
 		IsResume:   true,
 		ProgressCh: s.InputCh,
 		State:      dmState,
-		Runtime:    convertRuntimeConfig(settings.ToRuntimeConfig()),
+		Runtime:    types.ConvertRuntimeConfig(settings.ToRuntimeConfig()),
 		Mirrors:    mirrorURLs,
 	}
 
@@ -421,19 +469,8 @@ func (s *LocalDownloadService) Delete(id string) error {
 	return nil
 }
 
-// convertRuntimeConfig helper (internal copy)
-func convertRuntimeConfig(rc *config.RuntimeConfig) *types.RuntimeConfig {
-	return &types.RuntimeConfig{
-		MaxConnectionsPerHost: rc.MaxConnectionsPerHost,
-		MaxGlobalConnections:  rc.MaxGlobalConnections,
-		UserAgent:             rc.UserAgent,
-		SequentialDownload:    rc.SequentialDownload,
-		MinChunkSize:          rc.MinChunkSize,
-		WorkerBufferSize:      rc.WorkerBufferSize,
-		MaxTaskRetries:        rc.MaxTaskRetries,
-		SlowWorkerThreshold:   rc.SlowWorkerThreshold,
-		SlowWorkerGracePeriod: rc.SlowWorkerGracePeriod,
-		StallTimeout:          rc.StallTimeout,
-		SpeedEmaAlpha:         rc.SpeedEmaAlpha,
-	}
+// History returns completed downloads
+func (s *LocalDownloadService) History() ([]types.DownloadEntry, error) {
+	// For local service, we can directly access the state DB
+	return state.LoadCompletedDownloads()
 }
