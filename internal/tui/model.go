@@ -232,10 +232,11 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 					dm.Destination = s.Filename // Fallback
 				}
 				// Status mapping
-				if s.Status == "completed" {
+				switch s.Status {
+				case "completed":
 					dm.done = true
 					dm.progress.SetPercent(1.0)
-				} else if s.Status == "paused" {
+				case "paused":
 					if settings.General.AutoResume {
 						// Auto-resume if enabled
 						if err := service.Resume(s.ID); err == nil {
@@ -246,7 +247,7 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 					} else {
 						dm.paused = true
 					}
-				} else if s.Status == "queued" {
+				case "queued":
 					// Always resume queued items
 					if err := service.Resume(s.ID); err == nil {
 						dm.paused = false

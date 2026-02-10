@@ -68,23 +68,6 @@ func openFile(path string) error {
 	return cmd.Start()
 }
 
-// convertRuntimeConfig converts config.RuntimeConfig to types.RuntimeConfig
-func convertRuntimeConfig(rc *config.RuntimeConfig) *types.RuntimeConfig {
-	return &types.RuntimeConfig{
-		MaxConnectionsPerHost: rc.MaxConnectionsPerHost,
-		MaxGlobalConnections:  rc.MaxGlobalConnections,
-		UserAgent:             rc.UserAgent,
-		SequentialDownload:    rc.SequentialDownload,
-		MinChunkSize:          rc.MinChunkSize,
-		WorkerBufferSize:      rc.WorkerBufferSize,
-		MaxTaskRetries:        rc.MaxTaskRetries,
-		SlowWorkerThreshold:   rc.SlowWorkerThreshold,
-		SlowWorkerGracePeriod: rc.SlowWorkerGracePeriod,
-		StallTimeout:          rc.StallTimeout,
-		SpeedEmaAlpha:         rc.SpeedEmaAlpha,
-	}
-}
-
 // readURLsFromFile reads URLs from a file, one per line (skips empty lines, comments, and duplicates)
 func readURLsFromFile(filepath string) ([]string, error) {
 	file, err := os.Open(filepath)

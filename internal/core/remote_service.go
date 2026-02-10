@@ -55,7 +55,7 @@ func (s *RemoteDownloadService) doRequest(method, path string, body interface{})
 	}
 
 	if resp.StatusCode >= 400 {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(bodyBytes))
 	}
@@ -69,7 +69,7 @@ func (s *RemoteDownloadService) List() ([]types.DownloadStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var statuses []types.DownloadStatus
 	if err := json.NewDecoder(resp.Body).Decode(&statuses); err != nil {
@@ -91,7 +91,7 @@ func (s *RemoteDownloadService) Add(url string, path string, filename string, mi
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result map[string]string
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -106,7 +106,7 @@ func (s *RemoteDownloadService) Pause(id string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -116,7 +116,7 @@ func (s *RemoteDownloadService) Resume(id string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -128,7 +128,7 @@ func (s *RemoteDownloadService) Delete(id string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -138,7 +138,7 @@ func (s *RemoteDownloadService) Shutdown() error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 

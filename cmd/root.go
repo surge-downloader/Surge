@@ -364,8 +364,8 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service
 				// event: <type>
 				// data: <json>
 				// \n
-				fmt.Fprintf(w, "event: %s\n", eventType)
-				fmt.Fprintf(w, "data: %s\n\n", data)
+				_, _ = fmt.Fprintf(w, "event: %s\n", eventType)
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 				flusher.Flush()
 			}
 		}
@@ -394,7 +394,9 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id})
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id}); err != nil {
+			utils.Debug("Failed to encode response: %v", err)
+		}
 	})
 
 	// Resume endpoint (Protected)
@@ -415,7 +417,9 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id})
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id}); err != nil {
+			utils.Debug("Failed to encode response: %v", err)
+		}
 	})
 
 	// Delete endpoint (Protected)
@@ -436,7 +440,9 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id})
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id}); err != nil {
+			utils.Debug("Failed to encode response: %v", err)
+		}
 	})
 
 	// List endpoint (Protected)
