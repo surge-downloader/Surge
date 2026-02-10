@@ -60,6 +60,12 @@ brew install surge-downloader/tap/surge
 go install github.com/surge-downloader/surge@latest
 ```
 
+### Option 5: winget (Windows)
+
+```bash
+winget install surge-downloader.surge
+```
+
 ---
 
 ## Usage
@@ -128,6 +134,7 @@ surge connect 192.168.1.10:1700
 ```
 
 Notes:
+
 - The daemon requires a token for all API calls. Print it with `surge token` on the server host.
 - Remote TUI is a viewer/controller for the daemon state; the daemon owns resume behavior.
 
