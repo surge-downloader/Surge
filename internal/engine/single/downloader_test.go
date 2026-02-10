@@ -142,7 +142,7 @@ func TestSingleDownloader_StreamingServer(t *testing.T) {
 	defer cleanup()
 
 	fileSize := int64(1 * types.MB)
-	server := testutil.NewStreamingMockServer(fileSize,
+	server := testutil.NewStreamingMockServerT(t, fileSize,
 		testutil.WithRangeSupport(false),
 	)
 	defer server.Close()
@@ -176,7 +176,7 @@ func TestSingleDownloader_FailAfterBytes(t *testing.T) {
 
 	fileSize := int64(256 * types.KB)
 	// Server fails after sending 50KB
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(false),
 		testutil.WithFailAfterBytes(50*types.KB),
@@ -214,7 +214,7 @@ func TestSingleDownloader_NilState(t *testing.T) {
 	defer cleanup()
 
 	fileSize := int64(32 * types.KB)
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(false),
 	)
@@ -268,7 +268,7 @@ func TestSingleDownloader_Download_Success(t *testing.T) {
 	defer cleanup()
 
 	fileSize := int64(64 * 1024) // 64KB
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(false), // SingleDownloader doesn't use ranges
 		testutil.WithFilename("single_test.bin"),
@@ -312,7 +312,7 @@ func TestSingleDownloader_Download_Cancellation(t *testing.T) {
 
 	// Large file with latency
 	fileSize := int64(5 * types.MB)
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(false),
 		testutil.WithByteLatency(500*time.Microsecond),
@@ -352,7 +352,7 @@ func TestSingleDownloader_Download_ProgressTracking(t *testing.T) {
 	defer cleanup()
 
 	fileSize := int64(256 * types.KB)
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(false),
 		testutil.WithByteLatency(5*time.Microsecond), // Slow down to allow progress monitoring
@@ -385,7 +385,7 @@ func TestSingleDownloader_Download_ServerError(t *testing.T) {
 	defer cleanup()
 
 	// Server that fails on first request
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(1024),
 		testutil.WithFailOnNthRequest(1),
 	)
@@ -411,7 +411,7 @@ func TestSingleDownloader_Download_WithLatency(t *testing.T) {
 	defer cleanup()
 
 	fileSize := int64(32 * types.KB)
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(false),
 		testutil.WithLatency(100*time.Millisecond),
@@ -449,7 +449,7 @@ func TestSingleDownloader_Download_ContentIntegrity(t *testing.T) {
 	defer cleanup()
 
 	fileSize := int64(64 * types.KB)
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(false),
 		testutil.WithRandomData(true),

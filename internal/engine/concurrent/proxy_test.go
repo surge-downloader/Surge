@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 
 func TestConcurrentDownloader_ProxySupport(t *testing.T) {
 	// 1. Setup Mock Target Server
-	targetServer := testutil.NewMockServer(
+	targetServer := testutil.NewMockServerT(t,
 		testutil.WithFileSize(1024),
 		testutil.WithRangeSupport(true),
 	)
@@ -22,7 +21,7 @@ func TestConcurrentDownloader_ProxySupport(t *testing.T) {
 
 	// 2. Setup Mock Proxy Server
 	proxyHit := false
-	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	proxyServer := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		proxyHit = true
 		// Forward request to target
 		// Note: A real proxy would handle CONNECT or absolute URLs.
@@ -102,7 +101,7 @@ func TestConcurrentDownloader_InvalidProxy(t *testing.T) {
 	// Implementation currently falls back to environment/direct on invalid URL parse,
 	// but let's test that it doesn't panic.
 
-	targetServer := testutil.NewMockServer(testutil.WithFileSize(1024))
+	targetServer := testutil.NewMockServerT(t, testutil.WithFileSize(1024))
 	defer targetServer.Close()
 
 	runtime := &types.RuntimeConfig{

@@ -14,6 +14,7 @@ import (
 )
 
 func TestCLI_NewEndpoints(t *testing.T) {
+	requireTCPListener(t)
 	// Initialize GlobalPool for tests
 	GlobalProgressCh = make(chan any, 100)
 	GlobalPool = download.NewWorkerPool(GlobalProgressCh, 4)

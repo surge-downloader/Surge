@@ -42,14 +42,14 @@ func TestIntegration_MirrorResume(t *testing.T) {
 
 	// 2. Setup Mock Servers (Primary + Mirror)
 	fileSize := int64(200 * 1024 * 1024) // 200MB
-	primary := testutil.NewStreamingMockServer(
+	primary := testutil.NewStreamingMockServerT(t,
 		fileSize,
 		testutil.WithRangeSupport(true),
 		testutil.WithByteLatency(20*time.Microsecond), // Slow down to ensure we can pause
 	)
 	defer primary.Close()
 
-	mirror := testutil.NewStreamingMockServer(
+	mirror := testutil.NewStreamingMockServerT(t,
 		fileSize,
 		testutil.WithRangeSupport(true),
 		testutil.WithByteLatency(20*time.Microsecond),

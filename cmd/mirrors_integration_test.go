@@ -6,8 +6,9 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"testing"
+
+	"github.com/surge-downloader/surge/internal/testutil"
 )
 
 // TestMirrors_CLI_Integration verifies that the processDownloads function (used by CLI)
@@ -16,7 +17,7 @@ func TestMirrors_CLI_Integration(t *testing.T) {
 	// 1. Start a mock Surge server
 	receivedRequest := make(chan DownloadRequest, 1)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/download" {
 			http.Error(w, "Not found", http.StatusNotFound)
 			return

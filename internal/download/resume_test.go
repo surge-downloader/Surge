@@ -41,7 +41,7 @@ func TestIntegration_PauseResume(t *testing.T) {
 
 	// 2. Setup Mock Server (500MB file)
 	fileSize := int64(500 * 1024 * 1024) // 500MB
-	server := testutil.NewStreamingMockServer(
+	server := testutil.NewStreamingMockServerT(t,
 		fileSize,
 		testutil.WithRangeSupport(true),
 		testutil.WithLatency(10*time.Millisecond), // Small latency to allow interruption

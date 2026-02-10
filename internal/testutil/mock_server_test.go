@@ -9,7 +9,7 @@ import (
 )
 
 func TestMockServer_BasicDownload(t *testing.T) {
-	server := NewMockServer(
+	server := NewMockServerT(t,
 		WithFileSize(1024*1024), // 1MB
 		WithRangeSupport(true),
 	)
@@ -45,7 +45,7 @@ func TestMockServer_BasicDownload(t *testing.T) {
 }
 
 func TestMockServer_RangeRequest(t *testing.T) {
-	server := NewMockServer(
+	server := NewMockServerT(t,
 		WithFileSize(1024*1024), // 1MB
 		WithRangeSupport(true),
 	)
@@ -79,7 +79,7 @@ func TestMockServer_RangeRequest(t *testing.T) {
 
 func TestMockServer_MultipleRangeRequests(t *testing.T) {
 	fileSize := int64(1024 * 1024) // 1MB
-	server := NewMockServer(
+	server := NewMockServerT(t,
 		WithFileSize(fileSize),
 		WithRangeSupport(true),
 	)
@@ -127,7 +127,7 @@ func TestMockServer_MultipleRangeRequests(t *testing.T) {
 }
 
 func TestMockServer_HeadRequest(t *testing.T) {
-	server := NewMockServer(
+	server := NewMockServerT(t,
 		WithFileSize(5*1024*1024), // 5MB
 		WithRangeSupport(true),
 		WithFilename("testfile.zip"),
@@ -158,7 +158,7 @@ func TestMockServer_HeadRequest(t *testing.T) {
 }
 
 func TestMockServer_NoRangeSupport(t *testing.T) {
-	server := NewMockServer(
+	server := NewMockServerT(t,
 		WithFileSize(1024),
 		WithRangeSupport(false),
 	)
@@ -187,7 +187,7 @@ func TestMockServer_NoRangeSupport(t *testing.T) {
 }
 
 func TestMockServer_FailOnNthRequest(t *testing.T) {
-	server := NewMockServer(
+	server := NewMockServerT(t,
 		WithFileSize(1024),
 		WithFailOnNthRequest(2),
 	)
@@ -222,7 +222,7 @@ func TestMockServer_FailOnNthRequest(t *testing.T) {
 
 func TestMockServer_Latency(t *testing.T) {
 	latency := 100 * time.Millisecond
-	server := NewMockServer(
+	server := NewMockServerT(t,
 		WithFileSize(1024),
 		WithLatency(latency),
 	)
@@ -239,7 +239,7 @@ func TestMockServer_Latency(t *testing.T) {
 }
 
 func TestMockServer_Reset(t *testing.T) {
-	server := NewMockServer(WithFileSize(1024))
+	server := NewMockServerT(t, WithFileSize(1024))
 	defer server.Close()
 
 	// Make a request
@@ -261,7 +261,7 @@ func TestMockServer_Reset(t *testing.T) {
 func TestStreamingMockServer_LargeFile(t *testing.T) {
 	// 100MB virtual file (doesn't actually allocate 100MB)
 	fileSize := int64(100 * 1024 * 1024)
-	server := NewStreamingMockServer(fileSize, WithRangeSupport(true))
+	server := NewStreamingMockServerT(t, fileSize, WithRangeSupport(true))
 	defer server.Close()
 
 	// Just request a small range to verify it works

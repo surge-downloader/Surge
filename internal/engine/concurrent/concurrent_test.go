@@ -35,7 +35,7 @@ func TestConcurrentDownloader_Download(t *testing.T) {
 	defer cleanup()
 
 	fileSize := int64(1 * types.MB)
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 	)
@@ -69,7 +69,7 @@ func TestConcurrentDownloader_WithLatency(t *testing.T) {
 	defer cleanup()
 
 	fileSize := int64(64 * types.KB)
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 		testutil.WithLatency(100*time.Millisecond), // 100ms per request
@@ -109,7 +109,7 @@ func TestConcurrentDownloader_SlowDownload(t *testing.T) {
 
 	fileSize := int64(32 * types.KB)
 	// Very slow byte-by-byte latency
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 		testutil.WithByteLatency(10*time.Microsecond),
@@ -145,7 +145,7 @@ func TestConcurrentDownloader_RespectServerConnectionLimit(t *testing.T) {
 
 	fileSize := int64(256 * types.KB)
 	maxConns := 2
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 		testutil.WithMaxConcurrentRequests(maxConns),
@@ -188,7 +188,7 @@ func TestConcurrentDownloader_ContentIntegrity(t *testing.T) {
 
 	fileSize := int64(128 * types.KB)
 	// Use random data so we can verify content integrity
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 		testutil.WithRandomData(true),
@@ -256,7 +256,7 @@ func TestConcurrentDownloader_SmallFile(t *testing.T) {
 	defer cleanup()
 
 	fileSize := int64(64 * 1024) // 64KB
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 		testutil.WithFilename("small_test.bin"),
@@ -297,7 +297,7 @@ func TestConcurrentDownloader_MediumFile(t *testing.T) {
 	defer cleanup()
 
 	fileSize := int64(1 * types.MB)
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 	)
@@ -337,7 +337,7 @@ func TestConcurrentDownloader_Cancellation(t *testing.T) {
 	defer cleanup()
 
 	fileSize := int64(10 * types.MB)
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 		testutil.WithByteLatency(100*time.Microsecond),
@@ -376,7 +376,7 @@ func TestConcurrentDownloader_ProgressTracking(t *testing.T) {
 	defer cleanup()
 
 	fileSize := int64(512 * types.KB)
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 	)
@@ -413,7 +413,7 @@ func TestConcurrentDownloader_RetryOnFailure(t *testing.T) {
 	fileSize := int64(256 * types.KB)
 	// Server fails after 20KB per-request, forcing retries
 	// With 64KB chunks, each request will fail mid-way
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 		testutil.WithFailAfterBytes(20*types.KB), // Fail after 20KB per request
@@ -454,7 +454,7 @@ func TestConcurrentDownloader_FailOnNthRequest(t *testing.T) {
 
 	fileSize := int64(256 * types.KB)
 	// Fail the 2nd request - use 1 connection for predictable ordering
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 		testutil.WithFailOnNthRequest(1),
@@ -490,7 +490,7 @@ func TestConcurrentDownloader_ResumePartialDownload(t *testing.T) {
 	defer cleanup()
 
 	fileSize := int64(256 * types.KB)
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 	)

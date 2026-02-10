@@ -142,9 +142,10 @@ func (m ChunkMapModel) View() string {
 			// Determine how many bytes of this chunk are downloaded
 			// Check simple state first
 			// state was already fetched above
-			if state == types.ChunkCompleted {
+			switch state {
+			case types.ChunkCompleted:
 				downloadedInBlock += overlap
-			} else if state == types.ChunkDownloading {
+			case types.ChunkDownloading:
 				// Partial chunk logic
 				// If we have progress data, use it for granular rendering
 				if len(m.ChunkProgress) > cIdx {

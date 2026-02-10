@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -262,7 +261,7 @@ func TestUniqueFilePath_SpecialCharactersInName(t *testing.T) {
 }
 
 func TestProbeServer_RangeSupported(t *testing.T) {
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(1024*1024), // 1MB
 		testutil.WithRangeSupport(true),
 		testutil.WithFilename("testfile.bin"),
@@ -286,7 +285,7 @@ func TestProbeServer_RangeSupported(t *testing.T) {
 }
 
 func TestProbeServer_RangeNotSupported(t *testing.T) {
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(2048),
 		testutil.WithRangeSupport(false),
 	)
@@ -309,7 +308,7 @@ func TestProbeServer_RangeNotSupported(t *testing.T) {
 }
 
 func TestProbeServer_CustomFilenameHint(t *testing.T) {
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(1024),
 		testutil.WithFilename("server-file.zip"),
 	)
@@ -330,7 +329,7 @@ func TestProbeServer_CustomFilenameHint(t *testing.T) {
 }
 
 func TestProbeServer_ContentType(t *testing.T) {
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(1024),
 		testutil.WithContentType("application/zip"),
 	)
@@ -360,7 +359,7 @@ func TestProbeServer_InvalidURL(t *testing.T) {
 }
 
 func TestProbeServer_ContextCancellation(t *testing.T) {
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(1024),
 		testutil.WithLatency(5*time.Second), // Long latency
 	)
@@ -378,7 +377,7 @@ func TestProbeServer_ContextCancellation(t *testing.T) {
 
 func TestProbeServer_UnexpectedStatusCode(t *testing.T) {
 	// Create a custom server that returns 404
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
@@ -394,7 +393,7 @@ func TestProbeServer_UnexpectedStatusCode(t *testing.T) {
 
 func TestProbeServer_ServerError(t *testing.T) {
 	// Create a custom server that returns 500
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
@@ -410,7 +409,7 @@ func TestProbeServer_ServerError(t *testing.T) {
 
 func TestProbeServer_ZeroFileSize(t *testing.T) {
 	// Server returns 200 OK with no Content-Length header
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -452,7 +451,7 @@ func TestProbeServer_ContentRangeFormats(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Range", tt.contentRange)
 				w.Header().Set("Content-Length", "1")
 				w.WriteHeader(http.StatusPartialContent)
@@ -482,7 +481,7 @@ func TestProbeServer_LargeFile(t *testing.T) {
 	// Test with a large file size (10GB)
 	largeSize := int64(10 * 1024 * 1024 * 1024) // 10GB
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes 0-0/%d", largeSize))
 		w.Header().Set("Content-Length", "1")
 		w.WriteHeader(http.StatusPartialContent)

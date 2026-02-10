@@ -237,7 +237,7 @@ func (s *RemoteDownloadService) connectSSE(ctx context.Context, ch chan interfac
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("failed to connect to event stream: %s", resp.Status)

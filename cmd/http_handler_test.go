@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/download"
 )
 
@@ -116,10 +117,11 @@ func TestHandleDownload_PathResolution(t *testing.T) {
 			body, _ := json.Marshal(tt.request)
 			req := httptest.NewRequest("POST", "/download", bytes.NewBuffer(body))
 			w := httptest.NewRecorder()
+			svc := core.NewLocalDownloadService(GlobalPool)
 
 			// We pass defaultDownloadDir as a fallback to handleDownload, but since we mocked settings,
 			// it should prioritize settings.General.DefaultDownloadDir
-			handleDownload(w, req, defaultDownloadDir)
+			handleDownload(w, req, defaultDownloadDir, svc)
 
 			if w.Code != http.StatusOK && w.Code != http.StatusConflict {
 				t.Errorf("Expected OK, got %d. Body: %s", w.Code, w.Body.String())

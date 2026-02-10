@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"testing"
 	"time"
 )
 
@@ -144,7 +145,31 @@ func NewMockServer(opts ...MockServerOption) *MockServer {
 		_, _ = rand.Read(m.data)
 	}
 
-	m.Server = httptest.NewServer(http.HandlerFunc(m.handleRequest))
+	m.Server = NewHTTPServer(http.HandlerFunc(m.handleRequest))
+	return m
+}
+
+// NewMockServerT creates a new mock HTTP server and skips the test if binding fails.
+func NewMockServerT(t *testing.T, opts ...MockServerOption) *MockServer {
+	t.Helper()
+	m := &MockServer{
+		FileSize:       1024 * 1024,
+		SupportsRanges: true,
+		ContentType:    "application/octet-stream",
+		Filename:       "testfile.bin",
+		RandomData:     false,
+	}
+
+	for _, opt := range opts {
+		opt(m)
+	}
+
+	m.data = make([]byte, m.FileSize)
+	if m.RandomData {
+		_, _ = rand.Read(m.data)
+	}
+
+	m.Server = NewHTTPServerT(t, http.HandlerFunc(m.handleRequest))
 	return m
 }
 
@@ -390,7 +415,32 @@ func NewStreamingMockServer(fileSize int64, opts ...MockServerOption) *Streaming
 	}
 
 	s := &StreamingMockServer{MockServer: m}
-	m.Server = httptest.NewServer(http.HandlerFunc(s.handleStreamingRequest))
+	m.Server = NewHTTPServer(http.HandlerFunc(s.handleStreamingRequest))
+	return s
+}
+
+// NewStreamingMockServerT creates a streaming mock server and skips the test if binding fails.
+func NewStreamingMockServerT(t *testing.T, fileSize int64, opts ...MockServerOption) *StreamingMockServer {
+	t.Helper()
+	m := &MockServer{
+		FileSize:       fileSize,
+		SupportsRanges: true,
+		ContentType:    "application/octet-stream",
+		Filename:       "testfile.bin",
+		RandomData:     false,
+	}
+
+	for _, opt := range opts {
+		opt(m)
+	}
+
+	m.data = make([]byte, 64*1024)
+	if m.RandomData {
+		_, _ = rand.Read(m.data)
+	}
+
+	s := &StreamingMockServer{MockServer: m}
+	m.Server = NewHTTPServerT(t, http.HandlerFunc(s.handleStreamingRequest))
 	return s
 }
 

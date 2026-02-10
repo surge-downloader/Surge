@@ -422,6 +422,7 @@ func TestConstants(t *testing.T) {
 }
 
 func TestSaveSettings_RealFunction(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	original := DefaultSettings()
 	original.Connections.MaxConnectionsPerHost = 48
 	original.General.AutoResume = true
@@ -460,6 +461,7 @@ func TestSaveSettings_RealFunction(t *testing.T) {
 }
 
 func TestLoadSettings_RealFunction(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	// Test LoadSettings actually reads from disk
 	// First save something
 	original := DefaultSettings()
@@ -484,6 +486,7 @@ func TestLoadSettings_RealFunction(t *testing.T) {
 }
 
 func TestSaveAndLoadSettings_RoundTrip(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	// Test complete round trip via real functions
 	original := &Settings{
 		General: GeneralSettings{

@@ -18,7 +18,7 @@ func TestConcurrentDownloader_SwitchOn429(t *testing.T) {
 	fileSize := int64(256 * types.KB)
 
 	// Server 1: Always returns 429
-	server1 := testutil.NewMockServer(
+	server1 := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 		testutil.WithHandler(func(w http.ResponseWriter, r *http.Request) {
@@ -28,7 +28,7 @@ func TestConcurrentDownloader_SwitchOn429(t *testing.T) {
 	defer server1.Close()
 
 	// Server 2: Works normally
-	server2 := testutil.NewMockServer(
+	server2 := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 	)
@@ -85,7 +85,7 @@ func TestConcurrentDownloader_BackoffOnSingleMirror(t *testing.T) {
 
 	// Server: Returns 429 once, then succeeds
 	// This forces a retry.
-	server := testutil.NewMockServer(
+	server := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),

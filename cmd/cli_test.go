@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/testutil"
 )
 
 // TestResolveDownloadID_Remote verifies that resolveDownloadID queries the server
@@ -21,7 +21,7 @@ func TestResolveDownloadID_Remote(t *testing.T) {
 		{ID: "aabbccdd-1234-5678-90ab-cdef12345678", Filename: "test_remote.zip"},
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/list" {
 			_ = json.NewEncoder(w).Encode(downloads)
 			return
@@ -76,7 +76,7 @@ func TestLsCmd_Alias(t *testing.T) {
 
 // TestGetRemoteDownloads verify it parses response
 func TestGetRemoteDownloads(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[{"id":"123","filename":"foo.bin","status":"downloading"}]`))
 	}))

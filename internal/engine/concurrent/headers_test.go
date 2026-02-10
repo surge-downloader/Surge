@@ -3,7 +3,6 @@ package concurrent
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -30,7 +29,7 @@ func TestConcurrentDownloader_CustomHeaders(t *testing.T) {
 	requestCount := 0
 
 	// Custom handler to capture headers
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		requestCount++
 		// Capture headers from first request (all requests should have same custom headers)
@@ -115,7 +114,7 @@ func TestConcurrentDownloader_DefaultUserAgent(t *testing.T) {
 	var mu sync.Mutex
 	var receivedUserAgent string
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		if receivedUserAgent == "" {
 			receivedUserAgent = r.Header.Get("User-Agent")
@@ -174,7 +173,7 @@ func TestConcurrentDownloader_RangeHeaderNotOverridden(t *testing.T) {
 	var mu sync.Mutex
 	var receivedRange string
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		if receivedRange == "" {
 			receivedRange = r.Header.Get("Range")
@@ -239,7 +238,7 @@ func TestConcurrentDownloader_HeadersForwardedOnRedirect(t *testing.T) {
 	redirectCount := 0
 
 	// Final server (simulates the actual file server after redirect)
-	finalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	finalServer := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		receivedCookie = r.Header.Get("Cookie")
 		receivedAuth = r.Header.Get("Authorization")
@@ -256,7 +255,7 @@ func TestConcurrentDownloader_HeadersForwardedOnRedirect(t *testing.T) {
 	defer finalServer.Close()
 
 	// Redirect server (simulates members.easynews.com redirecting to iad-dl-08.easynews.com)
-	redirectServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	redirectServer := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		redirectCount++
 		mu.Unlock()

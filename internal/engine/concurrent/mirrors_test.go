@@ -3,7 +3,6 @@ package concurrent
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -19,14 +18,14 @@ func TestMirrors_HappyPath(t *testing.T) {
 	fileSize := int64(20 * types.MB)
 
 	// Server 1
-	server1 := testutil.NewMockServer(
+	server1 := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 	)
 	defer server1.Close()
 
 	// Server 2 (Mirror)
-	server2 := testutil.NewMockServer(
+	server2 := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 	)
@@ -76,11 +75,11 @@ func TestMirrors_Failover(t *testing.T) {
 	badHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	})
-	badServer := httptest.NewServer(badHandler)
+	badServer := testutil.NewHTTPServerT(t, badHandler)
 	defer badServer.Close()
 
 	// Server 2 (Good Server)
-	goodServer := testutil.NewMockServer(
+	goodServer := testutil.NewMockServerT(t,
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(true),
 		testutil.WithLatency(10*time.Millisecond), // Little latency to give bad server a chance to be picked first
