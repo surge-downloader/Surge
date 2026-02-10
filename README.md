@@ -169,6 +169,11 @@ The Surge extension intercepts browser downloads and sends them straight to your
 - Ensure Surge is running (either TUI `surge` or Server `surge server start`).
 - The extension icon should show a green dot when connected.
 - If the dot is red, check if Surge is running and listening on port 1700.
+- **Auth required:** the daemon now protects all API endpoints. In the extension popup, paste the token from `surge token` and click **Save**.
+- If downloads are not intercepted, make sure **Intercept Downloads** is enabled in the popup.
+- The extension ignores `blob:` / `data:` URLs and historical downloads (older than ~30s).
+- Chrome debugging: open `chrome://extensions` → Surge → **Service worker** → **Inspect** for logs and errors.
+- Firefox debugging: `about:debugging#/runtime/this-firefox` → Surge → **Inspect**.
 
 ---
 
