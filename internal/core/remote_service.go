@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -26,7 +27,7 @@ func NewRemoteDownloadService(baseURL string, token string) *RemoteDownloadServi
 	return &RemoteDownloadService{
 		BaseURL: baseURL,
 		Token:   token,
-		Client:  &http.Client{},
+		Client:  &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -57,7 +58,8 @@ func (s *RemoteDownloadService) doRequest(method, path string, body interface{})
 
 	if resp.StatusCode >= 400 {
 		defer func() { _ = resp.Body.Close() }()
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		// Limit error body read to 1KB to prevent DoS
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
@@ -118,7 +120,7 @@ func (s *RemoteDownloadService) Add(url string, path string, filename string, mi
 
 // Pause pauses an active download.
 func (s *RemoteDownloadService) Pause(id string) error {
-	resp, err := s.doRequest("POST", "/pause?id="+id, nil)
+	resp, err := s.doRequest("POST", "/pause?id="+url.QueryEscape(id), nil)
 	if err != nil {
 		return err
 	}
@@ -128,7 +130,7 @@ func (s *RemoteDownloadService) Pause(id string) error {
 
 // Resume resumes a paused download.
 func (s *RemoteDownloadService) Resume(id string) error {
-	resp, err := s.doRequest("POST", "/resume?id="+id, nil)
+	resp, err := s.doRequest("POST", "/resume?id="+url.QueryEscape(id), nil)
 	if err != nil {
 		return err
 	}
@@ -138,7 +140,7 @@ func (s *RemoteDownloadService) Resume(id string) error {
 
 // Delete cancels and removes a download.
 func (s *RemoteDownloadService) Delete(id string) error {
-	resp, err := s.doRequest("POST", "/delete?id="+id, nil)
+	resp, err := s.doRequest("POST", "/delete?id="+url.QueryEscape(id), nil)
 	// Some APIs use DELETE method, checking previous implementation in server it supports both POST and DELETE
 	// but mostly POST for actions. Let's stick to POST as per server implementation.
 	if err != nil {

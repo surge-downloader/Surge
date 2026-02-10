@@ -63,10 +63,11 @@ type DownloadModel struct {
 	// No direct state access or polling reporter
 	state *types.ProgressState // Keep for now if needed for details view, but mostly passive
 
-	done    bool
-	err     error
-	paused  bool
-	pausing bool // UI state: transitioning to pause
+	done          bool
+	err           error
+	paused        bool
+	pausing       bool // UI state: transitioning to pause
+	pendingResume bool // UI state: waiting for async resume
 }
 
 type RootModel struct {
@@ -238,22 +239,15 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 					dm.progress.SetPercent(1.0)
 				case "paused":
 					if settings.General.AutoResume {
-						// Auto-resume if enabled
-						if err := service.Resume(s.ID); err == nil {
-							dm.paused = false
-						} else {
-							dm.paused = true
-						}
+						dm.pendingResume = true
+						dm.paused = true // Will update when resume event received
 					} else {
 						dm.paused = true
 					}
 				case "queued":
 					// Always resume queued items
-					if err := service.Resume(s.ID); err == nil {
-						dm.paused = false
-					} else {
-						dm.paused = true // Should act as paused if fail to resume
-					}
+					dm.pendingResume = true
+					dm.paused = true // Will update when resume event received
 				}
 
 				if s.TotalSize > 0 {
@@ -320,11 +314,30 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 }
 
 func (m RootModel) Init() tea.Cmd {
+	var cmds []tea.Cmd
+
 	// Trigger update check if not disabled in settings
 	if !m.Settings.General.SkipUpdateCheck {
-		return checkForUpdateCmd(m.CurrentVersion)
+		cmds = append(cmds, checkForUpdateCmd(m.CurrentVersion))
 	}
-	return nil
+
+	// Async resume of downloads
+	for _, d := range m.downloads {
+		if d.pendingResume {
+			id := d.ID
+			cmds = append(cmds, func() tea.Msg {
+				err := m.Service.Resume(id)
+				return resumeResultMsg{id: id, err: err}
+			})
+		}
+	}
+
+	return tea.Batch(cmds...)
+}
+
+type resumeResultMsg struct {
+	id  string
+	err error
 }
 
 // Helper to get downloads for the current tab

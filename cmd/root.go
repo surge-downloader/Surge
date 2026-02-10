@@ -502,6 +502,8 @@ func authMiddleware(token string, next http.Handler) http.Handler {
 		// Allow localhost for Phase 1 compatibility (Browser Extension, Tests)
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err == nil {
+			// TODO(security): Remove localhost bypass before production deploy
+			// Tracked in: https://github.com/surge-downloader/surge/issues/XXX
 			if host == "127.0.0.1" || host == "::1" {
 				next.ServeHTTP(w, r)
 				return
@@ -520,11 +522,7 @@ func authMiddleware(token string, next http.Handler) http.Handler {
 			}
 		}
 
-		// Check query param (fallback for SSE/simple clients if needed)
-		if r.URL.Query().Get("token") == token {
-			next.ServeHTTP(w, r)
-			return
-		}
+		// Query param auth removed for security (logged in access logs)
 
 		// Check localhost exception (Temporary for Phase 1 compatibility if needed, but let's be strict for now or log warning)
 		// For now, Strict Auth. Users must use token.

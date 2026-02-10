@@ -191,6 +191,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 
+	case resumeResultMsg:
+		if msg.err != nil {
+			m.addLogEntry(LogStyleError.Render(fmt.Sprintf("✖ Auto-resume failed for %s: %v", msg.id, msg.err)))
+		}
+		return m, nil
+
 	case events.DownloadRequestMsg:
 		// ... existing logic ...
 		path := msg.Path

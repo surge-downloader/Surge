@@ -37,9 +37,6 @@ type LocalDownloadService struct {
 	listeners  []chan interface{}
 	listenerMu sync.Mutex
 
-	// Speed tracking
-	lastSpeeds   map[string]float64
-	speedMu      sync.Mutex
 	reportTicker *time.Ticker
 
 	// Lifecycle
@@ -60,10 +57,9 @@ const (
 func NewLocalDownloadService(pool *download.WorkerPool) *LocalDownloadService {
 	inputCh := make(chan interface{}, 100)
 	s := &LocalDownloadService{
-		Pool:       pool,
-		InputCh:    inputCh,
-		listeners:  make([]chan interface{}, 0),
-		lastSpeeds: make(map[string]float64),
+		Pool:      pool,
+		InputCh:   inputCh,
+		listeners: make([]chan interface{}, 0),
 	}
 
 	// Load initial settings
@@ -115,6 +111,8 @@ func (s *LocalDownloadService) broadcastLoop() {
 }
 
 func (s *LocalDownloadService) reportProgressLoop() {
+	lastSpeeds := make(map[string]float64)
+
 	for range s.reportTicker.C {
 		if s.Pool == nil {
 			continue
@@ -124,9 +122,7 @@ func (s *LocalDownloadService) reportProgressLoop() {
 		for _, cfg := range activeConfigs {
 			if cfg.State == nil || cfg.State.IsPaused() || cfg.State.Done.Load() {
 				// Clean up speed history for inactive
-				s.speedMu.Lock()
-				delete(s.lastSpeeds, cfg.ID)
-				s.speedMu.Unlock()
+				delete(lastSpeeds, cfg.ID)
 				continue
 			}
 
@@ -140,16 +136,14 @@ func (s *LocalDownloadService) reportProgressLoop() {
 				instantSpeed = float64(sessionDownloaded) / sessionElapsed.Seconds()
 			}
 
-			s.speedMu.Lock()
-			lastSpeed := s.lastSpeeds[cfg.ID]
+			lastSpeed := lastSpeeds[cfg.ID]
 			var currentSpeed float64
 			if lastSpeed == 0 {
 				currentSpeed = instantSpeed
 			} else {
 				currentSpeed = SpeedSmoothingAlpha*instantSpeed + (1-SpeedSmoothingAlpha)*lastSpeed
 			}
-			s.lastSpeeds[cfg.ID] = currentSpeed
-			s.speedMu.Unlock()
+			lastSpeeds[cfg.ID] = currentSpeed
 
 			// Create Message
 			msg := events.ProgressMsg{
