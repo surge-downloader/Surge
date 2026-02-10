@@ -20,6 +20,8 @@ const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const serverStatus = document.getElementById('serverStatus');
 const interceptToggle = document.getElementById('interceptToggle');
+const authTokenInput = document.getElementById('authToken');
+const saveTokenButton = document.getElementById('saveToken');
 
 // Duplicate modal elements
 const duplicateModal = document.getElementById('duplicateModal');
@@ -489,6 +491,18 @@ if (isExtensionContext) {
 
 async function init() {
   console.log('[Surge Popup] Initializing...', isExtensionContext ? '(extension mode)' : '(standalone mode)');
+
+  // Load auth token (extension mode only)
+  if (isExtensionContext && authTokenInput) {
+    try {
+      const response = await apiCall('getAuthToken');
+      if (response && typeof response.token === 'string') {
+        authTokenInput.value = response.token;
+      }
+    } catch (error) {
+      console.error('[Surge Popup] Error loading auth token:', error);
+    }
+  }
   
   // Get current toggle state
   try {
@@ -527,6 +541,18 @@ window.addEventListener('unload', () => {
     clearInterval(pollInterval);
   }
 });
+
+// Save auth token
+if (isExtensionContext && saveTokenButton && authTokenInput) {
+  saveTokenButton.addEventListener('click', async () => {
+    const token = authTokenInput.value.trim();
+    try {
+      await apiCall('setAuthToken', { token });
+    } catch (error) {
+      console.error('[Surge Popup] Error saving auth token:', error);
+    }
+  });
+}
 
 // Start
 init();

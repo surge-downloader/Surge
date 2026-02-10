@@ -475,6 +475,46 @@ body {
   padding: 14px 16px;
 }
 
+.auth-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.auth-input {
+  display: flex;
+  gap: 6px;
+}
+
+.auth-input input {
+  flex: 1;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.auth-input button {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.auth-input button:hover {
+  background: var(--bg-hover);
+}
+
 .toggle-row {
   display: flex;
   justify-content: space-between;
@@ -681,4 +721,3 @@ body {
 .modal-btn:active {
   transform: translateY(0);
 }
-

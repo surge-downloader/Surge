@@ -4,12 +4,14 @@
 const DEFAULT_PORT = 1700;
 const MAX_PORT_SCAN = 100;
 const INTERCEPT_ENABLED_KEY = "interceptEnabled";
+const AUTH_TOKEN_KEY = "authToken";
 
 // === State ===
 let cachedPort = null;
 let downloads = new Map();
 let lastHealthCheck = 0;
 let isConnected = false;
+let cachedAuthToken = null;
 
 // Pending duplicate downloads waiting for user confirmation
 // Key: unique id, Value: { downloadItem, filename, directory, timestamp }
@@ -82,6 +84,26 @@ function getCapturedHeaders(url) {
   return data.headers;
 }
 
+async function loadAuthToken() {
+  if (cachedAuthToken !== null) {
+    return cachedAuthToken;
+  }
+  const result = await chrome.storage.local.get(AUTH_TOKEN_KEY);
+  cachedAuthToken = result[AUTH_TOKEN_KEY] || "";
+  return cachedAuthToken;
+}
+
+async function setAuthToken(token) {
+  cachedAuthToken = token || "";
+  await chrome.storage.local.set({ [AUTH_TOKEN_KEY]: cachedAuthToken });
+}
+
+async function authHeaders() {
+  const token = await loadAuthToken();
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
+
 // === Port Discovery ===
 
 async function findSurgePort() {
@@ -142,8 +164,10 @@ async function fetchDownloadList() {
   }
 
   try {
+    const headers = await authHeaders();
     const response = await fetch(`http://127.0.0.1:${port}/list`, {
       method: "GET",
+      headers,
       signal: AbortSignal.timeout(5000),
     });
 
@@ -205,10 +229,12 @@ async function sendToSurge(url, filename, absolutePath) {
     // This also bypasses duplicate warnings since extension handles those
     body.skip_approval = true;
 
+    const auth = await authHeaders();
     const response = await fetch(`http://127.0.0.1:${port}/download`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...auth,
       },
       body: JSON.stringify(body),
     });
@@ -239,8 +265,10 @@ async function pauseDownload(id) {
   if (!port) return false;
 
   try {
+    const headers = await authHeaders();
     const response = await fetch(`http://127.0.0.1:${port}/pause?id=${id}`, {
       method: "POST",
+      headers,
       signal: AbortSignal.timeout(5000),
     });
     return response.ok;
@@ -255,8 +283,10 @@ async function resumeDownload(id) {
   if (!port) return false;
 
   try {
+    const headers = await authHeaders();
     const response = await fetch(`http://127.0.0.1:${port}/resume?id=${id}`, {
       method: "POST",
+      headers,
       signal: AbortSignal.timeout(5000),
     });
     return response.ok;
@@ -271,8 +301,10 @@ async function cancelDownload(id) {
   if (!port) return false;
 
   try {
+    const headers = await authHeaders();
     const response = await fetch(`http://127.0.0.1:${port}/delete?id=${id}`, {
       method: "DELETE",
+      headers,
       signal: AbortSignal.timeout(5000),
     });
     return response.ok;
@@ -588,6 +620,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case "getStatus": {
           const enabled = await isInterceptEnabled();
           sendResponse({ enabled });
+          break;
+        }
+        case "getAuthToken": {
+          const token = await loadAuthToken();
+          sendResponse({ token });
+          break;
+        }
+        case "setAuthToken": {
+          await setAuthToken(message.token || "");
+          sendResponse({ success: true });
           break;
         }
 
