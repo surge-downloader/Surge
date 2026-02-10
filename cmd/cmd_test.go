@@ -239,7 +239,7 @@ func TestHandleDownload_MethodNotAllowed(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	svc := core.NewLocalDownloadService(nil)
-	handleDownload(rec, req, "", svc)
+	NewAPIHandler(svc, 0, "").Download(rec, req)
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("Expected 405, got %d", rec.Code)
@@ -251,7 +251,7 @@ func TestHandleDownload_InvalidJSON(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	svc := core.NewLocalDownloadService(nil)
-	handleDownload(rec, req, "", svc)
+	NewAPIHandler(svc, 0, "").Download(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("Expected 400, got %d", rec.Code)
@@ -267,7 +267,7 @@ func TestHandleDownload_MissingURL(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	svc := core.NewLocalDownloadService(nil)
-	handleDownload(rec, req, "", svc)
+	NewAPIHandler(svc, 0, "").Download(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("Expected 400, got %d", rec.Code)
@@ -283,7 +283,7 @@ func TestHandleDownload_EmptyURL(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	svc := core.NewLocalDownloadService(nil)
-	handleDownload(rec, req, "", svc)
+	NewAPIHandler(svc, 0, "").Download(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("Expected 400, got %d", rec.Code)
@@ -307,7 +307,7 @@ func TestHandleDownload_PathTraversal(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/download", bytes.NewBufferString(tt.body))
 			rec := httptest.NewRecorder()
 			svc := core.NewLocalDownloadService(nil)
-			handleDownload(rec, req, "", svc)
+			NewAPIHandler(svc, 0, "").Download(rec, req)
 
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("Expected 400, got %d", rec.Code)
@@ -359,7 +359,7 @@ func TestHandleDownload_StatusQuery_NotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	svc := core.NewLocalDownloadService(nil)
-	handleDownload(rec, req, "", svc)
+	NewAPIHandler(svc, 0, "").Download(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("Expected 404, got %d", rec.Code)
@@ -822,7 +822,7 @@ func TestHandleDownload_ValidRequest_NoServerProgram(t *testing.T) {
 	}()
 
 	svc := core.NewLocalDownloadService(nil)
-	handleDownload(rec, req, "", svc)
+	NewAPIHandler(svc, 0, "").Download(rec, req)
 }
 
 func TestHandleDownload_EmptyBody(t *testing.T) {
@@ -830,7 +830,7 @@ func TestHandleDownload_EmptyBody(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	svc := core.NewLocalDownloadService(nil)
-	handleDownload(rec, req, "", svc)
+	NewAPIHandler(svc, 0, "").Download(rec, req)
 
 	// Empty body causes EOF error on decode
 	if rec.Code != http.StatusBadRequest {
@@ -847,7 +847,7 @@ func TestHandleDownload_LargeURL(t *testing.T) {
 
 	// This should handle large URLs gracefully (validation issues)
 	svc := core.NewLocalDownloadService(nil)
-	handleDownload(rec, req, "", svc)
+	NewAPIHandler(svc, 0, "").Download(rec, req)
 
 	// Should fail on URL validation or JSON parsing
 	t.Logf("Response: %d", rec.Code)
@@ -865,7 +865,7 @@ func TestHandleDownload_SpecialCharactersInPath(t *testing.T) {
 	}()
 
 	svc := core.NewLocalDownloadService(nil)
-	handleDownload(rec, req, "", svc)
+	NewAPIHandler(svc, 0, "").Download(rec, req)
 }
 
 // =============================================================================

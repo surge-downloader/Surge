@@ -121,7 +121,7 @@ func TestHandleDownload_PathResolution(t *testing.T) {
 
 			// We pass defaultDownloadDir as a fallback to handleDownload, but since we mocked settings,
 			// it should prioritize settings.General.DefaultDownloadDir
-			handleDownload(w, req, defaultDownloadDir, svc)
+			NewAPIHandler(svc, 0, defaultDownloadDir).Download(w, req)
 
 			if w.Code != http.StatusOK && w.Code != http.StatusConflict {
 				t.Errorf("Expected OK, got %d. Body: %s", w.Code, w.Body.String())
