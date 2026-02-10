@@ -3,6 +3,7 @@ package events
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -98,7 +99,7 @@ func TestProgressMsg_ChannelCommunication(t *testing.T) {
 	ch <- sent
 	received := <-ch
 
-	if received != sent {
+	if !reflect.DeepEqual(received, sent) {
 		t.Error("Message should be identical after channel send/receive")
 	}
 }
@@ -213,7 +214,7 @@ func TestProgressMsg_Equality(t *testing.T) {
 		ActiveConnections: 2,
 	}
 
-	if msg1 != msg2 {
+	if !reflect.DeepEqual(msg1, msg2) {
 		t.Error("Identical ProgressMsg should be equal")
 	}
 }

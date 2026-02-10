@@ -14,6 +14,8 @@ type ProgressMsg struct {
 	Speed             float64 // bytes per second
 	Elapsed           time.Duration
 	ActiveConnections int
+	ChunkBitmap       []byte
+	BitmapWidth       int
 }
 
 // DownloadCompleteMsg signals that the download finished successfully

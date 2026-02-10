@@ -144,25 +144,33 @@ func (m ChunkMapModel) View() string {
 			// state was already fetched above
 			if state == types.ChunkCompleted {
 				downloadedInBlock += overlap
-			} else if state == types.ChunkDownloading && len(m.ChunkProgress) > cIdx {
+			} else if state == types.ChunkDownloading {
 				// Partial chunk logic
-				// We assume bytes assume filled from the start of the chunk
-				// downloadedBytes := m.ChunkProgress[cIdx]
-				// validRange: [chunkStartByte, chunkStartByte + downloadedBytes)
+				// If we have progress data, use it for granular rendering
+				if len(m.ChunkProgress) > cIdx {
+					// We assume bytes assume filled from the start of the chunk
+					// downloadedBytes := m.ChunkProgress[cIdx]
+					// validRange: [chunkStartByte, chunkStartByte + downloadedBytes)
 
-				validEndByte := chunkStartByte + m.ChunkProgress[cIdx]
+					validEndByte := chunkStartByte + m.ChunkProgress[cIdx]
 
-				// Calculate overlap of [intersectStart, intersectEnd) with [chunkStartByte, validEndByte)
-				// Since chunkStartByte <= intersectStart (mostly), we focus on the end.
+					// Calculate overlap of [intersectStart, intersectEnd) with [chunkStartByte, validEndByte)
+					// Since chunkStartByte <= intersectStart (mostly), we focus on the end.
 
-				validIntersectEnd := intersectEnd
-				if validEndByte < validIntersectEnd {
-					validIntersectEnd = validEndByte
-				}
+					validIntersectEnd := intersectEnd
+					if validEndByte < validIntersectEnd {
+						validIntersectEnd = validEndByte
+					}
 
-				validOverlap := validIntersectEnd - intersectStart
-				if validOverlap > 0 {
-					downloadedInBlock += validOverlap
+					validOverlap := validIntersectEnd - intersectStart
+					if validOverlap > 0 {
+						downloadedInBlock += validOverlap
+					}
+				} else {
+					// No granular progress data (e.g. Remote TUI), but chunk is marked Downloading
+					// Assume full benefit of doubt for visualization - render as downloading
+					// treat as if we have some bytes
+					downloadedInBlock += 1
 				}
 			}
 		}

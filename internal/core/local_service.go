@@ -155,6 +155,13 @@ func (s *LocalDownloadService) reportProgressLoop() {
 				ActiveConnections: int(connections),
 			}
 
+			// Add Chunk Bitmap for visualization (if initialized)
+			bitmap, width, _, _, _ := cfg.State.GetBitmap()
+			if width > 0 && len(bitmap) > 0 {
+				msg.ChunkBitmap = bitmap
+				msg.BitmapWidth = width
+			}
+
 			// Send to InputCh (non-blocking)
 			select {
 			case s.InputCh <- msg:

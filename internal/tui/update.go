@@ -281,6 +281,13 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d.Elapsed = msg.Elapsed
 				d.Connections = msg.ActiveConnections
 
+				// Update Chunk State if provided
+				if msg.BitmapWidth > 0 && len(msg.ChunkBitmap) > 0 {
+					// We only get bitmap, no progress array (to save bandwidth)
+					// State needs to be updated carefully
+					d.state.RestoreBitmap(msg.ChunkBitmap, msg.Total/int64(msg.BitmapWidth))
+				}
+
 				if d.Total > 0 {
 					percentage := float64(d.Downloaded) / float64(d.Total)
 					cmd := d.progress.SetPercent(percentage)
