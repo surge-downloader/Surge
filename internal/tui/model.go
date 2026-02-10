@@ -45,10 +45,11 @@ const (
 )
 
 type DownloadModel struct {
-	ID          string
-	URL         string
-	Filename    string
-	Destination string // Full path to the destination file
+	ID            string
+	URL           string
+	Filename      string
+	FilenameLower string // Lowercase filename for search optimization
+	Destination   string // Full path to the destination file
 	Total       int64
 	Downloaded  int64
 	Speed       float64
@@ -153,13 +154,14 @@ func NewDownloadModel(id string, url string, filename string, total int64) *Down
 	// Create dummy state container for compatibility if needed
 	state := types.NewProgressState(id, total)
 	return &DownloadModel{
-		ID:        id,
-		URL:       url,
-		Filename:  filename,
-		Total:     total,
-		StartTime: time.Now(),
-		progress:  progress.New(progress.WithSpringOptions(0.5, 0.1)),
-		state:     state,
+		ID:            id,
+		URL:           url,
+		Filename:      filename,
+		FilenameLower: strings.ToLower(filename),
+		Total:         total,
+		StartTime:     time.Now(),
+		progress:      progress.New(progress.WithSpringOptions(0.5, 0.1)),
+		state:         state,
 	}
 }
 
@@ -362,7 +364,7 @@ func (m RootModel) getFilteredDownloads() []*DownloadModel {
 
 		// Apply search filter if query is set
 		if m.searchQuery != "" {
-			if !strings.Contains(strings.ToLower(d.Filename), searchLower) {
+			if !strings.Contains(d.FilenameLower, searchLower) {
 				continue
 			}
 		}
