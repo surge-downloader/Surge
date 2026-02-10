@@ -111,6 +111,26 @@ surge server status
 surge server stop
 ```
 
+### 3. Remote TUI (Connect to a Daemon)
+
+Use this when Surge is running on another machine (or a local daemon you started with `surge server start`).
+
+```bash
+# Connect to a local daemon (auto-discovery via ~/.surge/port)
+surge connect
+
+# Connect to a remote daemon
+surge connect 192.168.1.10:1700 --token <token>
+
+# Or set the token once in the environment
+export SURGE_TOKEN=<token>
+surge connect 192.168.1.10:1700
+```
+
+Notes:
+- The daemon requires a token for all API calls. Print it with `surge token` on the server host.
+- Remote TUI is a viewer/controller for the daemon state; the daemon owns resume behavior.
+
 ### 3. Command Reference
 
 All other commands can be used to interact with a running Surge instance (TUI or Server).
