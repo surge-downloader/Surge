@@ -191,6 +191,12 @@ func (s *RemoteDownloadService) StreamEvents(ctx context.Context) (<-chan interf
 	return ch, func() {}, nil
 }
 
+// Publish emits an event into the service's event stream.
+// Remote services do not accept client-side event injection.
+func (s *RemoteDownloadService) Publish(msg interface{}) error {
+	return fmt.Errorf("publish not supported for remote service")
+}
+
 func (s *RemoteDownloadService) streamWithReconnect(ctx context.Context, ch chan interface{}) {
 	defer close(ch)
 	backoff := 1 * time.Second

@@ -735,13 +735,16 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 				utils.Debug("Requesting TUI confirmation for: %s (Duplicate: %v)", req.URL, isDuplicate)
 
 				// Send request to TUI
-				GlobalProgressCh <- events.DownloadRequestMsg{
+				if err := service.Publish(events.DownloadRequestMsg{
 					ID:       downloadID,
 					URL:      urlForAdd,
 					Filename: req.Filename,
 					Path:     outPath, // Use the path we resolved (default or requested)
 					Mirrors:  mirrorsForAdd,
 					Headers:  req.Headers,
+				}); err != nil {
+					http.Error(w, "Failed to notify TUI: "+err.Error(), http.StatusInternalServerError)
+					return
 				}
 
 				w.Header().Set("Content-Type", "application/json")

@@ -33,6 +33,9 @@ type DownloadService interface {
 	// For remote mode, this is sourced from SSE.
 	StreamEvents(ctx context.Context) (<-chan interface{}, func(), error)
 
+	// Publish emits an event into the service's event stream.
+	Publish(msg interface{}) error
+
 	// GetStatus returns a status for a single download by id.
 	GetStatus(id string) (*types.DownloadStatus, error)
 

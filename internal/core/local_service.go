@@ -236,6 +236,19 @@ func (s *LocalDownloadService) StreamEvents(ctx context.Context) (<-chan interfa
 	return ch, cleanup, nil
 }
 
+// Publish emits an event into the service's event stream.
+func (s *LocalDownloadService) Publish(msg interface{}) error {
+	if s.InputCh == nil {
+		return fmt.Errorf("input channel not initialized")
+	}
+	select {
+	case s.InputCh <- msg:
+		return nil
+	case <-time.After(1 * time.Second):
+		return fmt.Errorf("event publish timeout")
+	}
+}
+
 // Shutdown stops the service.
 func (s *LocalDownloadService) Shutdown() error {
 	if s.reportTicker != nil {
