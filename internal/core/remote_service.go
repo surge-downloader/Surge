@@ -241,9 +241,7 @@ func (s *RemoteDownloadService) StreamEvents() (<-chan interface{}, error) {
 					continue
 				}
 
-				if msg != nil {
-					ch <- msg
-				}
+				ch <- msg
 			}
 		}
 	}()
