@@ -3,6 +3,7 @@ package core
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,14 +21,19 @@ type RemoteDownloadService struct {
 	BaseURL string
 	Token   string
 	Client  *http.Client
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 // NewRemoteDownloadService creates a new remote service instance.
 func NewRemoteDownloadService(baseURL string, token string) *RemoteDownloadService {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &RemoteDownloadService{
 		BaseURL: baseURL,
 		Token:   token,
 		Client:  &http.Client{Timeout: 30 * time.Second},
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 }
 
@@ -41,7 +47,7 @@ func (s *RemoteDownloadService) doRequest(method, path string, body interface{})
 		bodyReader = bytes.NewBuffer(jsonBody)
 	}
 
-	req, err := http.NewRequest(method, s.BaseURL+path, bodyReader)
+	req, err := http.NewRequestWithContext(s.ctx, method, s.BaseURL+path, bodyReader)
 	if err != nil {
 		return nil, err
 	}
@@ -153,8 +159,7 @@ func (s *RemoteDownloadService) Delete(id string) error {
 
 // Shutdown stops the service.
 func (s *RemoteDownloadService) Shutdown() error {
-	// Remote clients should disconnect, not shutdown the daemon
-	// TODO: Add graceful disconnect/cleanup if needed
+	s.cancel()
 	return nil
 }
 
@@ -169,12 +174,24 @@ func (s *RemoteDownloadService) streamWithReconnect(ch chan interface{}) {
 	defer close(ch)
 	backoff := 1 * time.Second
 	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		default:
+		}
+
 		err := s.connectSSE(ch)
 		if err == nil {
-			return // Clean shutdown
+			return // Clean shutdown (e.g. server closed stream cleanly or context canceled during request)
 		}
-		// Exponential backoff, max 30s
-		time.Sleep(backoff)
+		// Check context again before sleeping
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-time.After(backoff):
+			// Continue
+		}
+
 		if backoff < 30*time.Second {
 			backoff *= 2
 		}
@@ -182,7 +199,7 @@ func (s *RemoteDownloadService) streamWithReconnect(ch chan interface{}) {
 }
 
 func (s *RemoteDownloadService) connectSSE(ch chan interface{}) error {
-	req, err := http.NewRequest("GET", s.BaseURL+"/events", nil)
+	req, err := http.NewRequestWithContext(s.ctx, "GET", s.BaseURL+"/events", nil)
 	if err != nil {
 		return err
 	}

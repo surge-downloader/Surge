@@ -645,8 +645,11 @@ func TestStartHTTPServer_DownloadEndpoint_MethodNotAllowed(t *testing.T) {
 	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
-	// PUT should not be allowed
+	token := ensureAuthToken()
+
 	req, _ := http.NewRequest(http.MethodPut, fmt.Sprintf("http://127.0.0.1:%d/download", port), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
@@ -670,11 +673,11 @@ func TestStartHTTPServer_DownloadEndpoint_BadRequest(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// POST with invalid JSON
-	resp, err := http.Post(
-		fmt.Sprintf("http://127.0.0.1:%d/download", port),
-		"application/json",
-		bytes.NewBufferString("not json"),
-	)
+	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/download", port), bytes.NewBufferString("not json"))
+	req.Header.Set("Authorization", "Bearer "+ensureAuthToken())
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
@@ -697,11 +700,11 @@ func TestStartHTTPServer_DownloadEndpoint_MissingURL(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// POST with missing URL
-	resp, err := http.Post(
-		fmt.Sprintf("http://127.0.0.1:%d/download", port),
-		"application/json",
-		bytes.NewBufferString(`{"path": "/downloads"}`),
-	)
+	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/download", port), bytes.NewBufferString(`{"path": "/downloads"}`))
+	req.Header.Set("Authorization", "Bearer "+ensureAuthToken())
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
@@ -723,7 +726,9 @@ func TestStartHTTPServer_NotFoundEndpoint(t *testing.T) {
 	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
-	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/nonexistent", port))
+	req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/nonexistent", port), nil)
+	req.Header.Set("Authorization", "Bearer "+ensureAuthToken())
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}

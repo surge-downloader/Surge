@@ -465,6 +465,25 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service
 		}
 	})
 
+	// History endpoint (Protected)
+	mux.HandleFunc("/history", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		history, err := service.History()
+		if err != nil {
+			http.Error(w, "Failed to retrieve history: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(history); err != nil {
+			utils.Debug("Failed to encode response: %v", err)
+		}
+	})
+
 	// Wrap mux with Auth and CORS
 	handler := authMiddleware(authToken, corsMiddleware(mux))
 
@@ -499,15 +518,10 @@ func authMiddleware(token string, next http.Handler) http.Handler {
 			return
 		}
 
-		// Allow localhost for Phase 1 compatibility (Browser Extension, Tests)
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err == nil {
-			// TODO(security): Remove localhost bypass before production deploy
-			// Tracked in: https://github.com/surge-downloader/surge/issues/XXX
-			if host == "127.0.0.1" || host == "::1" {
-				next.ServeHTTP(w, r)
-				return
-			}
+		// Allow OPTIONS for CORS preflight
+		if r.Method == "OPTIONS" {
+			next.ServeHTTP(w, r)
+			return
 		}
 
 		// Check for Authorization header
@@ -521,12 +535,6 @@ func authMiddleware(token string, next http.Handler) http.Handler {
 				}
 			}
 		}
-
-		// Query param auth removed for security (logged in access logs)
-
-		// Check localhost exception (Temporary for Phase 1 compatibility if needed, but let's be strict for now or log warning)
-		// For now, Strict Auth. Users must use token.
-		// Browser extension needs update? Let's assume browser extension is out of scope for strict breakdown or will be updated.
 
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 	})
