@@ -33,7 +33,7 @@ func TestStateSync(t *testing.T) {
 	pool := download.NewWorkerPool(progressChan, 1)
 
 	// Initialize model with progress channel and service
-	m := InitialRootModel(1700, "test-version", core.NewLocalDownloadService(pool), progressChan, false)
+	m := InitialRootModel(1700, "test-version", core.NewLocalDownloadServiceWithInput(pool, progressChan), false)
 
 	downloadID := "external-id"
 	// Create the "worker" state - this is the source of truth

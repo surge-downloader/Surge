@@ -17,7 +17,7 @@ type DownloadService interface {
 	History() ([]types.DownloadEntry, error)
 
 	// Add queues a new download.
-	Add(url string, path string, filename string, mirrors []string) (string, error)
+	Add(url string, path string, filename string, mirrors []string, headers map[string]string) (string, error)
 
 	// Pause pauses an active download.
 	Pause(id string) error

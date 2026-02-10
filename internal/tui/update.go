@@ -143,15 +143,8 @@ func (m RootModel) checkForDuplicate(url string) *DownloadModel {
 	return nil
 }
 
-// waitForActivity returns a command that waits for a message on the channel
-func waitForActivity(sub <-chan any) tea.Cmd {
-	return func() tea.Msg {
-		return <-sub
-	}
-}
-
 // startDownload initiates a new download
-func (m RootModel) startDownload(url string, mirrors []string, path, filename, id string) (RootModel, tea.Cmd) {
+func (m RootModel) startDownload(url string, mirrors []string, headers map[string]string, path, filename, id string) (RootModel, tea.Cmd) {
 	// Enforce absolute path
 	path = utils.EnsureAbsPath(path)
 
@@ -165,7 +158,7 @@ func (m RootModel) startDownload(url string, mirrors []string, path, filename, i
 	// We rely on the event stream to update the UI, OR we add it optimistically.
 	// Optimistic addition gives better UX.
 
-	newID, err := m.Service.Add(url, path, finalFilename, mirrors)
+	newID, err := m.Service.Add(url, path, finalFilename, mirrors, headers)
 	if err != nil {
 		m.addLogEntry(LogStyleError.Render("✖ Failed to add download: " + err.Error()))
 		return m, nil
@@ -212,7 +205,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if duplicate != nil && m.Settings.General.WarnOnDuplicate {
 			utils.Debug("Duplicate download detected in TUI: %s", msg.URL)
 			m.pendingURL = msg.URL
-			m.pendingMirrors = nil
+			m.pendingMirrors = msg.Mirrors
+			m.pendingHeaders = msg.Headers
 			m.pendingPath = path
 			m.pendingFilename = msg.Filename
 			m.duplicateInfo = duplicate.Filename
@@ -222,19 +216,17 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.Settings.General.ExtensionPrompt {
 			m.pendingURL = msg.URL
-			m.pendingMirrors = nil
+			m.pendingMirrors = msg.Mirrors
+			m.pendingHeaders = msg.Headers
 			m.pendingPath = path
 			m.pendingFilename = msg.Filename
 			m.state = ExtensionConfirmationState
 			return m, nil
 		}
 
-		return m.startDownload(msg.URL, nil, path, msg.Filename, msg.ID)
+		return m.startDownload(msg.URL, msg.Mirrors, msg.Headers, path, msg.Filename, msg.ID)
 
 	case events.DownloadStartedMsg:
-		// Listen for next event
-		cmds = append(cmds, waitForActivity(m.progressChan))
-
 		found := false
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
@@ -266,9 +258,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case events.ProgressMsg:
-		// Listen for next event immediately
-		cmds = append(cmds, waitForActivity(m.progressChan))
-
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				if d.done || d.paused {
@@ -322,9 +311,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case events.DownloadCompleteMsg:
-		// Listen for next event
-		cmds = append(cmds, waitForActivity(m.progressChan))
-
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				if d.done {
@@ -348,9 +334,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case events.DownloadErrorMsg:
-		// Listen for next event
-		cmds = append(cmds, waitForActivity(m.progressChan))
-
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.err = msg.Err
@@ -363,9 +346,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case events.DownloadPausedMsg:
-		// Listen for next event
-		cmds = append(cmds, waitForActivity(m.progressChan))
-
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.paused = true
@@ -380,9 +360,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case events.DownloadResumedMsg:
-		// Listen for next event
-		cmds = append(cmds, waitForActivity(m.progressChan))
-
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.paused = false
@@ -394,8 +371,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case events.DownloadQueuedMsg:
-		// Listen for next event
-		cmds = append(cmds, waitForActivity(m.progressChan))
 		// We optimistically added it, but if it came from elsewhere, handle it
 		found := false
 		for _, d := range m.downloads {
@@ -413,8 +388,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case events.DownloadRemovedMsg:
-		// Listen for next event
-		cmds = append(cmds, waitForActivity(m.progressChan))
 		// Handled via list refresh usually, but we can explicitly remove if needed
 		// For now, rely on list refresh or explicit Delete action removal
 		return m, tea.Batch(cmds...)
@@ -851,6 +824,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if d := m.checkForDuplicate(url); d != nil {
 					m.pendingURL = url
 					m.pendingMirrors = mirrors
+					m.pendingHeaders = nil
 					m.pendingPath = path
 					m.pendingFilename = filename
 					m.duplicateInfo = d.Filename
@@ -865,7 +839,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inputs[2].SetValue(path) // Keep path
 				m.inputs[3].SetValue("")
 
-				return m.startDownload(url, mirrors, path, filename, "")
+				return m.startDownload(url, mirrors, nil, path, filename, "")
 			}
 
 			// Up/Down navigation between inputs
@@ -976,7 +950,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if key.Matches(msg, m.keys.Duplicate.Continue) {
 				// Continue anyway - startDownload handles unique filename generation
 				m.state = DashboardState
-				return m.startDownload(m.pendingURL, m.pendingMirrors, m.pendingPath, m.pendingFilename, "")
+				return m.startDownload(m.pendingURL, m.pendingMirrors, m.pendingHeaders, m.pendingPath, m.pendingFilename, "")
 			}
 			if key.Matches(msg, m.keys.Duplicate.Cancel) {
 				// Cancel - don't add
@@ -1008,7 +982,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// No duplicate (or warning disabled) - add to queue
 				m.state = DashboardState
-				return m.startDownload(m.pendingURL, nil, m.pendingPath, m.pendingFilename, "")
+				return m.startDownload(m.pendingURL, nil, m.pendingHeaders, m.pendingPath, m.pendingFilename, "")
 			}
 			if key.Matches(msg, m.keys.Extension.No) {
 				// Cancelled
@@ -1089,7 +1063,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						skipped++
 						continue
 					}
-					m, _ = m.startDownload(url, nil, path, "", "")
+					m, _ = m.startDownload(url, nil, nil, path, "", "")
 					added++
 				}
 

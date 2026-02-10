@@ -21,18 +21,17 @@ func TestStartDownload_EnforcesAbsolutePath(t *testing.T) {
 	pool := download.NewWorkerPool(ch, 1)
 
 	m := RootModel{
-		Settings:     config.DefaultSettings(),
-		Service:      core.NewLocalDownloadService(pool),
-		progressChan: ch,
-		downloads:    []*DownloadModel{},
-		list:         NewDownloadList(80, 20), // Initialize list
+		Settings:  config.DefaultSettings(),
+		Service:   core.NewLocalDownloadServiceWithInput(pool, ch),
+		downloads: []*DownloadModel{},
+		list:      NewDownloadList(80, 20), // Initialize list
 	}
 
 	// Test case 1: Relative path
 	relPath := "subdir"
 	url := "http://example.com/file.zip"
 
-	m, _ = m.startDownload(url, nil, relPath, "file.zip", "test-id-1")
+	m, _ = m.startDownload(url, nil, nil, relPath, "file.zip", "test-id-1")
 
 	// We expect the new download to be appended
 	if len(m.downloads) != 1 {

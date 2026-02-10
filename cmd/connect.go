@@ -36,8 +36,26 @@ var connectCmd = &cobra.Command{
 		// Ensure target has scheme
 		baseURL := "http://" + target
 
-		// Load or prompt for token
-		token := ensureAuthToken() // For now, we reuse the local token file. In future, prompt if remote.
+		// Resolve token
+		tokenFlag, _ := cmd.Flags().GetString("token")
+		token := strings.TrimSpace(tokenFlag)
+		if token == "" {
+			// Allow env override
+			token = strings.TrimSpace(os.Getenv("SURGE_TOKEN"))
+		}
+		if token == "" {
+			// Only reuse local token for loopback targets.
+			host := target
+			if idx := strings.Index(host, ":"); idx != -1 {
+				host = host[:idx]
+			}
+			if host == "127.0.0.1" || host == "localhost" {
+				token = ensureAuthToken()
+			} else {
+				fmt.Println("No token provided. Use --token or set SURGE_TOKEN.")
+				os.Exit(1)
+			}
+		}
 
 		fmt.Printf("Connecting to %s...\n", baseURL)
 
@@ -69,7 +87,7 @@ var connectCmd = &cobra.Command{
 		// Initialize TUI
 		// Using false for noResume because resume logic is handled by the server (remote service)
 		// we just want to reflect the state.
-		m := tui.InitialRootModel(port, Version, service, stream, false)
+		m := tui.InitialRootModel(port, Version, service, false)
 
 		p := tea.NewProgram(m, tea.WithAltScreen())
 
@@ -89,5 +107,6 @@ var connectCmd = &cobra.Command{
 }
 
 func init() {
+	connectCmd.Flags().String("token", "", "Bearer token for remote daemon (or set SURGE_TOKEN)")
 	rootCmd.AddCommand(connectCmd)
 }

@@ -44,11 +44,10 @@ func TestResume_RespectsOriginalPath_WhenDefaultChanges(t *testing.T) {
 	settings.General.DefaultDownloadDir = dirA
 
 	m := RootModel{
-		Settings:     settings,
-		Service:      core.NewLocalDownloadService(pool),
-		progressChan: ch,
-		downloads:    []*DownloadModel{},
-		list:         NewDownloadList(80, 20), // Initialize list to prevent panic
+		Settings:  settings,
+		Service:   core.NewLocalDownloadServiceWithInput(pool, ch),
+		downloads: []*DownloadModel{},
+		list:      NewDownloadList(80, 20), // Initialize list to prevent panic
 	}
 
 	// 3. Start a download (simulating "surge get <url>" or TUI add)
@@ -63,7 +62,7 @@ func TestResume_RespectsOriginalPath_WhenDefaultChanges(t *testing.T) {
 	testFilename := "file.zip"
 
 	// Start download with relative path "."
-	m, _ = m.startDownload(testURL, nil, ".", testFilename, "id-1")
+	m, _ = m.startDownload(testURL, nil, nil, ".", testFilename, "id-1")
 
 	// 4. Verify Immediate State
 	if len(m.downloads) != 1 {

@@ -18,7 +18,6 @@ import (
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/state"
-	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/tui"
 	"github.com/surge-downloader/surge/internal/utils"
 
@@ -85,7 +84,7 @@ var rootCmd = &cobra.Command{
 		}()
 
 		// Initialize Service
-		GlobalService = core.NewLocalDownloadService(GlobalPool)
+		GlobalService = core.NewLocalDownloadServiceWithInput(GlobalPool, GlobalProgressCh)
 
 		portFlag, _ := cmd.Flags().GetInt("port")
 		batchFile, _ := cmd.Flags().GetString("batch")
@@ -150,7 +149,7 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 	// Initialize TUI
 	// GlobalService and GlobalProgressCh are already initialized in PersistentPreRun or Run
 
-	m := tui.InitialRootModel(port, Version, GlobalService, GlobalProgressCh, noResume)
+	m := tui.InitialRootModel(port, Version, GlobalService, noResume)
 	// m := tui.InitialRootModel(port, Version)
 	// No need to instantiate separate pool
 
@@ -199,7 +198,17 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 // StartHeadlessConsumer starts a goroutine to consume progress messages and log to stdout
 func StartHeadlessConsumer() {
 	go func() {
-		for msg := range GlobalProgressCh {
+		if GlobalService == nil {
+			return
+		}
+		stream, cleanup, err := GlobalService.StreamEvents(context.Background())
+		if err != nil {
+			utils.Debug("Failed to start event stream: %v", err)
+			return
+		}
+		defer cleanup()
+
+		for msg := range stream {
 			switch m := msg.(type) {
 			case events.DownloadStartedMsg:
 				id := m.DownloadID
@@ -636,11 +645,8 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	utils.Debug("Received download request: URL=%s, Path=%s", req.URL, req.Path)
 
 	downloadID := uuid.New().String()
-
-	// Use the GlobalPool for both Headless and TUI modes (Unified Backend)
-	if GlobalPool == nil {
-		// Should not happen if initialized correctly
-		http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+	if service == nil {
+		http.Error(w, "Service unavailable", http.StatusInternalServerError)
 		return
 	}
 
@@ -689,12 +695,18 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	isDuplicate := false
 	isActive := false
 
-	if GlobalPool.HasDownload(req.URL) {
+	urlForAdd := req.URL
+	mirrorsForAdd := req.Mirrors
+	if len(mirrorsForAdd) == 0 && strings.Contains(req.URL, ",") {
+		urlForAdd, mirrorsForAdd = ParseURLArg(req.URL)
+	}
+
+	if GlobalPool.HasDownload(urlForAdd) {
 		isDuplicate = true
 		// Check if specifically active\
 		allActive := GlobalPool.GetAll()
 		for _, c := range allActive {
-			if c.URL == req.URL {
+			if c.URL == urlForAdd {
 				if c.State != nil && !c.State.Done.Load() {
 					isActive = true
 				}
@@ -703,7 +715,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		}
 	}
 
-	utils.Debug("Download request: URL=%s, SkipApproval=%v, isDuplicate=%v, isActive=%v", req.URL, req.SkipApproval, isDuplicate, isActive)
+	utils.Debug("Download request: URL=%s, SkipApproval=%v, isDuplicate=%v, isActive=%v", urlForAdd, req.SkipApproval, isDuplicate, isActive)
 
 	// EXTENSION VETTING SHORTCUT:
 	// If SkipApproval is true, we trust the extension completely.
@@ -725,9 +737,11 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 				// Send request to TUI
 				GlobalProgressCh <- events.DownloadRequestMsg{
 					ID:       downloadID,
-					URL:      req.URL,
+					URL:      urlForAdd,
 					Filename: req.Filename,
 					Path:     outPath, // Use the path we resolved (default or requested)
+					Mirrors:  mirrorsForAdd,
+					Headers:  req.Headers,
 				}
 
 				w.Header().Set("Content-Type", "application/json")
@@ -758,29 +772,12 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		}
 	}
 
-	// Create configuration
-	cfg := types.DownloadConfig{
-		URL:        req.URL,
-		OutputPath: outPath,
-		ID:         downloadID,
-		Filename:   req.Filename,
-		Verbose:    false,
-		ProgressCh: GlobalProgressCh, // Shared channel (headless consumer or TUI)
-		State:      types.NewProgressState(downloadID, 0),
-		// Runtime config loaded from settings
-		Runtime: types.ConvertRuntimeConfig(settings.ToRuntimeConfig()),
-		Headers: req.Headers, // Forward browser headers (cookies, auth, etc.)
+	// Add via service
+	newID, err := service.Add(urlForAdd, outPath, req.Filename, mirrorsForAdd, req.Headers)
+	if err != nil {
+		http.Error(w, "Failed to add download: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
-
-	// Handle implicit mirrors in URL if not explicitly provided
-	if len(req.Mirrors) == 0 && strings.Contains(req.URL, ",") {
-		cfg.URL, cfg.Mirrors = ParseURLArg(req.URL)
-	} else if len(req.Mirrors) > 0 {
-		cfg.Mirrors = req.Mirrors
-	}
-
-	// Add to pool
-	GlobalPool.Add(cfg)
 
 	// Increment active downloads counter
 	atomic.AddInt32(&activeDownloads, 1)
@@ -789,7 +786,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	if err := json.NewEncoder(w).Encode(map[string]string{
 		"status":  "queued",
 		"message": "Download queued successfully",
-		"id":      downloadID,
+		"id":      newID,
 	}); err != nil {
 		utils.Debug("Failed to encode response: %v", err)
 	}
@@ -819,8 +816,8 @@ func processDownloads(urls []string, outputDir string, port int) int {
 	}
 
 	// Internal add (TUI or Headless mode)
-	if GlobalPool == nil {
-		fmt.Fprintln(os.Stderr, "Error: GlobalPool not initialized")
+	if GlobalService == nil {
+		fmt.Fprintln(os.Stderr, "Error: GlobalService not initialized")
 		return 0
 	}
 
@@ -856,24 +853,15 @@ func processDownloads(urls []string, outputDir string, port int) int {
 		// For headless/root direct add, we might skip prompt or auto-approve?
 		// For now, let's just add directly if headless, or prompt if TUI is up.
 
-		downloadID := uuid.New().String()
-
 		// If TUI is up (serverProgram != nil), we might want to send a request msg?
 		// But processDownloads is called from QUEUE init routine, primarily for CLI args.
 		// If CLI args provided, user probably wants them added immediately.
 
-		cfg := types.DownloadConfig{
-			URL:        url,
-			Mirrors:    mirrors,
-			OutputPath: outPath,
-			ID:         downloadID,
-			Verbose:    false,
-			ProgressCh: GlobalProgressCh,
-			State:      types.NewProgressState(downloadID, 0),
-			Runtime:    types.ConvertRuntimeConfig(settings.ToRuntimeConfig()),
+		_, err := GlobalService.Add(url, outPath, "", mirrors, nil)
+		if err != nil {
+			fmt.Printf("Error adding %s: %v\n", url, err)
+			continue
 		}
-
-		GlobalPool.Add(cfg)
 		atomic.AddInt32(&activeDownloads, 1)
 		successCount++
 	}
@@ -939,43 +927,11 @@ func resumePausedDownloads() {
 		if entry.Status == "paused" && !settings.General.AutoResume {
 			continue
 		}
-		// Load state to define progress state
-		s, err := state.LoadState(entry.URL, entry.DestPath)
-		if err != nil {
+		if GlobalService == nil || entry.ID == "" {
 			continue
 		}
-
-		// Reconstruct config
-		runtimeConfig := types.ConvertRuntimeConfig(settings.ToRuntimeConfig())
-		outputPath := filepath.Dir(entry.DestPath)
-		// If outputPath is empty or dot, use default
-		if outputPath == "" || outputPath == "." {
-			outputPath = settings.General.DefaultDownloadDir
+		if err := GlobalService.Resume(entry.ID); err == nil {
+			atomic.AddInt32(&activeDownloads, 1)
 		}
-
-		id := entry.ID
-		if id == "" {
-			id = uuid.New().String()
-		}
-
-		// Create progress state
-		progState := types.NewProgressState(id, s.TotalSize)
-		progState.Downloaded.Store(s.Downloaded)
-
-		cfg := types.DownloadConfig{
-			URL:        entry.URL,
-			OutputPath: outputPath,
-			DestPath:   entry.DestPath,
-			ID:         id,
-			Filename:   entry.Filename,
-			Verbose:    false,
-			IsResume:   true,
-			ProgressCh: GlobalProgressCh,
-			State:      progState,
-			Runtime:    runtimeConfig,
-		}
-
-		GlobalPool.Add(cfg)
-		atomic.AddInt32(&activeDownloads, 1)
 	}
 }

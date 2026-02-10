@@ -180,7 +180,7 @@ func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile
 	}
 
 	// Initialize Service
-	GlobalService = core.NewLocalDownloadService(GlobalPool)
+	GlobalService = core.NewLocalDownloadServiceWithInput(GlobalPool, GlobalProgressCh)
 
 	saveActivePort(port)
 	defer removeActivePort()

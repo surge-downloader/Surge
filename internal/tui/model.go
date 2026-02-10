@@ -78,8 +78,6 @@ type RootModel struct {
 	activeTab    int // 0=Queued, 1=Active, 2=Done
 	inputs       []textinput.Model
 	focusedInput int
-	progressChan <-chan any // Channel for events (from Service)
-
 	// Service Interface (replaces Pool)
 	Service core.DownloadService
 
@@ -103,7 +101,8 @@ type RootModel struct {
 	pendingPath     string   // Path pending confirmation
 	pendingFilename string   // Filename pending confirmation
 	pendingMirrors  []string // Mirrors pending confirmation
-	duplicateInfo   string   // Info about the duplicate
+	pendingHeaders  map[string]string
+	duplicateInfo   string // Info about the duplicate
 
 	// Graph Data
 	SpeedHistory           []float64 // Stores the last ~60 ticks of speed data
@@ -164,7 +163,7 @@ func NewDownloadModel(id string, url string, filename string, total int64) *Down
 	}
 }
 
-func InitialRootModel(serverPort int, currentVersion string, service core.DownloadService, progressChan <-chan any, noResume bool) RootModel {
+func InitialRootModel(serverPort int, currentVersion string, service core.DownloadService, noResume bool) RootModel {
 	// Initialize inputs
 	urlInput := textinput.New()
 	urlInput.Placeholder = "https://example.com/file.zip"
@@ -282,7 +281,6 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 		downloads:             downloads,
 		inputs:                []textinput.Model{urlInput, mirrorsInput, pathInput, filenameInput},
 		state:                 DashboardState,
-		progressChan:          progressChan,
 		filepicker:            fp,
 		help:                  helpModel,
 		list:                  downloadList,

@@ -120,12 +120,13 @@ func (s *RemoteDownloadService) GetStatus(id string) (*types.DownloadStatus, err
 }
 
 // Add queues a new download.
-func (s *RemoteDownloadService) Add(url string, path string, filename string, mirrors []string) (string, error) {
+func (s *RemoteDownloadService) Add(url string, path string, filename string, mirrors []string, headers map[string]string) (string, error) {
 	req := map[string]interface{}{
 		"url":           url,
 		"path":          path,
 		"filename":      filename,
 		"mirrors":       mirrors,
+		"headers":       headers,
 		"skip_approval": true,
 	}
 

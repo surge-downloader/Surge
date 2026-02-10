@@ -56,7 +56,15 @@ const (
 
 // NewLocalDownloadService creates a new specific service instance.
 func NewLocalDownloadService(pool *download.WorkerPool) *LocalDownloadService {
-	inputCh := make(chan interface{}, 100)
+	return NewLocalDownloadServiceWithInput(pool, nil)
+}
+
+// NewLocalDownloadServiceWithInput creates a service using a provided input channel.
+// If inputCh is nil, a new buffered channel is created.
+func NewLocalDownloadServiceWithInput(pool *download.WorkerPool, inputCh chan interface{}) *LocalDownloadService {
+	if inputCh == nil {
+		inputCh = make(chan interface{}, 100)
+	}
 	s := &LocalDownloadService{
 		Pool:      pool,
 		InputCh:   inputCh,
@@ -347,7 +355,7 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 }
 
 // Add queues a new download.
-func (s *LocalDownloadService) Add(url string, path string, filename string, mirrors []string) (string, error) {
+func (s *LocalDownloadService) Add(url string, path string, filename string, mirrors []string, headers map[string]string) (string, error) {
 	if s.Pool == nil {
 		return "", fmt.Errorf("worker pool not initialized")
 	}
@@ -383,6 +391,7 @@ func (s *LocalDownloadService) Add(url string, path string, filename string, mir
 		ProgressCh: s.InputCh,
 		State:      state,
 		Runtime:    types.ConvertRuntimeConfig(settings.ToRuntimeConfig()),
+		Headers:    headers,
 	}
 
 	s.Pool.Add(cfg)

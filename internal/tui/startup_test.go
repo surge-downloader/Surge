@@ -36,7 +36,7 @@ func TestTUI_Startup_HandlesResume(t *testing.T) {
 	pool := download.NewWorkerPool(progressChan, 3)
 
 	// PASSING noResume=false (default)
-	m := InitialRootModel(1700, "test-version", core.NewLocalDownloadService(pool), progressChan, false)
+	m := InitialRootModel(1700, "test-version", core.NewLocalDownloadServiceWithInput(pool, progressChan), false)
 
 	// 4. Verify Download is Active in Model
 	// InitialRootModel loads downloads and should set paused=false for "queued" items

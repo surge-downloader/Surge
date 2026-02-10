@@ -72,4 +72,6 @@ type DownloadRequestMsg struct {
 	URL      string
 	Filename string
 	Path     string
+	Mirrors  []string
+	Headers  map[string]string
 }
