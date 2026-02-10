@@ -99,10 +99,11 @@ func (s *RemoteDownloadService) History() ([]types.DownloadEntry, error) {
 // Add queues a new download.
 func (s *RemoteDownloadService) Add(url string, path string, filename string, mirrors []string) (string, error) {
 	req := map[string]interface{}{
-		"url":      url,
-		"path":     path,
-		"filename": filename,
-		"mirrors":  mirrors,
+		"url":           url,
+		"path":          path,
+		"filename":      filename,
+		"mirrors":       mirrors,
+		"skip_approval": true,
 	}
 
 	resp, err := s.doRequest("POST", "/download", req)
