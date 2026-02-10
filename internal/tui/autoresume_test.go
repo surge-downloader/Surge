@@ -88,9 +88,10 @@ func TestAutoResume_Enabled(t *testing.T) {
 	for _, d := range m.downloads {
 		if d.ID == testID {
 			found = true
-			if d.paused {
-				t.Error("Download should not be paused when AutoResume is enabled")
+			if !d.pendingResume {
+				t.Error("Download should have pendingResume=true when AutoResume is enabled")
 			}
+			// It starts as paused, waiting for Init() to resume
 		}
 	}
 
