@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/utils"
 )
 
 var lsCmd = &cobra.Command{
@@ -180,7 +181,11 @@ func showDownloadDetails(partialID string, jsonOutput bool) {
 	if port > 0 {
 		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/download?id=%s", port, fullID))
 		if err == nil {
-			defer func() { _ = resp.Body.Close() }()
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					utils.Debug("Error closing response body: %v", err)
+				}
+			}()
 			if resp.StatusCode == http.StatusOK {
 				var status types.DownloadStatus
 				if json.NewDecoder(resp.Body).Decode(&status) == nil {

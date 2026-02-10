@@ -14,6 +14,7 @@ import (
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/utils"
 )
 
 // readActivePort reads the port from the port file
@@ -80,7 +81,11 @@ func sendToServer(url string, mirrors []string, outPath string, port int) error 
 	if err != nil {
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			utils.Debug("Error closing response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		body, _ := io.ReadAll(resp.Body)
@@ -108,7 +113,11 @@ func GetRemoteDownloads(port int) ([]types.DownloadStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			utils.Debug("Error closing response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("server returned status: %s", resp.Status)

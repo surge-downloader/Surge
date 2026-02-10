@@ -310,7 +310,11 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
-	defer func() { _ = outFile.Close() }()
+	defer func() {
+		if err := outFile.Close(); err != nil {
+			utils.Debug("Error closing file: %v", err)
+		}
+	}()
 
 	// Check for saved state BEFORE truncating (resume case)
 	var tasks []types.Task

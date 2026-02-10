@@ -92,7 +92,11 @@ func readURLsFromFile(filepath string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		if err := file.Close(); err != nil {
+			utils.Debug("Error closing file: %v", err)
+		}
+	}()
 
 	var urls []string
 	seen := make(map[string]bool)

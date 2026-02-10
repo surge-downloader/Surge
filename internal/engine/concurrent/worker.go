@@ -198,7 +198,11 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			utils.Debug("Error closing response body: %v", err)
+		}
+	}()
 
 	// Handle rate limiting explicitly
 	if resp.StatusCode == http.StatusTooManyRequests {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/surge-downloader/surge/internal/engine/state"
+	"github.com/surge-downloader/surge/internal/utils"
 )
 
 var rmCmd = &cobra.Command{
@@ -54,7 +55,11 @@ var rmCmd = &cobra.Command{
 				fmt.Fprintf(os.Stderr, "Error connecting to server: %v\n", err)
 				os.Exit(1)
 			}
-			defer func() { _ = resp.Body.Close() }()
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					utils.Debug("Error closing response body: %v", err)
+				}
+			}()
 
 			if resp.StatusCode != http.StatusOK {
 				fmt.Fprintf(os.Stderr, "Error: server returned %s\n", resp.Status)

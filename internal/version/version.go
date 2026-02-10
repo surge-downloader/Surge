@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/surge-downloader/surge/internal/utils"
 )
 
 const (
@@ -57,7 +59,11 @@ func CheckForUpdate(currentVersion string) (*UpdateInfo, error) {
 	if err != nil {
 		return nil, nil // Network error - fail silently
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			utils.Debug("Error closing response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, nil // API error - fail silently

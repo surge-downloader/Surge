@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/utils"
 )
 
 // URLHash returns a short hash of the URL for master list keying
@@ -71,7 +72,11 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 		if err != nil {
 			return err
 		}
-		defer func() { _ = stmt.Close() }()
+		defer func() {
+			if err := stmt.Close(); err != nil {
+				utils.Debug("Error closing statement: %v", err)
+			}
+		}()
 
 		for _, task := range state.Tasks {
 			if _, err := stmt.Exec(state.ID, task.Offset, task.Length); err != nil {
@@ -141,7 +146,11 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tasks: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			utils.Debug("Error closing rows: %v", err)
+		}
+	}()
 
 	for rows.Next() {
 		var t types.Task
@@ -209,7 +218,11 @@ func LoadMasterList() (*types.MasterList, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query downloads: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			utils.Debug("Error closing rows: %v", err)
+		}
+	}()
 
 	var list types.MasterList
 	for rows.Next() {
