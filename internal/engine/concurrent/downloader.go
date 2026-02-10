@@ -159,7 +159,12 @@ func createTasks(fileSize, chunkSize int64) []types.Task {
 	if chunkSize <= 0 {
 		return nil
 	}
-	var tasks []types.Task
+
+	// Pre-allocate slice capacity to avoid reallocations
+	// Number of chunks = ceil(fileSize / chunkSize)
+	count := (fileSize + chunkSize - 1) / chunkSize
+	tasks := make([]types.Task, 0, int(count))
+
 	for offset := int64(0); offset < fileSize; offset += chunkSize {
 		length := chunkSize
 		if offset+length > fileSize {
