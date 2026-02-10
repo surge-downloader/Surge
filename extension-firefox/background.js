@@ -166,6 +166,7 @@ async function checkSurgeHealth() {
 async function fetchDownloadList() {
   const port = await findSurgePort();
   if (!port) {
+    isConnected = false;
     return [];
   }
 
@@ -181,7 +182,18 @@ async function fetchDownloadList() {
     clearTimeout(timeoutId);
     
     if (response.ok) {
-      const list = await response.json();
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        isConnected = false;
+        return [];
+      }
+      let list;
+      try {
+        list = await response.json();
+      } catch {
+        isConnected = false;
+        return [];
+      }
       
       // Handle null or non-array response
       if (!Array.isArray(list)) {
@@ -199,6 +211,10 @@ async function fetchDownloadList() {
         }
         return { ...dl, eta };
       });
+    } else {
+      // Likely auth error or server mismatch
+      isConnected = false;
+      return [];
     }
   } catch (error) {
     console.error('[Surge] Error fetching downloads:', error);

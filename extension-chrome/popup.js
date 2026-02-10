@@ -8,6 +8,7 @@ const SURGE_API_BASE = 'http://127.0.0.1:1700';
 let downloads = new Map();
 let serverConnected = false;
 let pollInterval = null;
+let healthInterval = null;
 
 // Detect if running in extension context
 const isExtensionContext = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage;
@@ -540,12 +541,29 @@ async function init() {
   
   // Poll for updates every 1 second
   pollInterval = setInterval(fetchDownloads, 1000);
+
+  // Poll server health every 3 seconds
+  if (isExtensionContext) {
+    healthInterval = setInterval(async () => {
+      try {
+        const response = await apiCall('checkHealth');
+        if (response && typeof response.healthy === 'boolean') {
+          updateServerStatus(response.healthy);
+        }
+      } catch (error) {
+        updateServerStatus(false);
+      }
+    }, 3000);
+  }
 }
 
 // Cleanup when popup closes
 window.addEventListener('unload', () => {
   if (pollInterval) {
     clearInterval(pollInterval);
+  }
+  if (healthInterval) {
+    clearInterval(healthInterval);
   }
 });
 
