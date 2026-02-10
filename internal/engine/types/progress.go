@@ -159,6 +159,8 @@ func (ps *ProgressState) InitBitmap(totalSize int64, chunkSize int64) {
 		return
 	}
 
+	utils.Debug("InitBitmap: Total=%d, ChunkSize=%d", totalSize, chunkSize)
+
 	if chunkSize <= 0 {
 		return
 	}
@@ -183,6 +185,8 @@ func (ps *ProgressState) RestoreBitmap(bitmap []byte, actualChunkSize int64) {
 	if len(bitmap) == 0 || actualChunkSize <= 0 {
 		return
 	}
+
+	utils.Debug("RestoreBitmap: Len=%d, ChunkSize=%d", len(bitmap), actualChunkSize)
 
 	ps.ChunkBitmap = bitmap
 	ps.ActualChunkSize = actualChunkSize
@@ -235,7 +239,7 @@ func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkSta
 	defer ps.mu.Unlock()
 
 	if ps.ActualChunkSize == 0 || len(ps.ChunkBitmap) == 0 {
-		// fmt.Printf("UpdateChunkStatus skipped: ActualChunkSize=%d, BitmapLen=%d\n", ps.ActualChunkSize, len(ps.ChunkBitmap))
+		utils.Debug("UpdateChunkStatus skipped: ActualChunkSize=%d, BitmapLen=%d", ps.ActualChunkSize, len(ps.ChunkBitmap))
 		return
 	}
 

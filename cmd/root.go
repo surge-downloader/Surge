@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -157,11 +158,12 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 	serverProgram = p // Save reference for HTTP handler
 
 	// Get event stream from service
-	events, err := GlobalService.StreamEvents()
+	events, cleanup, err := GlobalService.StreamEvents(context.Background())
 	if err != nil {
 		fmt.Printf("Error getting event stream: %v\n", err)
 		os.Exit(1)
 	}
+	defer cleanup()
 
 	// Background listener for progress events
 	go func() {
@@ -279,7 +281,6 @@ func removeActivePort() {
 // startHTTPServer starts the HTTP server using an existing listener
 func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service core.DownloadService) {
 	authToken := ensureAuthToken()
-	utils.Debug("Using Auth Token: %s", authToken)
 
 	mux := http.NewServeMux()
 
@@ -303,11 +304,12 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 
 		// Get event stream
-		stream, err := service.StreamEvents()
+		stream, cleanup, err := service.StreamEvents(r.Context())
 		if err != nil {
 			http.Error(w, "Failed to subscribe to events", http.StatusInternalServerError)
 			return
 		}
+		defer cleanup()
 
 		// Flush headers immediately
 		flusher, ok := w.(http.Flusher)
@@ -374,7 +376,7 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service
 
 	// Download endpoint (Protected + Public for simple GET status if needed? No, let's protect all for now)
 	mux.HandleFunc("/download", func(w http.ResponseWriter, r *http.Request) {
-		handleDownload(w, r, defaultOutputDir)
+		handleDownload(w, r, defaultOutputDir, service)
 	})
 
 	// Pause endpoint (Protected)
@@ -566,7 +568,7 @@ type DownloadRequest struct {
 	Headers              map[string]string `json:"headers,omitempty"`       // Custom HTTP headers from browser (cookies, auth, etc.)
 }
 
-func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir string) {
+func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir string, service core.DownloadService) {
 	// GET request to query status
 	if r.Method == http.MethodGet {
 		id := r.URL.Query().Get("id")
@@ -577,52 +579,20 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 
 		w.Header().Set("Content-Type", "application/json")
 
-		// 1. Check GlobalPool first (Active/Queued/Paused)
-		if GlobalPool != nil {
-			status := GlobalPool.GetStatus(id)
-			if status != nil {
-				if err := json.NewEncoder(w).Encode(status); err != nil {
-					utils.Debug("Failed to encode response: %v", err)
-				}
-				return
-			}
-		}
-
-		// 2. Fallback to Database (Completed/Persistent Paused)
-		entry, err := state.GetDownload(id)
-		if err == nil && entry != nil {
-			// Convert to unified DownloadStatus
-			var progress float64
-			if entry.TotalSize > 0 {
-				progress = float64(entry.Downloaded) * 100 / float64(entry.TotalSize)
-			} else if entry.Status == "completed" {
-				progress = 100.0
-			}
-
-			var speed float64
-			if entry.Status == "completed" && entry.TimeTaken > 0 {
-				// TotalSize (bytes), TimeTaken (ms)
-				// Speed = bytes / (ms/1000) / 1024 / 1024 MB/s
-				speed = float64(entry.TotalSize) * 1000 / float64(entry.TimeTaken) / (1024 * 1024)
-			}
-
-			status := types.DownloadStatus{
-				ID:         entry.ID,
-				URL:        entry.URL,
-				Filename:   entry.Filename,
-				TotalSize:  entry.TotalSize,
-				Downloaded: entry.Downloaded,
-				Progress:   progress,
-				Speed:      speed,
-				Status:     entry.Status,
-			}
-			if err := json.NewEncoder(w).Encode(status); err != nil {
-				utils.Debug("Failed to encode response: %v", err)
-			}
+		if service == nil {
+			http.Error(w, "Service unavailable", http.StatusInternalServerError)
 			return
 		}
 
-		http.Error(w, "Download not found", http.StatusNotFound)
+		status, err := service.GetStatus(id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
+		if err := json.NewEncoder(w).Encode(status); err != nil {
+			utils.Debug("Failed to encode response: %v", err)
+		}
 		return
 	}
 

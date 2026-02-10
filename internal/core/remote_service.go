@@ -18,22 +18,24 @@ import (
 
 // RemoteDownloadService implements DownloadService for a remote daemon.
 type RemoteDownloadService struct {
-	BaseURL string
-	Token   string
-	Client  *http.Client
-	ctx     context.Context
-	cancel  context.CancelFunc
+	BaseURL   string
+	Token     string
+	Client    *http.Client
+	SSEClient *http.Client
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 // NewRemoteDownloadService creates a new remote service instance.
 func NewRemoteDownloadService(baseURL string, token string) *RemoteDownloadService {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &RemoteDownloadService{
-		BaseURL: baseURL,
-		Token:   token,
-		Client:  &http.Client{Timeout: 30 * time.Second},
-		ctx:     ctx,
-		cancel:  cancel,
+		BaseURL:   baseURL,
+		Token:     token,
+		Client:    &http.Client{Timeout: 30 * time.Second},
+		SSEClient: &http.Client{},
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
@@ -102,6 +104,21 @@ func (s *RemoteDownloadService) History() ([]types.DownloadEntry, error) {
 	return history, nil
 }
 
+// GetStatus returns a status for a single download by id.
+func (s *RemoteDownloadService) GetStatus(id string) (*types.DownloadStatus, error) {
+	resp, err := s.doRequest("GET", "/download?id="+url.QueryEscape(id), nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var status types.DownloadStatus
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return nil, err
+	}
+	return &status, nil
+}
+
 // Add queues a new download.
 func (s *RemoteDownloadService) Add(url string, path string, filename string, mirrors []string) (string, error) {
 	req := map[string]interface{}{
@@ -164,29 +181,36 @@ func (s *RemoteDownloadService) Shutdown() error {
 }
 
 // StreamEvents returns a channel that receives real-time download events via SSE.
-func (s *RemoteDownloadService) StreamEvents() (<-chan interface{}, error) {
+func (s *RemoteDownloadService) StreamEvents(ctx context.Context) (<-chan interface{}, func(), error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	ch := make(chan interface{}, 100)
-	go s.streamWithReconnect(ch)
-	return ch, nil
+	go s.streamWithReconnect(ctx, ch)
+	return ch, func() {}, nil
 }
 
-func (s *RemoteDownloadService) streamWithReconnect(ch chan interface{}) {
+func (s *RemoteDownloadService) streamWithReconnect(ctx context.Context, ch chan interface{}) {
 	defer close(ch)
 	backoff := 1 * time.Second
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
+		case <-ctx.Done():
+			return
 		default:
 		}
 
-		err := s.connectSSE(ch)
+		err := s.connectSSE(ctx, ch)
 		if err == nil {
 			return // Clean shutdown (e.g. server closed stream cleanly or context canceled during request)
 		}
 		// Check context again before sleeping
 		select {
 		case <-s.ctx.Done():
+			return
+		case <-ctx.Done():
 			return
 		case <-time.After(backoff):
 			// Continue
@@ -198,8 +222,8 @@ func (s *RemoteDownloadService) streamWithReconnect(ch chan interface{}) {
 	}
 }
 
-func (s *RemoteDownloadService) connectSSE(ch chan interface{}) error {
-	req, err := http.NewRequestWithContext(s.ctx, "GET", s.BaseURL+"/events", nil)
+func (s *RemoteDownloadService) connectSSE(ctx context.Context, ch chan interface{}) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", s.BaseURL+"/events", nil)
 	if err != nil {
 		return err
 	}
@@ -209,7 +233,7 @@ func (s *RemoteDownloadService) connectSSE(ch chan interface{}) error {
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Connection", "keep-alive")
 
-	resp, err := s.Client.Do(req)
+	resp, err := s.SSEClient.Do(req)
 	if err != nil {
 		return err
 	}

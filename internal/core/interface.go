@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+
 	"github.com/surge-downloader/surge/internal/engine/types"
 )
 
@@ -29,7 +31,10 @@ type DownloadService interface {
 	// StreamEvents returns a channel that receives real-time download events.
 	// For local mode, this is a direct channel.
 	// For remote mode, this is sourced from SSE.
-	StreamEvents() (<-chan interface{}, error)
+	StreamEvents(ctx context.Context) (<-chan interface{}, func(), error)
+
+	// GetStatus returns a status for a single download by id.
+	GetStatus(id string) (*types.DownloadStatus, error)
 
 	// Shutdown handles graceful shutdown of the service
 	Shutdown() error

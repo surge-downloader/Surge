@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -190,27 +191,41 @@ func (s *LocalDownloadService) reportProgressLoop() {
 }
 
 // StreamEvents returns a channel that receives real-time download events.
-func (s *LocalDownloadService) StreamEvents() (<-chan interface{}, error) {
+func (s *LocalDownloadService) StreamEvents(ctx context.Context) (<-chan interface{}, func(), error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	ch := make(chan interface{}, 100)
 	s.listenerMu.Lock()
 	s.listeners = append(s.listeners, ch)
 	s.listenerMu.Unlock()
 
-	// Cleanup listener on context cancellation
-	go func() {
-		<-s.ctx.Done()
-		s.listenerMu.Lock()
-		defer s.listenerMu.Unlock()
-		for i, listener := range s.listeners {
-			if listener == ch {
-				s.listeners = append(s.listeners[:i], s.listeners[i+1:]...)
-				close(ch)
-				break
+	var once sync.Once
+	cleanup := func() {
+		once.Do(func() {
+			s.listenerMu.Lock()
+			for i, listener := range s.listeners {
+				if listener == ch {
+					s.listeners = append(s.listeners[:i], s.listeners[i+1:]...)
+					close(ch)
+					break
+				}
 			}
+			s.listenerMu.Unlock()
+		})
+	}
+
+	// Cleanup listener on context cancellation or service shutdown
+	go func() {
+		select {
+		case <-ctx.Done():
+			cleanup()
+		case <-s.ctx.Done():
+			cleanup()
 		}
 	}()
 
-	return ch, nil
+	return ch, cleanup, nil
 }
 
 // Shutdown stops the service.
@@ -415,10 +430,6 @@ func (s *LocalDownloadService) Resume(id string) error {
 		return fmt.Errorf("download already completed")
 	}
 
-	if entry.Status == "completed" {
-		return fmt.Errorf("download already completed")
-	}
-
 	s.settingsMu.RLock()
 	settings := s.settings
 	s.settingsMu.RUnlock()
@@ -482,10 +493,64 @@ func (s *LocalDownloadService) Delete(id string) error {
 	}
 
 	s.Pool.Cancel(id)
+
+	// Cleanup persisted state and partials if available
+	if entry, err := state.GetDownload(id); err == nil && entry != nil {
+		_ = state.DeleteState(entry.ID, entry.URL, entry.DestPath)
+		if entry.DestPath != "" && entry.Status != "completed" {
+			_ = os.Remove(entry.DestPath + types.IncompleteSuffix)
+		}
+	}
+
 	if err := state.RemoveFromMasterList(id); err != nil {
 		return err
 	}
 	return nil
+}
+
+// GetStatus returns a status for a single download by id.
+func (s *LocalDownloadService) GetStatus(id string) (*types.DownloadStatus, error) {
+	if id == "" {
+		return nil, fmt.Errorf("missing id")
+	}
+
+	// 1. Check active pool
+	if s.Pool != nil {
+		status := s.Pool.GetStatus(id)
+		if status != nil {
+			return status, nil
+		}
+	}
+
+	// 2. Fallback to DB
+	entry, err := state.GetDownload(id)
+	if err == nil && entry != nil {
+		var progress float64
+		if entry.TotalSize > 0 {
+			progress = float64(entry.Downloaded) * 100 / float64(entry.TotalSize)
+		} else if entry.Status == "completed" {
+			progress = 100.0
+		}
+
+		var speed float64
+		if entry.Status == "completed" && entry.TimeTaken > 0 {
+			speed = float64(entry.TotalSize) * 1000 / float64(entry.TimeTaken) / (1024 * 1024)
+		}
+
+		status := types.DownloadStatus{
+			ID:         entry.ID,
+			URL:        entry.URL,
+			Filename:   entry.Filename,
+			TotalSize:  entry.TotalSize,
+			Downloaded: entry.Downloaded,
+			Progress:   progress,
+			Speed:      speed,
+			Status:     entry.Status,
+		}
+		return &status, nil
+	}
+
+	return nil, fmt.Errorf("download not found")
 }
 
 // History returns completed downloads

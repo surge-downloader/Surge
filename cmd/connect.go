@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -51,11 +52,12 @@ var connectCmd = &cobra.Command{
 		}
 
 		// Event loop
-		stream, err := service.StreamEvents()
+		stream, cleanup, err := service.StreamEvents(context.Background())
 		if err != nil {
 			fmt.Printf("Failed to start event stream: %v\n", err)
 			os.Exit(1)
 		}
+		defer cleanup()
 
 		// Parse port for display
 		port := 0
