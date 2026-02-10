@@ -58,7 +58,11 @@ func (q *TaskQueue) Pop() (types.Task, bool) {
 	t := q.tasks[q.head]
 	q.head++
 	if q.head > len(q.tasks)/2 {
-		q.tasks = append([]types.Task(nil), q.tasks[q.head:]...)
+		// Optimization: Reslice instead of copy to avoid allocations.
+		// This advances the slice window without allocating a new backing array.
+		// The old array will be eventually released when the slice capacity is exceeded
+		// on a future Push, or when the queue is fully drained and reset.
+		q.tasks = q.tasks[q.head:]
 		q.head = 0
 	}
 	return t, true
