@@ -17,11 +17,11 @@ type ChunkMapModel struct {
 	Paused          bool
 	TotalSize       int64
 	ActualChunkSize int64
-	ChunkProgress   []int64
+	ChunkProgress   map[int]int64
 }
 
 // NewChunkMapModel creates a new chunk map visualization
-func NewChunkMapModel(bitmap []byte, bitmapWidth int, width, height int, paused bool, totalSize int64, actualChunkSize int64, chunkProgress []int64) ChunkMapModel {
+func NewChunkMapModel(bitmap []byte, bitmapWidth int, width, height int, paused bool, totalSize int64, actualChunkSize int64, chunkProgress map[int]int64) ChunkMapModel {
 	return ChunkMapModel{
 		Bitmap:          bitmap,
 		BitmapWidth:     bitmapWidth,
@@ -148,12 +148,12 @@ func (m ChunkMapModel) View() string {
 			case types.ChunkDownloading:
 				// Partial chunk logic
 				// If we have progress data, use it for granular rendering
-				if len(m.ChunkProgress) > cIdx {
+				if progress, ok := m.ChunkProgress[cIdx]; ok {
 					// We assume bytes assume filled from the start of the chunk
-					// downloadedBytes := m.ChunkProgress[cIdx]
+					// downloadedBytes := progress
 					// validRange: [chunkStartByte, chunkStartByte + downloadedBytes)
 
-					validEndByte := chunkStartByte + m.ChunkProgress[cIdx]
+					validEndByte := chunkStartByte + progress
 
 					// Calculate overlap of [intersectStart, intersectEnd) with [chunkStartByte, validEndByte)
 					// Since chunkStartByte <= intersectStart (mostly), we focus on the end.

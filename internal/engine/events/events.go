@@ -19,7 +19,7 @@ type ProgressMsg struct {
 	ChunkBitmap       []byte
 	BitmapWidth       int
 	ActualChunkSize   int64
-	ChunkProgress     []int64
+	ChunkProgress     map[int]int64
 }
 
 // DownloadCompleteMsg signals that the download finished successfully

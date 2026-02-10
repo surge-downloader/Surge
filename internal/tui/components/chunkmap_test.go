@@ -50,10 +50,12 @@ func TestChunkMap_Basic(t *testing.T) {
 
 	// Width=8 -> 4 blocks (2 chars per block)
 	// Mock progress data: all chunks full
-	progress := make([]int64, chunkCount)
-	for i := range progress {
-		progress[i] = 1024
-	} // 1KB chunks
+	progress := make(map[int]int64)
+	progress[0] = 1024
+	progress[1] = 1024
+	progress[2] = 1024
+	progress[3] = 1024
+
 	model := NewChunkMapModel(bitmap, chunkCount, 8, 0, false, 4096, 1024, progress)
 
 	// Logic generates 10 rows worth of blocks.
@@ -87,7 +89,7 @@ func TestChunkMap_GhostPinkFix(t *testing.T) {
 	}
 
 	// 10 chunks, say 10KB total, 1KB each.
-	progress := make([]int64, chunkCount)
+	progress := make(map[int]int64)
 	for i := 0; i < 5; i++ {
 		progress[i] = 1024
 	} // Full
@@ -104,7 +106,7 @@ func TestChunkMap_PausedState(t *testing.T) {
 	bitmap := make([]byte, 1)
 	setChunk(bitmap, 0, int(types.ChunkDownloading))
 
-	progress := make([]int64, chunkCount)
+	progress := make(map[int]int64)
 	progress[0] = 512 // Half chunk
 
 	// Case 1: Not Paused
@@ -130,7 +132,9 @@ func TestChunkMap_LogicVerify(t *testing.T) {
 	setChunk(bitmap, 0, int(types.ChunkCompleted))
 	setChunk(bitmap, 1, int(types.ChunkPending))
 
-	progress := []int64{1024, 0}
+	progress := make(map[int]int64)
+	progress[0] = 1024
+	progress[1] = 0
 
 	model := NewChunkMapModel(bitmap, chunkCount, 2, 0, false, 2048, 1024, progress) // 1 col
 	out := model.View()
@@ -150,7 +154,8 @@ func TestChunkMap_DownloadingPriority(t *testing.T) {
 	setChunk(bitmap, 1, int(types.ChunkDownloading))
 	setChunk(bitmap, 2, int(types.ChunkPending))
 
-	progress := []int64{0, 512, 0} // Middle chunk 50% done
+	progress := make(map[int]int64)
+	progress[1] = 512 // Middle chunk 50% done
 
 	model := NewChunkMapModel(bitmap, chunkCount, 2, 0, false, 3072, 1024, progress) // 1 col
 	out := model.View()
@@ -177,24 +182,18 @@ func TestChunkMap_GranularProgress(t *testing.T) {
 	bitmap := make([]byte, 1)
 	setChunk(bitmap, 0, int(types.ChunkDownloading))
 
-	progress := []int64{1024 * 1024} // 1MB
+	progress := make(map[int]int64)
+	progress[0] = 1024 * 1024 // 1MB
 
 	// Width 20 -> 10 Blocks (2 chars each)
-	model := NewChunkMapModel(bitmap, chunkCount, 20, 0, false, totalSize, chunkSize, progress)
-	_ = model.View()
-
-	// Split output into blocks (space separated)
-	// Actually View adds newlines if multi-row, but here 10 blocks fit in 10 cols?
-	// View logic: targetChunks = 10 * cols.
-	// cols = Width/2 = 10. targetChunks = 100 blocks!
-	// Wait, targetChunks logic in View is: `targetChunks := 10 * cols`
-	// If we want exactly 10 blocks, we need cols=1 ?? No that gives 10 blocks TOTAL (1 row of 10? No 10 rows of 1?)
+	// Height 5 -> 5 Rows
+	// We want 10 rows? No CalculateHeight logic uses availableHeight.
 
 	// Let's adjust Width to get a simple line.
 	// If Width=2, cols=1 and height=5 (max). 5 Rows of 1 block.
 	// Then Row 0 should be Pink, Rows 1-4 Gray.
 
-	model = NewChunkMapModel(bitmap, chunkCount, 2, 5, false, totalSize, chunkSize, progress)
+	model := NewChunkMapModel(bitmap, chunkCount, 2, 5, false, totalSize, chunkSize, progress)
 	out := model.View()
 
 	rows := strings.Split(strings.TrimSpace(out), "\n")
