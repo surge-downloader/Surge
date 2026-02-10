@@ -272,6 +272,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// Update Chunk State if provided
 				if msg.BitmapWidth > 0 && len(msg.ChunkBitmap) > 0 {
+					if msg.Total > 0 {
+						d.state.SetTotalSize(msg.Total)
+					}
 					// We only get bitmap, no progress array (to save bandwidth)
 					// State needs to be updated carefully
 					d.state.RestoreBitmap(msg.ChunkBitmap, msg.ActualChunkSize)
