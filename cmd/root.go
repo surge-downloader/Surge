@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -512,7 +513,7 @@ func authMiddleware(token string, next http.Handler) http.Handler {
 		if authHeader != "" {
 			if strings.HasPrefix(authHeader, "Bearer ") {
 				providedToken := strings.TrimPrefix(authHeader, "Bearer ")
-				if providedToken == token {
+				if len(providedToken) == len(token) && subtle.ConstantTimeCompare([]byte(providedToken), []byte(token)) == 1 {
 					next.ServeHTTP(w, r)
 					return
 				}

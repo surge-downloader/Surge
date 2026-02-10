@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -28,6 +29,10 @@ type LocalDownloadService struct {
 	lastSpeeds   map[string]float64
 	speedMu      sync.Mutex
 	reportTicker *time.Ticker
+
+	// Lifecycle
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 const (
