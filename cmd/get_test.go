@@ -26,7 +26,7 @@ func TestCLI_NewEndpoints(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	// Start server in background
-	svc := core.NewLocalDownloadService(GlobalPool, GlobalProgressCh)
+	svc := core.NewLocalDownloadService(GlobalPool)
 	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 

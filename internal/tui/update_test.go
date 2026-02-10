@@ -160,7 +160,7 @@ func TestUpdate_DownloadRequestMsg(t *testing.T) {
 
 	m := RootModel{
 		Settings:     config.DefaultSettings(),
-		Service:      core.NewLocalDownloadService(pool, ch),
+		Service:      core.NewLocalDownloadService(pool),
 		progressChan: ch,
 		logViewport:  viewport.New(40, 5),
 		list:         NewDownloadList(40, 10),

@@ -22,7 +22,7 @@ func TestStartDownload_EnforcesAbsolutePath(t *testing.T) {
 
 	m := RootModel{
 		Settings:     config.DefaultSettings(),
-		Service:      core.NewLocalDownloadService(pool, ch),
+		Service:      core.NewLocalDownloadService(pool),
 		progressChan: ch,
 		downloads:    []*DownloadModel{},
 		list:         NewDownloadList(80, 20), // Initialize list

@@ -558,7 +558,7 @@ func TestStartHTTPServer_HealthEndpoint(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	// Start server in background
-	svc := core.NewLocalDownloadService(nil, nil) // Mock service with nil pool/chan for health check
+	svc := core.NewLocalDownloadService(nil) // Mock service with nil pool/chan for health check
 	go startHTTPServer(ln, port, "", svc)
 
 	// Give server time to start
@@ -595,7 +595,7 @@ func TestStartHTTPServer_HasCORSHeaders(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	svc := core.NewLocalDownloadService(nil, nil)
+	svc := core.NewLocalDownloadService(nil)
 	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
@@ -617,7 +617,7 @@ func TestStartHTTPServer_OptionsRequest(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	svc := core.NewLocalDownloadService(nil, nil)
+	svc := core.NewLocalDownloadService(nil)
 	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
@@ -641,7 +641,7 @@ func TestStartHTTPServer_DownloadEndpoint_MethodNotAllowed(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	svc := core.NewLocalDownloadService(nil, nil)
+	svc := core.NewLocalDownloadService(nil)
 	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
@@ -665,7 +665,7 @@ func TestStartHTTPServer_DownloadEndpoint_BadRequest(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	svc := core.NewLocalDownloadService(nil, nil)
+	svc := core.NewLocalDownloadService(nil)
 	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
@@ -692,7 +692,7 @@ func TestStartHTTPServer_DownloadEndpoint_MissingURL(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	svc := core.NewLocalDownloadService(nil, nil)
+	svc := core.NewLocalDownloadService(nil)
 	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
@@ -719,7 +719,7 @@ func TestStartHTTPServer_NotFoundEndpoint(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	svc := core.NewLocalDownloadService(nil, nil)
+	svc := core.NewLocalDownloadService(nil)
 	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 

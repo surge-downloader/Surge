@@ -36,10 +36,11 @@ const (
 )
 
 // NewLocalDownloadService creates a new specific service instance.
-func NewLocalDownloadService(pool *download.WorkerPool, progressCh chan interface{}) *LocalDownloadService {
+func NewLocalDownloadService(pool *download.WorkerPool) *LocalDownloadService {
+	inputCh := make(chan interface{}, 100)
 	s := &LocalDownloadService{
 		Pool:       pool,
-		InputCh:    progressCh,
+		InputCh:    inputCh,
 		listeners:  make([]chan interface{}, 0),
 		lastSpeeds: make(map[string]float64),
 	}
@@ -171,14 +172,13 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 				ID:       cfg.ID,
 				URL:      cfg.URL,
 				Filename: cfg.Filename,
-				DestPath: cfg.State.DestPath,
 				Status:   "downloading",
 			}
 
 			if cfg.State != nil {
 				status.TotalSize = cfg.State.TotalSize
 				status.Downloaded = cfg.State.Downloaded.Load()
-				if status.DestPath == "" && cfg.State.DestPath != "" {
+				if cfg.State.DestPath != "" {
 					status.DestPath = cfg.State.DestPath
 				}
 

@@ -83,7 +83,7 @@ var rootCmd = &cobra.Command{
 		}()
 
 		// Initialize Service
-		GlobalService = core.NewLocalDownloadService(GlobalPool, GlobalProgressCh)
+		GlobalService = core.NewLocalDownloadService(GlobalPool)
 
 		portFlag, _ := cmd.Flags().GetInt("port")
 		batchFile, _ := cmd.Flags().GetString("batch")

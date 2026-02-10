@@ -134,11 +134,8 @@ func (s *RemoteDownloadService) Delete(id string) error {
 
 // Shutdown stops the service.
 func (s *RemoteDownloadService) Shutdown() error {
-	resp, err := s.doRequest("POST", "/shutdown", nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
+	// Remote clients should disconnect, not shutdown the daemon
+	// TODO: Add graceful disconnect/cleanup if needed
 	return nil
 }
 
