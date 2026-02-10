@@ -251,6 +251,12 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 			}
 		}
 	} else if downloadErr != nil && !isPaused {
+		// Verify it's not a cancellation error
+		if errors.Is(downloadErr, context.Canceled) {
+			utils.Debug("Download canceled cleanly")
+			return nil
+		}
+
 		// Persist error state
 		if err := state.AddToMasterList(types.DownloadEntry{
 			ID:         cfg.ID,

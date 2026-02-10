@@ -84,6 +84,29 @@ func ProbeServer(ctx context.Context, rawurl string, filenameHint string, header
 		}
 
 		resp, err = client.Do(req)
+
+		// If we get a 403 Forbidden or 405 Method Not Allowed, it might be due to the Range header.
+		// Some servers (like NotebookLLM streaming) reject Range requests entirely.
+		// We retry once without the Range header.
+		if err == nil && (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusMethodNotAllowed) {
+			utils.Debug("Probe got %d, retrying without Range header", resp.StatusCode)
+			_ = resp.Body.Close() // Close previous response
+
+			reqNoRange, _ := http.NewRequestWithContext(probeCtx, http.MethodGet, rawurl, nil)
+
+			// Copy headers but SKIP Range
+			for key, val := range headers {
+				if key != "Range" {
+					reqNoRange.Header.Set(key, val)
+				}
+			}
+			if reqNoRange.Header.Get("User-Agent") == "" {
+				reqNoRange.Header.Set("User-Agent", ua)
+			}
+
+			resp, err = client.Do(reqNoRange)
+		}
+
 		if err == nil {
 			break // Success
 		}
