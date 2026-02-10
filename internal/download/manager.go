@@ -27,8 +27,6 @@ type ProbeResult struct {
 	ContentType   string
 }
 
-// probeServer has been moved to internal/engine/probe.go
-
 // uniqueFilePath returns a unique file path by appending (1), (2), etc. if the file exists
 func uniqueFilePath(path string) string {
 	// Check if file exists (both final and incomplete)
