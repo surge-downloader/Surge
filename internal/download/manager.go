@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,12 +18,6 @@ import (
 	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/utils"
 )
-
-var probeClient = &http.Client{Timeout: types.ProbeTimeout}
-
-var ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-	"AppleWebKit/537.36 (KHTML, like Gecko) " +
-	"Chrome/120.0.0.0 Safari/537.36"
 
 // ProbeResult contains all metadata from server probe
 type ProbeResult struct {
@@ -87,7 +80,6 @@ func uniqueFilePath(path string) string {
 
 // TUIDownload is the main entry point for TUI downloads
 func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
-
 	// Probe server once to get all metadata
 	utils.Debug("TUIDownload: Probing server... %s", cfg.URL)
 	probe, err := engine.ProbeServer(ctx, cfg.URL, cfg.Filename, cfg.Headers)
@@ -108,7 +100,7 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 
 	// Auto-create output directory if it doesn't exist
 	if _, err := os.Stat(cfg.OutputPath); os.IsNotExist(err) {
-		if mkErr := os.MkdirAll(cfg.OutputPath, 0755); mkErr != nil {
+		if mkErr := os.MkdirAll(cfg.OutputPath, 0o755); mkErr != nil {
 			utils.Debug("Failed to create output directory: %v", mkErr)
 		}
 	}

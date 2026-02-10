@@ -14,8 +14,6 @@ import (
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
-var probeClient = &http.Client{Timeout: types.ProbeTimeout}
-
 var ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
 	"AppleWebKit/537.36 (KHTML, like Gecko) " +
 	"Chrome/120.0.0.0 Safari/537.36"
@@ -96,8 +94,8 @@ func ProbeServer(ctx context.Context, rawurl string, filenameHint string, header
 	}
 
 	defer func() {
-		io.Copy(io.Discard, resp.Body) // Drain any remaining data
-		resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body) // Drain any remaining data
+		_ = resp.Body.Close()
 	}()
 
 	utils.Debug("Probe response status: %d", resp.StatusCode)

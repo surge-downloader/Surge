@@ -21,7 +21,7 @@ func TestIntegration_MirrorResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Set XDG_CONFIG_HOME to tmpDir so state.GetDB() creates DB there
 	// The config package uses "surge" subdirectory
@@ -160,5 +160,4 @@ func TestIntegration_MirrorResume(t *testing.T) {
 	if resumeCfg.Mirrors[0] != mirror.URL() {
 		t.Errorf("Resume config mirror mismatch. Want %s, got %v", mirror.URL(), resumeCfg.Mirrors)
 	}
-
 }

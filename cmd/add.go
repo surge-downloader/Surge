@@ -36,7 +36,7 @@ var addCmd = &cobra.Command{
 		}
 
 		if len(urls) == 0 {
-			cmd.Help()
+			_ = cmd.Help()
 			return
 		}
 

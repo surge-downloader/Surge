@@ -31,14 +31,13 @@ var graphGradient = []lipgloss.TerminalColor{
 // color: color for the data bars
 // stats: stats to display in overlay box (pass nil to skip)
 func renderMultiLineGraph(data []float64, width, height int, maxVal float64, color lipgloss.TerminalColor, stats *GraphStats) string {
-
 	if width < 1 || height < 1 {
 		return ""
 	}
 
 	// Styles
 	gridStyle := lipgloss.NewStyle().Foreground(ColorGray)
-	//barStyle := lipgloss.NewStyle().Foreground(color)
+	// barStyle := lipgloss.NewStyle().Foreground(color)
 
 	// 1. Prepare the canvas with a Grid
 	rows := make([][]string, height)

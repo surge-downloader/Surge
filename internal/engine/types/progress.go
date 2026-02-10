@@ -273,7 +273,8 @@ func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkSta
 			overlap = 0
 		}
 
-		if status == ChunkCompleted {
+		switch status {
+		case ChunkCompleted:
 			// Accumulate bytes
 			// Only add providing we don't exceed chunk size
 			increment := overlap
@@ -297,7 +298,7 @@ func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkSta
 					ps.SetChunkState(i, ChunkDownloading)
 				}
 			}
-		} else if status == ChunkDownloading {
+		case ChunkDownloading:
 			current := ps.GetChunkState(i)
 			if current != ChunkCompleted {
 				ps.SetChunkState(i, ChunkDownloading)

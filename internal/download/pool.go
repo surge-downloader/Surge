@@ -23,7 +23,7 @@ type WorkerPool struct {
 	downloads    map[string]*activeDownload      // Track active downloads for pause/resume
 	queued       map[string]types.DownloadConfig // Track queued downloads
 	mu           sync.RWMutex
-	wg           sync.WaitGroup //We use this to wait for all active downloads to pause before exiting the program
+	wg           sync.WaitGroup // We use this to wait for all active downloads to pause before exiting the program
 	maxDownloads int
 }
 
@@ -32,7 +32,7 @@ func NewWorkerPool(progressCh chan<- any, maxDownloads int) *WorkerPool {
 		maxDownloads = 3 // Default to 3 if invalid
 	}
 	pool := &WorkerPool{
-		taskChan:     make(chan types.DownloadConfig, 100), //We make it buffered to avoid blocking add
+		taskChan:     make(chan types.DownloadConfig, 100), // We make it buffered to avoid blocking add
 		progressCh:   progressCh,
 		downloads:    make(map[string]*activeDownload),
 		queued:       make(map[string]types.DownloadConfig),
@@ -152,7 +152,7 @@ func (p *WorkerPool) Pause(downloadID string) bool {
 // PauseAll pauses all active downloads (for graceful shutdown)
 func (p *WorkerPool) PauseAll() {
 	p.mu.RLock()
-	ids := make([]string, 0, len(p.downloads)) //This stores the uuids of the downloads to be paused
+	ids := make([]string, 0, len(p.downloads)) // This stores the uuids of the downloads to be paused
 	for id, ad := range p.downloads {
 		// Only pause downloads that are actually active (not already paused or done or pausing)
 		if ad != nil && ad.config.State != nil && !ad.config.State.IsPaused() && !ad.config.State.Done.Load() && !ad.config.State.IsPausing() {

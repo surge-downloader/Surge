@@ -129,7 +129,7 @@ func TestSaveAndLoadSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// We'll test the JSON serialization directly since we can't easily mock GetSettingsPath
 	original := &Settings{
@@ -166,7 +166,7 @@ func TestSaveAndLoadSettings(t *testing.T) {
 
 	// Write to temp file
 	testPath := filepath.Join(tmpDir, "test_settings.json")
-	if err := os.WriteFile(testPath, data, 0644); err != nil {
+	if err := os.WriteFile(testPath, data, 0o644); err != nil {
 		t.Fatalf("Failed to write settings file: %v", err)
 	}
 
@@ -230,11 +230,11 @@ func TestLoadSettings_CorruptedJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Write corrupted JSON
 	testPath := filepath.Join(tmpDir, "corrupt.json")
-	if err := os.WriteFile(testPath, []byte("{invalid json"), 0644); err != nil {
+	if err := os.WriteFile(testPath, []byte("{invalid json"), 0o644); err != nil {
 		t.Fatalf("Failed to write file: %v", err)
 	}
 
@@ -420,6 +420,7 @@ func TestConstants(t *testing.T) {
 		t.Errorf("MB should be 1048576, got %d", MB)
 	}
 }
+
 func TestSaveSettings_RealFunction(t *testing.T) {
 	original := DefaultSettings()
 	original.Connections.MaxConnectionsPerHost = 48
@@ -542,13 +543,14 @@ func TestSaveAndLoadSettings_RoundTrip(t *testing.T) {
 	// Cleanup
 	_ = SaveSettings(DefaultSettings())
 }
+
 func TestDefaultSettings_XDG(t *testing.T) {
 	// Create temp dir to simulate XDG_DOWNLOAD_DIR
 	tmpDir, err := os.MkdirTemp("", "surge-xdg-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Set env var
 	t.Setenv("XDG_DOWNLOAD_DIR", tmpDir)

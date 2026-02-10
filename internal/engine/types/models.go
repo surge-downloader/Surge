@@ -53,9 +53,9 @@ type DownloadStatus struct {
 	Filename    string  `json:"filename"`
 	TotalSize   int64   `json:"total_size"`
 	Downloaded  int64   `json:"downloaded"`
-	Progress    float64 `json:"progress"`    // Percentage 0-100
-	Speed       float64 `json:"speed"`       // MB/s
-	Status      string  `json:"status"`      // "queued", "paused", "downloading", "completed", "error"
+	Progress    float64 `json:"progress"` // Percentage 0-100
+	Speed       float64 `json:"speed"`    // MB/s
+	Status      string  `json:"status"`   // "queued", "paused", "downloading", "completed", "error"
 	Error       string  `json:"error,omitempty"`
 	ETA         int64   `json:"eta"`         // Estimated seconds remaining
 	Connections int     `json:"connections"` // Active connections

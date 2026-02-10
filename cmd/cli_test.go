@@ -23,7 +23,7 @@ func TestResolveDownloadID_Remote(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/list" {
-			json.NewEncoder(w).Encode(downloads)
+			_ = json.NewEncoder(w).Encode(downloads)
 			return
 		}
 		http.NotFound(w, r)
@@ -33,7 +33,7 @@ func TestResolveDownloadID_Remote(t *testing.T) {
 	// Extract port
 	_, portStr, _ := net.SplitHostPort(server.Listener.Addr().String())
 	var port int
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
 	// 2. Mock active port file
 
@@ -41,7 +41,9 @@ func TestResolveDownloadID_Remote(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", tempDir)
 	t.Setenv("HOME", tempDir)
 
-	config.EnsureDirs()
+	if err := config.EnsureDirs(); err != nil {
+		t.Fatalf("EnsureDirs failed: %v", err)
+	}
 	state.Configure(filepath.Join(tempDir, "surge.db"))
 	saveActivePort(port)
 	defer removeActivePort()
@@ -76,13 +78,13 @@ func TestLsCmd_Alias(t *testing.T) {
 func TestGetRemoteDownloads(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`[{"id":"123","filename":"foo.bin","status":"downloading"}]`))
+		_, _ = w.Write([]byte(`[{"id":"123","filename":"foo.bin","status":"downloading"}]`))
 	}))
 	defer server.Close()
 
 	_, portStr, _ := net.SplitHostPort(server.Listener.Addr().String())
 	var port int
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
 	downloads, err := GetRemoteDownloads(port)
 	if err != nil {

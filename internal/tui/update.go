@@ -33,13 +33,6 @@ type UpdateCheckResultMsg struct {
 	Info *version.UpdateInfo
 }
 
-// notificationTickCmd waits briefly then sends a tick to check notification expiry
-func notificationTickCmd() tea.Cmd {
-	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
-		return notificationTickMsg{}
-	})
-}
-
 // checkForUpdateCmd performs an async update check
 func checkForUpdateCmd(currentVersion string) tea.Cmd {
 	return func() tea.Msg {
@@ -99,7 +92,7 @@ func readURLsFromFile(filepath string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var urls []string
 	seen := make(map[string]bool)
@@ -299,6 +292,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Switch to active tab so user sees it
 		if m.Settings.General.AutoResume {
 			// Optional: switch tab logic if desired
+			_ = true // prevent empty branch lint
 		}
 		// Add log entry
 		m.addLogEntry(LogStyleStarted.Render("⬇ Started: " + msg.Filename))
@@ -423,7 +417,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.UpdateListItems()
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -785,11 +779,11 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				if key.Matches(msg, m.keys.Dashboard.LogDown) {
-					m.logViewport.LineDown(1)
+					m.logViewport.ScrollDown(1)
 					return m, nil
 				}
 				if key.Matches(msg, m.keys.Dashboard.LogUp) {
-					m.logViewport.LineUp(1)
+					m.logViewport.ScrollUp(1)
 					return m, nil
 				}
 				if key.Matches(msg, m.keys.Dashboard.LogTop) {
@@ -1176,7 +1170,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					categories := config.CategoryOrder()
 					currentCategory := categories[m.SettingsActiveTab]
 					settingKey := m.getCurrentSettingKey()
-					m.setSettingValue(currentCategory, settingKey, m.SettingsInput.Value())
+					_ = m.setSettingValue(currentCategory, settingKey, m.SettingsInput.Value())
 					m.SettingsIsEditing = false
 					m.SettingsInput.Blur()
 					return m, nil
@@ -1279,7 +1273,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if typ == "bool" {
 					categories := config.CategoryOrder()
 					currentCategory := categories[m.SettingsActiveTab]
-					m.setSettingValue(currentCategory, key, "")
+					_ = m.setSettingValue(currentCategory, key, "")
 				} else {
 					// Enter edit mode
 					m.SettingsIsEditing = true

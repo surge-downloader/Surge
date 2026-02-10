@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-
 	"strings"
 
 	"github.com/h2non/filetype"

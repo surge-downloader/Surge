@@ -38,7 +38,7 @@ var serverStartCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, "Error: Surge server is already running.")
 			os.Exit(1)
 		}
-		defer ReleaseLock()
+		defer func() { _ = ReleaseLock() }()
 
 		portFlag, _ := cmd.Flags().GetInt("port")
 		batchFile, _ := cmd.Flags().GetString("batch")
@@ -131,12 +131,12 @@ func init() {
 func savePID() {
 	pid := os.Getpid()
 	pidFile := filepath.Join(config.GetSurgeDir(), "pid")
-	os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", pid)), 0644)
+	_ = os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", pid)), 0o644)
 }
 
 func removePID() {
 	pidFile := filepath.Join(config.GetSurgeDir(), "pid")
-	os.Remove(pidFile)
+	_ = os.Remove(pidFile)
 }
 
 func readPID() int {

@@ -21,7 +21,7 @@ func setupTestDB(t *testing.T) string {
 	// Reset DB singleton
 	dbMu.Lock()
 	if db != nil {
-		db.Close()
+		_ = db.Close()
 		db = nil
 	}
 	configured = false // Reset configured flag
@@ -75,7 +75,7 @@ func TestURLHashUniqueness(t *testing.T) {
 
 func TestSaveLoadState(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	testURL := "https://test.example.com/save-load-test.zip"
@@ -134,7 +134,7 @@ func TestSaveLoadState(t *testing.T) {
 
 func TestDeleteState(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	testURL := "https://test.example.com/delete-test.zip"
@@ -165,16 +165,17 @@ func TestDeleteState(t *testing.T) {
 
 	// Verify it was deleted
 	_, err := LoadState(testURL, testDestPath)
-	if err == nil {
+	switch err {
+	case nil:
 		t.Error("LoadState should fail after DeleteState")
-	} else if err == sql.ErrNoRows {
+	case sql.ErrNoRows:
 		// Acceptable error
 	}
 }
 
 func TestStateOverwrite(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	testURL := "https://test.example.com/overwrite-test.zip"
@@ -225,7 +226,7 @@ func TestStateOverwrite(t *testing.T) {
 
 func TestDuplicateURLStateIsolation(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	testURL := "https://example.com/samefile.zip"
@@ -315,7 +316,7 @@ func TestDuplicateURLStateIsolation(t *testing.T) {
 
 func TestUpdateStatus(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	id := "test-status-id"
@@ -348,7 +349,7 @@ func TestUpdateStatus(t *testing.T) {
 
 func TestUpdateStatus_NotFound(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	err := UpdateStatus("nonexistent-id", "paused")
@@ -363,7 +364,7 @@ func TestUpdateStatus_NotFound(t *testing.T) {
 
 func TestPauseAllDownloads(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	// Add downloads with various statuses
@@ -406,7 +407,7 @@ func TestPauseAllDownloads(t *testing.T) {
 
 func TestResumeAllDownloads(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	// Add paused and other downloads
@@ -449,7 +450,7 @@ func TestResumeAllDownloads(t *testing.T) {
 
 func TestListAllDownloads(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	// Add downloads
@@ -477,7 +478,7 @@ func TestListAllDownloads(t *testing.T) {
 
 func TestListAllDownloads_Empty(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	downloads, err := ListAllDownloads()
@@ -496,7 +497,7 @@ func TestListAllDownloads_Empty(t *testing.T) {
 
 func TestRemoveCompletedDownloads(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	// Add downloads with various statuses
@@ -534,7 +535,7 @@ func TestRemoveCompletedDownloads(t *testing.T) {
 
 func TestMirrorsPersistence(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	testURL := "https://example.com/mirror-test.zip"

@@ -14,10 +14,10 @@ func GetSurgeDir() string {
 			appData = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Roaming")
 		}
 		return filepath.Join(appData, "surge")
-	case "darwin": //MacOS
+	case "darwin": // MacOS
 		home, _ := os.UserHomeDir()
 		return filepath.Join(home, "Library", "Application Support", "surge")
-	default: //Linux
+	default: // Linux
 		configHome := os.Getenv("XDG_CONFIG_HOME")
 		if configHome == "" {
 			home, _ := os.UserHomeDir()
@@ -41,7 +41,7 @@ func GetLogsDir() string {
 func EnsureDirs() error {
 	dirs := []string{GetSurgeDir(), GetStateDir(), GetLogsDir()}
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
 	}

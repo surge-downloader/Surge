@@ -49,7 +49,7 @@ func (d *SingleDownloader) Download(ctx context.Context, rawurl, destPath string
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -65,9 +65,9 @@ func (d *SingleDownloader) Download(ctx context.Context, rawurl, destPath string
 	// Track whether we completed successfully for cleanup
 	success := false
 	defer func() {
-		outFile.Close()
+		_ = outFile.Close()
 		if !success {
-			os.Remove(workingPath)
+			_ = os.Remove(workingPath)
 		}
 	}()
 
@@ -123,7 +123,7 @@ func (d *SingleDownloader) Download(ctx context.Context, rawurl, destPath string
 		if copyErr := copyFile(workingPath, destPath); copyErr != nil {
 			return fmt.Errorf("failed to finalize file: %w", copyErr)
 		}
-		os.Remove(workingPath)
+		_ = os.Remove(workingPath)
 	}
 
 	success = true // Mark successful so defer doesn't clean up
@@ -148,13 +148,13 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	if _, err := io.Copy(out, in); err != nil {
 		return err

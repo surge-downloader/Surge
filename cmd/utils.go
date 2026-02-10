@@ -24,7 +24,7 @@ func readActivePort() int {
 		return 0
 	}
 	var port int
-	fmt.Sscanf(string(data), "%d", &port)
+	_, _ = fmt.Sscanf(string(data), "%d", &port)
 	return port
 }
 
@@ -34,7 +34,7 @@ func readURLsFromFile(filepath string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var urls []string
 	scanner := bufio.NewScanner(file)
@@ -80,7 +80,7 @@ func sendToServer(url string, mirrors []string, outPath string, port int) error 
 	if err != nil {
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		body, _ := io.ReadAll(resp.Body)
@@ -93,7 +93,7 @@ func sendToServer(url string, mirrors []string, outPath string, port int) error 
 	// For now, keep it simple as error/nil.
 
 	var respData map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&respData) // Ignore error? safely
+	_ = json.NewDecoder(resp.Body).Decode(&respData) // Ignore error? safely
 	if id, ok := respData["id"].(string); ok {
 		// Could log debug
 		_ = id
@@ -108,7 +108,7 @@ func GetRemoteDownloads(port int) ([]types.DownloadStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("server returned status: %s", resp.Status)

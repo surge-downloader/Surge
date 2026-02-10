@@ -91,7 +91,7 @@ func CloseDB() {
 	dbMu.Lock()
 	defer dbMu.Unlock()
 	if db != nil {
-		db.Close()
+		_ = db.Close()
 		db = nil
 	}
 }
@@ -129,7 +129,7 @@ func withTx(fn func(*sql.Tx) error) error {
 	}
 
 	if err := fn(tx); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return err
 	}
 

@@ -22,21 +22,21 @@ import (
 	"github.com/surge-downloader/surge/internal/version"
 )
 
-type UIState int //Defines UIState as int to be used in rootModel
+type UIState int // Defines UIState as int to be used in rootModel
 
 const (
-	DashboardState             UIState = iota //DashboardState is 0 increments after each line
-	InputState                                //InputState is 1
-	DetailState                               //DetailState is 2
-	FilePickerState                           //FilePickerState is 3
-	HistoryState                              //HistoryState is 4
-	DuplicateWarningState                     //DuplicateWarningState is 5
-	SearchState                               //SearchState is 6
-	SettingsState                             //SettingsState is 7
-	ExtensionConfirmationState                //ExtensionConfirmationState is 8
-	BatchFilePickerState                      //BatchFilePickerState is 9
-	BatchConfirmState                         //BatchConfirmState is 10
-	UpdateAvailableState                      //UpdateAvailableState is 11
+	DashboardState             UIState = iota // DashboardState is 0 increments after each line
+	InputState                                // InputState is 1
+	DetailState                               // DetailState is 2
+	FilePickerState                           // FilePickerState is 3
+	HistoryState                              // HistoryState is 4
+	DuplicateWarningState                     // DuplicateWarningState is 5
+	SearchState                               // SearchState is 6
+	SettingsState                             // SettingsState is 7
+	ExtensionConfirmationState                // ExtensionConfirmationState is 8
+	BatchFilePickerState                      // BatchFilePickerState is 9
+	BatchConfirmState                         // BatchConfirmState is 10
+	UpdateAvailableState                      // UpdateAvailableState is 11
 )
 
 const (
@@ -89,7 +89,7 @@ type RootModel struct {
 	// Bubbles list component for download listing
 	list list.Model
 
-	Pool *download.WorkerPool //Works as the download queue
+	Pool *download.WorkerPool // Works as the download queue
 	PWD  string
 
 	// History view
@@ -425,13 +425,6 @@ func (m RootModel) getFilteredDownloads() []*DownloadModel {
 		filtered = append(filtered, d)
 	}
 	return filtered
-}
-
-// resetFilepicker resets the filepicker to default directory-only mode
-func (m *RootModel) resetFilepicker() {
-	m.filepicker.FileAllowed = false
-	m.filepicker.DirAllowed = true
-	m.filepicker.AllowedTypes = nil
 }
 
 // newFilepicker creates a fresh filepicker instance with consistent settings.

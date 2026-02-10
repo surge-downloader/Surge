@@ -12,7 +12,7 @@ func TestUniqueFilePath_Preservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Scenario 1: "file (1).txt" comes in, and DOES NOT exist.
 	// Expected: Return "file (1).txt" as is.
@@ -24,7 +24,7 @@ func TestUniqueFilePath_Preservation(t *testing.T) {
 
 	// Scenario 2: "file (1).txt" comes in, and DOES exist.
 	// Expected: Return "file (2).txt" (incrementing the counter).
-	if err := os.WriteFile(inputFile, []byte("content"), 0644); err != nil {
+	if err := os.WriteFile(inputFile, []byte("content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -36,7 +36,7 @@ func TestUniqueFilePath_Preservation(t *testing.T) {
 
 	// Scenario 3: "file (2).txt" ALSO exists.
 	// Expected: Return "file (3).txt".
-	if err := os.WriteFile(expectedFile2, []byte("content"), 0644); err != nil {
+	if err := os.WriteFile(expectedFile2, []byte("content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -53,18 +53,18 @@ func TestUniqueFilePath_WhitespaceParsing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// file with trailing space "file (1) .txt" caused issues before
 	baseFile := filepath.Join(tmpDir, "file (1).txt")
-	if err := os.WriteFile(baseFile, []byte("content"), 0644); err != nil {
+	if err := os.WriteFile(baseFile, []byte("content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// If we ask for "file (1).txt", we get "file (2).txt" (Normal)
 	// If we ask for "file (1) .txt" (note space), and that file exists...
 	spaceFile := filepath.Join(tmpDir, "file (1) .txt")
-	if err := os.WriteFile(spaceFile, []byte("content"), 0644); err != nil {
+	if err := os.WriteFile(spaceFile, []byte("content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

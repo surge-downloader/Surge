@@ -32,7 +32,7 @@ func TestFindAvailablePort_Success(t *testing.T) {
 	if ln == nil {
 		t.Fatal("findAvailablePort returned nil listener")
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	if port < 50000 || port >= 50100 {
 		t.Errorf("Port %d is outside expected range [50000-50100)", port)
@@ -50,7 +50,7 @@ func TestFindAvailablePort_ReturnsListener(t *testing.T) {
 	if ln == nil {
 		t.Fatal("Expected non-nil listener")
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	// Verify listener is usable
 	addr := ln.Addr().(*net.TCPAddr)
@@ -65,14 +65,14 @@ func TestFindAvailablePort_SkipsOccupiedPorts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to occupy port: %v", err)
 	}
-	defer ln1.Close()
+	defer func() { _ = ln1.Close() }()
 
 	// findAvailablePort should skip 52000 and find another
 	port, ln2 := findAvailablePort(52000)
 	if ln2 == nil {
 		t.Fatal("findAvailablePort returned nil listener")
 	}
-	defer ln2.Close()
+	defer func() { _ = ln2.Close() }()
 
 	if port == 52000 {
 		t.Error("Should have skipped occupied port 52000")
@@ -426,7 +426,7 @@ func TestHealthEndpoint(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "ok",
 			"port":   8080,
 		})
@@ -439,7 +439,7 @@ func TestHealthEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get health: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected 200, got %d", resp.StatusCode)
@@ -480,7 +480,7 @@ func TestSendToServer_Success(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "queued"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "queued"})
 	}))
 	defer server.Close()
 
@@ -509,7 +509,7 @@ func TestAddCmd_Flags(t *testing.T) {
 	// Verify flags exist
 	outputFlag := addCmd.Flags().Lookup("output")
 	if outputFlag == nil {
-		t.Error("Missing 'output' flag")
+		t.Fatal("Missing 'output' flag")
 	}
 	if outputFlag.Shorthand != "o" {
 		t.Errorf("Expected shorthand 'o', got %q", outputFlag.Shorthand)
@@ -517,7 +517,7 @@ func TestAddCmd_Flags(t *testing.T) {
 
 	batchFlag := addCmd.Flags().Lookup("batch")
 	if batchFlag == nil {
-		t.Error("Missing 'batch' flag")
+		t.Fatal("Missing 'batch' flag")
 	}
 	if batchFlag.Shorthand != "b" {
 		t.Errorf("Expected shorthand 'b', got %q", batchFlag.Shorthand)
@@ -567,7 +567,7 @@ func TestStartHTTPServer_HealthEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get health: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected 200, got %d", resp.StatusCode)
@@ -600,7 +600,7 @@ func TestStartHTTPServer_HasCORSHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.Header.Get("Access-Control-Allow-Origin") != "*" {
 		t.Error("CORS headers should be set for extension support")
@@ -622,7 +622,7 @@ func TestStartHTTPServer_OptionsRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// OPTIONS preflight should return 200 (handled by CORS middleware)
 	if resp.StatusCode != http.StatusOK {
@@ -646,7 +646,7 @@ func TestStartHTTPServer_DownloadEndpoint_MethodNotAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("Expected 405, got %d", resp.StatusCode)
@@ -672,7 +672,7 @@ func TestStartHTTPServer_DownloadEndpoint_BadRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("Expected 400, got %d", resp.StatusCode)
@@ -698,7 +698,7 @@ func TestStartHTTPServer_DownloadEndpoint_MissingURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("Expected 400, got %d", resp.StatusCode)
@@ -719,7 +719,7 @@ func TestStartHTTPServer_NotFoundEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// ServeMux returns 404 for unknown paths
 	if resp.StatusCode != http.StatusNotFound {
@@ -842,7 +842,7 @@ func TestPortFileLifecycle(t *testing.T) {
 	// Verify no port file initially
 	if _, err := os.Stat(portFile); !os.IsNotExist(err) {
 		t.Log("Port file already exists, removing")
-		os.Remove(portFile)
+		_ = os.Remove(portFile)
 	}
 
 	// Save
@@ -874,7 +874,7 @@ func TestFindAvailablePort_MultipleSequential(t *testing.T) {
 	var listeners []net.Listener
 	defer func() {
 		for _, ln := range listeners {
-			ln.Close()
+			_ = ln.Close()
 		}
 	}()
 
@@ -905,7 +905,7 @@ func TestFindAvailablePort_HighPort(t *testing.T) {
 	if ln == nil {
 		t.Fatal("Failed to find high port")
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	if port < 60000 {
 		t.Errorf("Expected port >= 60000, got %d", port)

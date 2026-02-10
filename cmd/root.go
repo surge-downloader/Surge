@@ -60,7 +60,6 @@ var rootCmd = &cobra.Command{
 		GlobalPool = download.NewWorkerPool(GlobalProgressCh, settings.Connections.MaxConcurrentDownloads)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-
 		initializeGlobalState()
 
 		// Attempt to acquire lock
@@ -75,7 +74,7 @@ var rootCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, "Use 'surge add <url>' to add a download to the active instance.")
 			os.Exit(1)
 		}
-		defer ReleaseLock()
+		defer func() { _ = ReleaseLock() }()
 
 		portFlag, _ := cmd.Flags().GetInt("port")
 		batchFile, _ := cmd.Flags().GetString("batch")
@@ -246,14 +245,14 @@ func findAvailablePort(start int) (int, net.Listener) {
 // saveActivePort writes the active port to ~/.surge/port for extension discovery
 func saveActivePort(port int) {
 	portFile := filepath.Join(config.GetSurgeDir(), "port")
-	os.WriteFile(portFile, []byte(fmt.Sprintf("%d", port)), 0644)
+	_ = os.WriteFile(portFile, []byte(fmt.Sprintf("%d", port)), 0o644)
 	utils.Debug("HTTP server listening on port %d", port)
 }
 
 // removeActivePort cleans up the port file on exit
 func removeActivePort() {
 	portFile := filepath.Join(config.GetSurgeDir(), "port")
-	os.Remove(portFile)
+	_ = os.Remove(portFile)
 }
 
 // startHTTPServer starts the HTTP server using an existing listener
@@ -263,7 +262,7 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "ok",
 			"port":   port,
 		})
@@ -294,7 +293,7 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		// Try to pause active download
 		if GlobalPool.Pause(id) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id})
 			return
 		}
 
@@ -304,7 +303,7 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		if err == nil && entry != nil {
 			// It exists, so we consider it "paused" (or at least stopped)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id, "message": "Download already stopped"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id, "message": "Download already stopped"})
 			return
 		}
 
@@ -331,7 +330,7 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		// Try to resume if active/paused in memory
 		if GlobalPool.Resume(id) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id})
 			return
 		}
 
@@ -344,7 +343,7 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 
 		if entry.Status == "completed" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "completed", "id": id, "message": "Download already completed"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "completed", "id": id, "message": "Download already completed"})
 			return
 		}
 
@@ -413,7 +412,7 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		atomic.AddInt32(&activeDownloads, 1)
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id, "message": "Download cold-resumed"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id, "message": "Download cold-resumed"})
 	})
 
 	// Delete endpoint
@@ -434,7 +433,7 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 				utils.Debug("Failed to remove from DB: %v", err)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id})
 		} else {
 			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
 		}
@@ -528,7 +527,7 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(statuses)
+		_ = json.NewEncoder(w).Encode(statuses)
 	})
 
 	server := &http.Server{Handler: corsMiddleware(mux)}
@@ -580,7 +579,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		if GlobalPool != nil {
 			status := GlobalPool.GetStatus(id)
 			if status != nil {
-				json.NewEncoder(w).Encode(status)
+				_ = json.NewEncoder(w).Encode(status)
 				return
 			}
 		}
@@ -613,7 +612,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 				Speed:      speed,
 				Status:     entry.Status,
 			}
-			json.NewEncoder(w).Encode(status)
+			_ = json.NewEncoder(w).Encode(status)
 			return
 		}
 
@@ -638,7 +637,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	if req.URL == "" {
 		http.Error(w, "URL is required", http.StatusBadRequest)
@@ -677,16 +676,16 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 			baseDir = "."
 		}
 		outPath = filepath.Join(baseDir, req.Path)
-		_ = os.MkdirAll(outPath, 0755)
+		_ = os.MkdirAll(outPath, 0o755)
 
 	} else if outPath == "" {
 		if defaultOutputDir != "" {
 			outPath = defaultOutputDir
-			_ = os.MkdirAll(outPath, 0755)
+			_ = os.MkdirAll(outPath, 0o755)
 		} else {
 			if settings.General.DefaultDownloadDir != "" {
 				outPath = settings.General.DefaultDownloadDir
-				_ = os.MkdirAll(outPath, 0755)
+				_ = os.MkdirAll(outPath, 0o755)
 			} else {
 				outPath = "."
 			}
@@ -745,7 +744,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 				w.Header().Set("Content-Type", "application/json")
 				// Return 202 Accepted to indicate it's pending approval
 				w.WriteHeader(http.StatusAccepted)
-				json.NewEncoder(w).Encode(map[string]string{
+				_ = json.NewEncoder(w).Encode(map[string]string{
 					"status":  "pending_approval",
 					"message": "Download request sent to TUI for confirmation",
 					"id":      downloadID, // ID might change if user modifies it, but useful for tracking
@@ -756,7 +755,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 				if settings.General.ExtensionPrompt || (settings.General.WarnOnDuplicate && isDuplicate) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusConflict)
-					json.NewEncoder(w).Encode(map[string]string{
+					_ = json.NewEncoder(w).Encode(map[string]string{
 						"status":  "error",
 						"message": "Download rejected: Duplicate download or approval required (Headless mode)",
 					})
@@ -794,7 +793,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	atomic.AddInt32(&activeDownloads, 1)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status":  "queued",
 		"message": "Download queued successfully",
 		"id":      downloadID,
@@ -851,7 +850,7 @@ func processDownloads(urls []string, outputDir string, port int) int {
 		if outPath == "" {
 			if settings.General.DefaultDownloadDir != "" {
 				outPath = settings.General.DefaultDownloadDir
-				_ = os.MkdirAll(outPath, 0755)
+				_ = os.MkdirAll(outPath, 0o755)
 			} else {
 				outPath = "."
 			}
@@ -908,8 +907,8 @@ func initializeGlobalState() {
 	logsDir := config.GetLogsDir()
 
 	// Ensure directories exist
-	os.MkdirAll(stateDir, 0755)
-	os.MkdirAll(logsDir, 0755)
+	_ = os.MkdirAll(stateDir, 0o755)
+	_ = os.MkdirAll(logsDir, 0o755)
 
 	// Config engine state
 	state.Configure(filepath.Join(stateDir, "surge.db"))
@@ -919,7 +918,7 @@ func initializeGlobalState() {
 
 	// Clean up old logs
 	settings, err := config.LoadSettings()
-	retention := 5 // default fallback
+	var retention int
 	if err == nil {
 		retention = settings.General.LogRetentionCount
 	} else {
@@ -947,7 +946,6 @@ func convertRuntimeConfig(rc *config.RuntimeConfig) *types.RuntimeConfig {
 }
 
 func resumePausedDownloads() {
-
 	settings, err := config.LoadSettings()
 	if err != nil {
 		return // Can't check preference

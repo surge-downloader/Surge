@@ -19,22 +19,22 @@ func TestAutoResume_Enabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Override config home
 	originalXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	_ = os.Setenv("XDG_CONFIG_HOME", tmpDir)
 	defer func() {
 		if originalXDG == "" {
-			os.Unsetenv("XDG_CONFIG_HOME")
+			_ = os.Unsetenv("XDG_CONFIG_HOME")
 		} else {
-			os.Setenv("XDG_CONFIG_HOME", originalXDG)
+			_ = os.Setenv("XDG_CONFIG_HOME", originalXDG)
 		}
 	}()
 
 	// config.GetSurgeDir() will now be under tmpDir/surge
 	surgeDir := config.GetSurgeDir()
-	if err := os.MkdirAll(surgeDir, 0755); err != nil {
+	if err := os.MkdirAll(surgeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -45,14 +45,14 @@ func TestAutoResume_Enabled(t *testing.T) {
 	settings.General.DefaultDownloadDir = tmpDir
 
 	data, _ := json.Marshal(settings)
-	if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// 3. Configure State DB
 	state.CloseDB() // Ensure clean state
 	dbPath := filepath.Join(surgeDir, "state", "surge.db")
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	state.Configure(dbPath)
@@ -104,20 +104,20 @@ func TestAutoResume_Disabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	originalXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	_ = os.Setenv("XDG_CONFIG_HOME", tmpDir)
 	defer func() {
 		if originalXDG == "" {
-			os.Unsetenv("XDG_CONFIG_HOME")
+			_ = os.Unsetenv("XDG_CONFIG_HOME")
 		} else {
-			os.Setenv("XDG_CONFIG_HOME", originalXDG)
+			_ = os.Setenv("XDG_CONFIG_HOME", originalXDG)
 		}
 	}()
 
 	surgeDir := config.GetSurgeDir()
-	if err := os.MkdirAll(surgeDir, 0755); err != nil {
+	if err := os.MkdirAll(surgeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -127,14 +127,14 @@ func TestAutoResume_Disabled(t *testing.T) {
 	settings.General.AutoResume = false
 
 	data, _ := json.Marshal(settings)
-	if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// 3. Configure State DB
 	state.CloseDB() // Ensure clean state
 	dbPath := filepath.Join(surgeDir, "state", "surge.db")
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	state.Configure(dbPath)

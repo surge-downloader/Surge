@@ -45,7 +45,7 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 			if attempt > 0 {
 
 				if len(mirrors) == 1 {
-					time.Sleep(time.Duration(1<<attempt) * types.RetryBaseDelay) //Exponential backoff incase of failure
+					time.Sleep(time.Duration(1<<attempt) * types.RetryBaseDelay) // Exponential backoff incase of failure
 				}
 
 				// FAILOVER: Switch mirror on retry
@@ -142,6 +142,7 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 				if current < task.Offset+task.Length && current >= stopAt {
 					// We were stopped early this is expected success for the partial work
 					// The stolen part is already in the queue
+					utils.Debug("Worker stopped early due to stealing")
 				}
 				break
 			}
@@ -197,7 +198,7 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Handle rate limiting explicitly
 	if resp.StatusCode == http.StatusTooManyRequests {
@@ -360,7 +361,7 @@ func (d *ConcurrentDownloader) StealWork(queue *TaskQueue) bool {
 	d.activeMu.Lock()
 	defer d.activeMu.Unlock()
 
-	var bestID int = -1
+	bestID := -1
 	var maxRemaining int64 = 0
 	var bestActive *ActiveTask
 
@@ -405,6 +406,7 @@ func (d *ConcurrentDownloader) StealWork(queue *TaskQueue) bool {
 	// Double check: ensure we didn't race and lose the chunk
 	currentStopAt := atomic.LoadInt64(&active.StopAt)
 	if stolenStart >= currentStopAt && currentStopAt != newStopAt {
+		utils.Debug("StealWork race detected: stolenStart >= currentStopAt")
 	}
 
 	originalEnd := current + remaining

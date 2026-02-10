@@ -56,7 +56,6 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 				chunk_bitmap=excluded.chunk_bitmap,
 				actual_chunk_size=excluded.actual_chunk_size
 		`, state.ID, state.URL, state.DestPath, state.Filename, "paused", state.TotalSize, state.Downloaded, state.URLHash, state.CreatedAt, state.PausedAt, state.Elapsed/1e6, strings.Join(state.Mirrors, ","), state.ChunkBitmap, state.ActualChunkSize)
-
 		if err != nil {
 			return fmt.Errorf("failed to upsert download: %w", err)
 		}
@@ -72,7 +71,7 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 		if err != nil {
 			return err
 		}
-		defer stmt.Close()
+		defer func() { _ = stmt.Close() }()
 
 		for _, task := range state.Tasks {
 			if _, err := stmt.Exec(state.ID, task.Offset, task.Length); err != nil {
@@ -142,7 +141,7 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var t types.Task
@@ -210,7 +209,7 @@ func LoadMasterList() (*types.MasterList, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query downloads: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var list types.MasterList
 	for rows.Next() {
@@ -296,7 +295,6 @@ func RemoveFromMasterList(id string) error {
 
 // GetDownload returns a single download by ID
 func GetDownload(id string) (*types.DownloadEntry, error) {
-
 	db := getDBHelper()
 	if db == nil {
 		return nil, fmt.Errorf("database not initialized")

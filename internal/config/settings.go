@@ -17,15 +17,15 @@ type Settings struct {
 
 // GeneralSettings contains application behavior settings.
 type GeneralSettings struct {
-	DefaultDownloadDir     string `json:"default_download_dir"`
-	WarnOnDuplicate        bool   `json:"warn_on_duplicate"`
-	ExtensionPrompt        bool   `json:"extension_prompt"`
-	AutoResume             bool   `json:"auto_resume"`
-	SkipUpdateCheck        bool   `json:"skip_update_check"`
+	DefaultDownloadDir string `json:"default_download_dir"`
+	WarnOnDuplicate    bool   `json:"warn_on_duplicate"`
+	ExtensionPrompt    bool   `json:"extension_prompt"`
+	AutoResume         bool   `json:"auto_resume"`
+	SkipUpdateCheck    bool   `json:"skip_update_check"`
 
-	ClipboardMonitor       bool   `json:"clipboard_monitor"`
-	Theme                  int    `json:"theme"`
-	LogRetentionCount      int    `json:"log_retention_count"`
+	ClipboardMonitor  bool `json:"clipboard_monitor"`
+	Theme             int  `json:"theme"`
+	LogRetentionCount int  `json:"log_retention_count"`
 }
 
 const (
@@ -36,12 +36,12 @@ const (
 
 // ConnectionSettings contains network connection parameters.
 type ConnectionSettings struct {
-	MaxConnectionsPerHost int    `json:"max_connections_per_host"`
+	MaxConnectionsPerHost  int    `json:"max_connections_per_host"`
 	MaxGlobalConnections   int    `json:"max_global_connections"`
 	MaxConcurrentDownloads int    `json:"max_concurrent_downloads"`
-	UserAgent             string `json:"user_agent"`
-	ProxyURL              string `json:"proxy_url"`
-	SequentialDownload    bool   `json:"sequential_download"`
+	UserAgent              string `json:"user_agent"`
+	ProxyURL               string `json:"proxy_url"`
+	SequentialDownload     bool   `json:"sequential_download"`
 }
 
 // ChunkSettings contains download chunk configuration.
@@ -114,9 +114,9 @@ const (
 // DefaultSettings returns a new Settings instance with sensible defaults.
 func DefaultSettings() *Settings {
 	homeDir, _ := os.UserHomeDir()
-	
+
 	defaultDir := ""
-	
+
 	// Check XDG_DOWNLOAD_DIR
 	if xdgDir := os.Getenv("XDG_DOWNLOAD_DIR"); xdgDir != "" {
 		if info, err := os.Stat(xdgDir); err == nil && info.IsDir() {
@@ -134,21 +134,21 @@ func DefaultSettings() *Settings {
 
 	return &Settings{
 		General: GeneralSettings{
-			DefaultDownloadDir:     defaultDir,
-			WarnOnDuplicate:        true,
-			ExtensionPrompt:        false,
-			AutoResume:             false,
+			DefaultDownloadDir: defaultDir,
+			WarnOnDuplicate:    true,
+			ExtensionPrompt:    false,
+			AutoResume:         false,
 
-			ClipboardMonitor:       true,
-			Theme:                  ThemeAdaptive,
-			LogRetentionCount:      5,
+			ClipboardMonitor:  true,
+			Theme:             ThemeAdaptive,
+			LogRetentionCount: 5,
 		},
 		Connections: ConnectionSettings{
-			MaxConnectionsPerHost: 32,
+			MaxConnectionsPerHost:  32,
 			MaxGlobalConnections:   100,
 			MaxConcurrentDownloads: 3,
-			UserAgent:             "", // Empty means use default UA
-			SequentialDownload:    false,
+			UserAgent:              "", // Empty means use default UA
+			SequentialDownload:     false,
 		},
 		Chunks: ChunkSettings{
 			MinChunkSize:     2 * MB,
@@ -195,7 +195,7 @@ func SaveSettings(s *Settings) error {
 	path := GetSettingsPath()
 
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 
@@ -206,7 +206,7 @@ func SaveSettings(s *Settings) error {
 
 	// Atomic write: write to temp file, then rename
 	tempPath := path + ".tmp"
-	if err := os.WriteFile(tempPath, data, 0644); err != nil {
+	if err := os.WriteFile(tempPath, data, 0o644); err != nil {
 		return err
 	}
 

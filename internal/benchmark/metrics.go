@@ -144,7 +144,6 @@ func formatFloat(f float64, decimals int) string {
 	rounded := math.Round(f*pow) / pow
 	format := "%." + formatInt(decimals) + "f"
 	return sprintf(format, rounded)
-
 }
 
 func formatInt(i int) string {

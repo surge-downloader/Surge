@@ -19,7 +19,7 @@ func TestServer_Startup_HandlesResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	setupTestEnv(t, tmpDir)
 
@@ -53,28 +53,30 @@ func TestServer_Startup_HandlesResume(t *testing.T) {
 // Helper: Setup XDG_CONFIG_HOME and Settings
 func setupTestEnv(t *testing.T, tmpDir string) {
 	originalXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	_ = os.Setenv("XDG_CONFIG_HOME", tmpDir)
 	t.Cleanup(func() {
 		if originalXDG == "" {
-			os.Unsetenv("XDG_CONFIG_HOME")
+			_ = os.Unsetenv("XDG_CONFIG_HOME")
 		} else {
-			os.Setenv("XDG_CONFIG_HOME", originalXDG)
+			_ = os.Setenv("XDG_CONFIG_HOME", originalXDG)
 		}
 	})
 
 	surgeDir := config.GetSurgeDir()
-	if err := os.MkdirAll(surgeDir, 0755); err != nil {
+	if err := os.MkdirAll(surgeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	// Setup Settings (AutoResume=false default)
 	settings := config.DefaultSettings()
 	settings.General.AutoResume = false // Ensure we test that "queued" overrides this
-	config.SaveSettings(settings)
+	if err := config.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
 
 	// Configure DB
 	dbPath := filepath.Join(surgeDir, "state", "surge.db")
-	_ = os.MkdirAll(filepath.Dir(dbPath), 0755)
+	_ = os.MkdirAll(filepath.Dir(dbPath), 0o755)
 	state.CloseDB()
 	state.Configure(dbPath)
 }

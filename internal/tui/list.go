@@ -142,7 +142,7 @@ func (d downloadDelegate) Render(w io.Writer, m list.Model, index int, listItem 
 	line1 := prefix + titleStyle.Render(title)
 	line2 := prefix + descStyle.Render(i.Description())
 
-	fmt.Fprintf(w, "%s\n%s", line1, line2)
+	_, _ = fmt.Fprintf(w, "%s\n%s", line1, line2)
 }
 
 // ShortHelp returns keybindings to show in the mini help view
@@ -239,7 +239,7 @@ func (m *RootModel) UpdateListItems() {
 			// Find the download globally
 			for _, d := range m.downloads {
 				if d.ID == targetID {
-					newTab := -1
+					var newTab int
 					if d.done {
 						newTab = TabDone
 					} else if d.Speed > 0 {

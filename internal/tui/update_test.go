@@ -17,12 +17,12 @@ func TestGenerateUniqueFilename(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Helper to create a dummy file
 	createFile := func(name string) {
 		path := filepath.Join(tmpDir, name)
-		if err := os.WriteFile(path, []byte("test"), 0644); err != nil {
+		if err := os.WriteFile(path, []byte("test"), 0o644); err != nil {
 			t.Fatalf("Failed to create file %s: %v", path, err)
 		}
 	}
@@ -125,7 +125,7 @@ func TestGenerateUniqueFilename(t *testing.T) {
 			// Cleanup after test case
 			defer func() {
 				for _, f := range tt.existingFiles {
-					os.Remove(filepath.Join(tmpDir, f))
+					_ = os.Remove(filepath.Join(tmpDir, f))
 				}
 			}()
 

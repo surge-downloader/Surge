@@ -14,7 +14,7 @@ import (
 func TestStartDownload_EnforcesAbsolutePath(t *testing.T) {
 	// wd, _ := os.Getwd()
 	tmpDir, _ := os.MkdirTemp("", "surge-test")
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	ch := make(chan any, 10)
 	pool := download.NewWorkerPool(ch, 1)

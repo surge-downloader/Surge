@@ -47,7 +47,7 @@ func TestCLI_NewEndpoints(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to request pause: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected 200 OK, got %d", resp.StatusCode)
@@ -67,7 +67,7 @@ func TestCLI_NewEndpoints(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to request resume: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected 200 OK, got %d", resp.StatusCode)
@@ -87,7 +87,7 @@ func TestCLI_NewEndpoints(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to request delete: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("Expected 200 OK, got %d", resp.StatusCode)
@@ -107,7 +107,7 @@ func TestCLI_NewEndpoints(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed request: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("Expected 400 Bad Request for missing ID, got %d", resp.StatusCode)

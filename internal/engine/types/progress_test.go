@@ -169,6 +169,7 @@ func TestProgressState_AtomicOperations(t *testing.T) {
 		t.Errorf("Downloaded = %d, want 1000 after 10 concurrent adds of 100", ps.Downloaded.Load())
 	}
 }
+
 func TestProgressState_ElapsedCalculation(t *testing.T) {
 	ps := NewProgressState("test-elapsed", 100)
 

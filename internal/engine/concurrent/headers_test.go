@@ -55,7 +55,7 @@ func TestConcurrentDownloader_CustomHeaders(t *testing.T) {
 
 		// Write file content (zeros)
 		data := make([]byte, fileSize)
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer server.Close()
 
@@ -128,7 +128,7 @@ func TestConcurrentDownloader_DefaultUserAgent(t *testing.T) {
 			w.WriteHeader(http.StatusPartialContent)
 		}
 		data := make([]byte, fileSize)
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer server.Close()
 
@@ -187,7 +187,7 @@ func TestConcurrentDownloader_RangeHeaderNotOverridden(t *testing.T) {
 			w.WriteHeader(http.StatusPartialContent)
 		}
 		data := make([]byte, fileSize)
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer server.Close()
 
@@ -251,7 +251,7 @@ func TestConcurrentDownloader_HeadersForwardedOnRedirect(t *testing.T) {
 			w.WriteHeader(http.StatusPartialContent)
 		}
 		data := make([]byte, fileSize)
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 	defer finalServer.Close()
 

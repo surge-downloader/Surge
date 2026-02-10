@@ -369,7 +369,6 @@ func TestSingleDownloader_Download_ProgressTracking(t *testing.T) {
 	defer cancel()
 
 	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "progress.bin", false)
-
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}

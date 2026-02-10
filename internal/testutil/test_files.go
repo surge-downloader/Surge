@@ -14,7 +14,7 @@ func TempDir(prefix string) (string, func(), error) {
 	}
 
 	cleanup := func() {
-		os.RemoveAll(dir)
+		_ = os.RemoveAll(dir)
 	}
 
 	return dir, cleanup, nil
@@ -29,7 +29,7 @@ func CreateTestFile(dir, name string, size int64, random bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if random {
 		// Write in chunks for large files
@@ -41,7 +41,7 @@ func CreateTestFile(dir, name string, size int64, random bool) (string, error) {
 			if remaining < chunkSize {
 				chunk = make([]byte, remaining)
 			}
-			rand.Read(chunk)
+			_, _ = rand.Read(chunk)
 			n, err := f.Write(chunk)
 			if err != nil {
 				return "", err
@@ -66,7 +66,7 @@ func CreateSurgeFile(dir, name string, totalSize, downloadedSize int64) (string,
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Pre-allocate full size
 	if err := f.Truncate(totalSize); err != nil {
@@ -155,7 +155,7 @@ func ReadFileChunk(path string, offset, length int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	data := make([]byte, length)
 	_, err = f.ReadAt(data, offset)

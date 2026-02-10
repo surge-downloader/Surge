@@ -22,13 +22,13 @@ func TestResume_RespectsOriginalPath_WhenDefaultChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Create two distinct "default" directories
 	dirA := filepath.Join(tmpDir, "DirA")
 	dirB := filepath.Join(tmpDir, "DirB")
-	os.MkdirAll(dirA, 0755)
-	os.MkdirAll(dirB, 0755)
+	_ = os.MkdirAll(dirA, 0o755)
+	_ = os.MkdirAll(dirB, 0o755)
 
 	// Setup a temporary DB for state
 	state.CloseDB()
@@ -53,8 +53,10 @@ func TestResume_RespectsOriginalPath_WhenDefaultChanges(t *testing.T) {
 	// 3. Start a download (simulating "surge get <url>" or TUI add)
 	// Change CWD to DirA to simulate "running from DirA"
 	originalWd, _ := os.Getwd()
-	os.Chdir(dirA)
-	defer os.Chdir(originalWd)
+	if err := os.Chdir(dirA); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(originalWd) }()
 
 	testURL := "http://example.com/file.zip"
 	testFilename := "file.zip"
@@ -99,7 +101,9 @@ func TestResume_RespectsOriginalPath_WhenDefaultChanges(t *testing.T) {
 
 	// 6. Change Settings (Default Dir = DirB) and CWD
 	settings.General.DefaultDownloadDir = dirB
-	os.Chdir(dirB)
+	if err := os.Chdir(dirB); err != nil {
+		t.Fatal(err)
+	}
 
 	// 7. Simulate Resume logic
 	paused, err := state.LoadPausedDownloads()

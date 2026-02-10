@@ -11,7 +11,7 @@ import (
 func TestDBLifecycle(t *testing.T) {
 	// Setup isolated environment
 	tempDir := setupTestDB(t)
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 	defer CloseDB()
 
 	// Test GetDB (should be initialized by setupTestDB)
@@ -55,7 +55,7 @@ func TestDBLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.Exec("SELECT * FROM downloads LIMIT 1")
 	if err != nil {
@@ -69,7 +69,7 @@ func TestDBLifecycle(t *testing.T) {
 
 func TestWithTx_Commit(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	err := withTx(func(tx *sql.Tx) error {
@@ -94,12 +94,14 @@ func TestWithTx_Commit(t *testing.T) {
 
 func TestWithTx_Rollback(t *testing.T) {
 	tmpDir := setupTestDB(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	defer CloseDB()
 
 	// Ensure DB is clean
 	d, _ := GetDB()
-	d.Exec("DELETE FROM downloads")
+	if _, err := d.Exec("DELETE FROM downloads"); err != nil {
+		t.Fatal(err)
+	}
 
 	expectedErr := fmt.Errorf("intentional error")
 	err := withTx(func(tx *sql.Tx) error {
@@ -132,12 +134,12 @@ func TestInitDB_createsDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Ensure pure state
 	dbMu.Lock()
 	if db != nil {
-		db.Close()
+		_ = db.Close()
 		db = nil
 	}
 	configured = false
@@ -152,7 +154,7 @@ func TestInitDB_createsDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetDB failed: %v", err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	// Check if database file exists
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {

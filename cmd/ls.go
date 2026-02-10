@@ -119,8 +119,8 @@ func printDownloads(jsonOutput bool) {
 
 	// Table output
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tFILENAME\tSTATUS\tPROGRESS\tSPEED\tSIZE")
-	fmt.Fprintln(w, "--\t--------\t------\t--------\t-----\t----")
+	_, _ = fmt.Fprintln(w, "ID\tFILENAME\tSTATUS\tPROGRESS\tSPEED\tSIZE")
+	_, _ = fmt.Fprintln(w, "--\t--------\t------\t--------\t-----\t----")
 
 	for _, d := range downloads {
 		progress := fmt.Sprintf("%.1f%%", d.Progress)
@@ -146,9 +146,9 @@ func printDownloads(jsonOutput bool) {
 			filename = filename[:22] + "..."
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", id, filename, d.Status, progress, speed, size)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", id, filename, d.Status, progress, speed, size)
 	}
-	w.Flush()
+	_ = w.Flush()
 }
 
 func formatSize(bytes int64) string {
@@ -180,7 +180,7 @@ func showDownloadDetails(partialID string, jsonOutput bool) {
 	if port > 0 {
 		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/download?id=%s", port, fullID))
 		if err == nil {
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode == http.StatusOK {
 				var status types.DownloadStatus
 				if json.NewDecoder(resp.Body).Decode(&status) == nil {

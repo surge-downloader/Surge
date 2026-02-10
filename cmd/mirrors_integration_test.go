@@ -36,14 +36,14 @@ func TestMirrors_CLI_Integration(t *testing.T) {
 
 		receivedRequest <- req
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, `{"status":"queued"}`)
+		_, _ = fmt.Fprintln(w, `{"status":"queued"}`)
 	}))
 	defer server.Close()
 
 	// Extract port from the mock server URL
 	_, portStr, _ := net.SplitHostPort(server.Listener.Addr().String())
 	var port int
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
 	// 2. Call processDownloads with a URL containing mirrors
 	primaryURL := "http://example.com/file.zip"

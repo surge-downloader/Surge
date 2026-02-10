@@ -296,13 +296,14 @@ func (m *RootModel) setGeneralSetting(key, value, typ string) error {
 	case "theme":
 		var theme int
 		valLower := strings.ToLower(value)
-		if valLower == "system" || valLower == "adaptive" || valLower == "0" {
+		switch valLower {
+		case "system", "adaptive", "0":
 			theme = config.ThemeAdaptive
-		} else if valLower == "light" || valLower == "1" {
+		case "light", "1":
 			theme = config.ThemeLight
-		} else if valLower == "dark" || valLower == "2" {
+		case "dark", "2":
 			theme = config.ThemeDark
-		} else {
+		default:
 			// Try parsing as int fallback
 			if v, err := strconv.Atoi(value); err == nil {
 				if v >= 0 && v <= 2 {

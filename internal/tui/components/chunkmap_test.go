@@ -181,7 +181,7 @@ func TestChunkMap_GranularProgress(t *testing.T) {
 
 	// Width 20 -> 10 Blocks (2 chars each)
 	model := NewChunkMapModel(bitmap, chunkCount, 20, 0, false, totalSize, chunkSize, progress)
-	out := model.View()
+	_ = model.View()
 
 	// Split output into blocks (space separated)
 	// Actually View adds newlines if multi-row, but here 10 blocks fit in 10 cols?
@@ -195,7 +195,7 @@ func TestChunkMap_GranularProgress(t *testing.T) {
 	// Then Row 0 should be Pink, Rows 1-4 Gray.
 
 	model = NewChunkMapModel(bitmap, chunkCount, 2, 5, false, totalSize, chunkSize, progress)
-	out = model.View()
+	out := model.View()
 
 	rows := strings.Split(strings.TrimSpace(out), "\n")
 	if len(rows) != 5 {

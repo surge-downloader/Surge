@@ -776,7 +776,7 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 	// --- 6. Error Section ---
 	var errorSection string
 	if d.err != nil {
-		errorSection = sectionStyle.Copy().
+		errorSection = sectionStyle.
 			Render(lipgloss.NewStyle().Foreground(ColorStateError).Render("Error: " + d.err.Error()))
 	}
 

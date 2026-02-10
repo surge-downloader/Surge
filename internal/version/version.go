@@ -57,7 +57,7 @@ func CheckForUpdate(currentVersion string) (*UpdateInfo, error) {
 	if err != nil {
 		return nil, nil // Network error - fail silently
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, nil // API error - fail silently
@@ -117,7 +117,7 @@ func parseVersion(version string) [3]int {
 		if idx := strings.IndexAny(numStr, "-+"); idx != -1 {
 			numStr = numStr[:idx]
 		}
-		fmt.Sscanf(numStr, "%d", &parts[i])
+		_, _ = fmt.Sscanf(numStr, "%d", &parts[i])
 	}
 
 	return parts

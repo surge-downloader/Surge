@@ -306,11 +306,11 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	}
 
 	// Create and preallocate output file with .surge suffix
-	outFile, err := os.OpenFile(workingPath, os.O_CREATE|os.O_RDWR, 0644)
+	outFile, err := os.OpenFile(workingPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
-	defer outFile.Close()
+	defer func() { _ = outFile.Close() }()
 
 	// Check for saved state BEFORE truncating (resume case)
 	var tasks []types.Task
@@ -556,7 +556,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	}
 
 	// Close file before renaming
-	outFile.Close()
+	_ = outFile.Close()
 
 	// Rename from .surge to final destination
 	if err := os.Rename(workingPath, destPath); err != nil {

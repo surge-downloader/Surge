@@ -40,12 +40,12 @@ func Debug(format string, args ...any) {
 	}
 
 	debugOnce.Do(func() {
-		os.MkdirAll(dir, 0755)
+		_ = os.MkdirAll(dir, 0o755)
 		debugFile, _ = os.Create(filepath.Join(dir, fmt.Sprintf("debug-%s.log", time.Now().Format("20060102-150405"))))
 	})
 
 	if debugFile != nil {
-		fmt.Fprintf(debugFile, "[%s] %s\n", timestamp, fmt.Sprintf(format, args...))
+		_, _ = fmt.Fprintf(debugFile, "[%s] %s\n", timestamp, fmt.Sprintf(format, args...))
 	}
 }
 
@@ -92,6 +92,6 @@ func CleanupLogs(retentionCount int) {
 	// Remove older logs
 	for _, log := range logs[retentionCount:] {
 		path := filepath.Join(dir, log.Name())
-		os.Remove(path)
+		_ = os.Remove(path)
 	}
 }

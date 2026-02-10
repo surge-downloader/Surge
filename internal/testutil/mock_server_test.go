@@ -20,7 +20,7 @@ func TestMockServer_BasicDownload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected 200, got %d", resp.StatusCode)
@@ -60,7 +60,7 @@ func TestMockServer_RangeRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusPartialContent {
 		t.Errorf("Expected 206, got %d", resp.StatusCode)
@@ -106,7 +106,7 @@ func TestMockServer_MultipleRangeRequests(t *testing.T) {
 		}
 
 		data, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		expectedLen := end - offset + 1
 		if int64(len(data)) != expectedLen {
@@ -141,7 +141,7 @@ func TestMockServer_HeadRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HEAD request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected 200, got %d", resp.StatusCode)
@@ -172,7 +172,7 @@ func TestMockServer_NoRangeSupport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should return full file, not partial
 	if resp.StatusCode != http.StatusOK {
@@ -198,21 +198,21 @@ func TestMockServer_FailOnNthRequest(t *testing.T) {
 	if resp1.StatusCode != http.StatusOK {
 		t.Errorf("First request should succeed, got %d", resp1.StatusCode)
 	}
-	resp1.Body.Close()
+	_ = resp1.Body.Close()
 
 	// Second request should fail
 	resp2, _ := http.Get(server.URL())
 	if resp2.StatusCode != http.StatusInternalServerError {
 		t.Errorf("Second request should fail, got %d", resp2.StatusCode)
 	}
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 
 	// Third request should succeed
 	resp3, _ := http.Get(server.URL())
 	if resp3.StatusCode != http.StatusOK {
 		t.Errorf("Third request should succeed, got %d", resp3.StatusCode)
 	}
-	resp3.Body.Close()
+	_ = resp3.Body.Close()
 
 	stats := server.Stats()
 	if stats.FailedRequests != 1 {
@@ -230,7 +230,7 @@ func TestMockServer_Latency(t *testing.T) {
 
 	start := time.Now()
 	resp, _ := http.Get(server.URL())
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	elapsed := time.Since(start)
 
 	if elapsed < latency {
@@ -244,7 +244,7 @@ func TestMockServer_Reset(t *testing.T) {
 
 	// Make a request
 	resp, _ := http.Get(server.URL())
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if server.Stats().TotalRequests != 1 {
 		t.Error("Should have 1 request")
@@ -273,7 +273,7 @@ func TestStreamingMockServer_LargeFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusPartialContent {
 		t.Errorf("Expected 206, got %d", resp.StatusCode)

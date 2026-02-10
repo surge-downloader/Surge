@@ -141,7 +141,7 @@ func NewMockServer(opts ...MockServerOption) *MockServer {
 	// Pre-generate data
 	m.data = make([]byte, m.FileSize)
 	if m.RandomData {
-		rand.Read(m.data)
+		_, _ = rand.Read(m.data)
 	}
 
 	m.Server = httptest.NewServer(http.HandlerFunc(m.handleRequest))
@@ -386,7 +386,7 @@ func NewStreamingMockServer(fileSize int64, opts ...MockServerOption) *Streaming
 	// Only allocate a small buffer for streaming
 	m.data = make([]byte, 64*1024) // 64KB buffer
 	if m.RandomData {
-		rand.Read(m.data)
+		_, _ = rand.Read(m.data)
 	}
 
 	s := &StreamingMockServer{MockServer: m}

@@ -20,28 +20,28 @@ func TestHandleDownload_PathResolution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Mock XDG_CONFIG_HOME to affect GetSurgeDir() on Linux
 	originalConfigHome := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tempDir)
+	_ = os.Setenv("XDG_CONFIG_HOME", tempDir)
 	defer func() {
 		if originalConfigHome == "" {
-			os.Unsetenv("XDG_CONFIG_HOME")
+			_ = os.Unsetenv("XDG_CONFIG_HOME")
 		} else {
-			os.Setenv("XDG_CONFIG_HOME", originalConfigHome)
+			_ = os.Setenv("XDG_CONFIG_HOME", originalConfigHome)
 		}
 	}()
 
 	// Create surge config directory
 	surgeConfigDir := filepath.Join(tempDir, "surge")
-	if err := os.MkdirAll(surgeConfigDir, 0755); err != nil {
+	if err := os.MkdirAll(surgeConfigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	// Setup default download directory
 	defaultDownloadDir := filepath.Join(tempDir, "Downloads")
-	if err := os.MkdirAll(defaultDownloadDir, 0755); err != nil {
+	if err := os.MkdirAll(defaultDownloadDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 

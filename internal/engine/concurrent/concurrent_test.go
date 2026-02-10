@@ -396,7 +396,6 @@ func TestConcurrentDownloader_ProgressTracking(t *testing.T) {
 	defer cancel()
 
 	err := downloader.Download(ctx, server.URL(), nil, nil, destPath, fileSize, false)
-
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}

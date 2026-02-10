@@ -21,7 +21,7 @@ func TestIntegration_PauseResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Set XDG_CONFIG_HOME to tmpDir so state.GetDB() creates DB there
 	// The config package uses "surge" subdirectory
