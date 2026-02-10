@@ -74,7 +74,11 @@ var rootCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, "Use 'surge add <url>' to add a download to the active instance.")
 			os.Exit(1)
 		}
-		defer func() { _ = ReleaseLock() }()
+		defer func() {
+			if err := ReleaseLock(); err != nil {
+				utils.Debug("Error releasing lock: %v", err)
+			}
+		}()
 
 		portFlag, _ := cmd.Flags().GetInt("port")
 		batchFile, _ := cmd.Flags().GetString("batch")
@@ -245,14 +249,18 @@ func findAvailablePort(start int) (int, net.Listener) {
 // saveActivePort writes the active port to ~/.surge/port for extension discovery
 func saveActivePort(port int) {
 	portFile := filepath.Join(config.GetSurgeDir(), "port")
-	_ = os.WriteFile(portFile, []byte(fmt.Sprintf("%d", port)), 0o644)
+	if err := os.WriteFile(portFile, []byte(fmt.Sprintf("%d", port)), 0o644); err != nil {
+		utils.Debug("Error writing port file: %v", err)
+	}
 	utils.Debug("HTTP server listening on port %d", port)
 }
 
 // removeActivePort cleans up the port file on exit
 func removeActivePort() {
 	portFile := filepath.Join(config.GetSurgeDir(), "port")
-	_ = os.Remove(portFile)
+	if err := os.Remove(portFile); err != nil && !os.IsNotExist(err) {
+		utils.Debug("Error removing port file: %v", err)
+	}
 }
 
 // startHTTPServer starts the HTTP server using an existing listener
@@ -262,10 +270,12 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "ok",
 			"port":   port,
-		})
+		}); err != nil {
+			utils.Debug("Failed to encode response: %v", err)
+		}
 	})
 
 	// Download endpoint
@@ -293,7 +303,9 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		// Try to pause active download
 		if GlobalPool.Pause(id) {
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id})
+			if err := json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id}); err != nil {
+				utils.Debug("Failed to encode response: %v", err)
+			}
 			return
 		}
 
@@ -303,7 +315,9 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		if err == nil && entry != nil {
 			// It exists, so we consider it "paused" (or at least stopped)
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id, "message": "Download already stopped"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id, "message": "Download already stopped"}); err != nil {
+				utils.Debug("Failed to encode response: %v", err)
+			}
 			return
 		}
 
@@ -330,7 +344,9 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		// Try to resume if active/paused in memory
 		if GlobalPool.Resume(id) {
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id})
+			if err := json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id}); err != nil {
+				utils.Debug("Failed to encode response: %v", err)
+			}
 			return
 		}
 
@@ -343,7 +359,9 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 
 		if entry.Status == "completed" {
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "completed", "id": id, "message": "Download already completed"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"status": "completed", "id": id, "message": "Download already completed"}); err != nil {
+				utils.Debug("Failed to encode response: %v", err)
+			}
 			return
 		}
 
@@ -412,7 +430,9 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		atomic.AddInt32(&activeDownloads, 1)
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id, "message": "Download cold-resumed"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id, "message": "Download cold-resumed"}); err != nil {
+			utils.Debug("Failed to encode response: %v", err)
+		}
 	})
 
 	// Delete endpoint
@@ -433,7 +453,9 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 				utils.Debug("Failed to remove from DB: %v", err)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id})
+			if err := json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id}); err != nil {
+				utils.Debug("Failed to encode response: %v", err)
+			}
 		} else {
 			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
 		}
@@ -527,7 +549,9 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(statuses)
+		if err := json.NewEncoder(w).Encode(statuses); err != nil {
+			utils.Debug("Failed to encode response: %v", err)
+		}
 	})
 
 	server := &http.Server{Handler: corsMiddleware(mux)}
@@ -579,7 +603,9 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		if GlobalPool != nil {
 			status := GlobalPool.GetStatus(id)
 			if status != nil {
-				_ = json.NewEncoder(w).Encode(status)
+				if err := json.NewEncoder(w).Encode(status); err != nil {
+					utils.Debug("Failed to encode response: %v", err)
+				}
 				return
 			}
 		}
@@ -612,7 +638,9 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 				Speed:      speed,
 				Status:     entry.Status,
 			}
-			_ = json.NewEncoder(w).Encode(status)
+			if err := json.NewEncoder(w).Encode(status); err != nil {
+				utils.Debug("Failed to encode response: %v", err)
+			}
 			return
 		}
 
@@ -637,7 +665,11 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer func() { _ = r.Body.Close() }()
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			utils.Debug("Error closing body: %v", err)
+		}
+	}()
 
 	if req.URL == "" {
 		http.Error(w, "URL is required", http.StatusBadRequest)
@@ -676,16 +708,25 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 			baseDir = "."
 		}
 		outPath = filepath.Join(baseDir, req.Path)
-		_ = os.MkdirAll(outPath, 0o755)
+		if err := os.MkdirAll(outPath, 0o755); err != nil {
+			http.Error(w, "Failed to create directory: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 	} else if outPath == "" {
 		if defaultOutputDir != "" {
 			outPath = defaultOutputDir
-			_ = os.MkdirAll(outPath, 0o755)
+			if err := os.MkdirAll(outPath, 0o755); err != nil {
+				http.Error(w, "Failed to create output directory: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 		} else {
 			if settings.General.DefaultDownloadDir != "" {
 				outPath = settings.General.DefaultDownloadDir
-				_ = os.MkdirAll(outPath, 0o755)
+				if err := os.MkdirAll(outPath, 0o755); err != nil {
+					http.Error(w, "Failed to create output directory: "+err.Error(), http.StatusInternalServerError)
+					return
+				}
 			} else {
 				outPath = "."
 			}
@@ -744,21 +785,25 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 				w.Header().Set("Content-Type", "application/json")
 				// Return 202 Accepted to indicate it's pending approval
 				w.WriteHeader(http.StatusAccepted)
-				_ = json.NewEncoder(w).Encode(map[string]string{
+				if err := json.NewEncoder(w).Encode(map[string]string{
 					"status":  "pending_approval",
 					"message": "Download request sent to TUI for confirmation",
 					"id":      downloadID, // ID might change if user modifies it, but useful for tracking
-				})
+				}); err != nil {
+					utils.Debug("Failed to encode response: %v", err)
+				}
 				return
 			} else {
 				// Headless mode check
 				if settings.General.ExtensionPrompt || (settings.General.WarnOnDuplicate && isDuplicate) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusConflict)
-					_ = json.NewEncoder(w).Encode(map[string]string{
+					if err := json.NewEncoder(w).Encode(map[string]string{
 						"status":  "error",
 						"message": "Download rejected: Duplicate download or approval required (Headless mode)",
-					})
+					}); err != nil {
+						utils.Debug("Failed to encode response: %v", err)
+					}
 					return
 				}
 			}
@@ -793,11 +838,13 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	atomic.AddInt32(&activeDownloads, 1)
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"status":  "queued",
 		"message": "Download queued successfully",
 		"id":      downloadID,
-	})
+	}); err != nil {
+		utils.Debug("Failed to encode response: %v", err)
+	}
 }
 
 // processDownloads handles the logic of adding downloads either to local pool or remote server

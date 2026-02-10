@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/utils"
 )
 
 var serverCmd = &cobra.Command{
@@ -38,7 +39,11 @@ var serverStartCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, "Error: Surge server is already running.")
 			os.Exit(1)
 		}
-		defer func() { _ = ReleaseLock() }()
+		defer func() {
+			if err := ReleaseLock(); err != nil {
+				utils.Debug("Error releasing lock: %v", err)
+			}
+		}()
 
 		portFlag, _ := cmd.Flags().GetInt("port")
 		batchFile, _ := cmd.Flags().GetString("batch")
@@ -131,12 +136,16 @@ func init() {
 func savePID() {
 	pid := os.Getpid()
 	pidFile := filepath.Join(config.GetSurgeDir(), "pid")
-	_ = os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", pid)), 0o644)
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", pid)), 0o644); err != nil {
+		utils.Debug("Error writing PID file: %v", err)
+	}
 }
 
 func removePID() {
 	pidFile := filepath.Join(config.GetSurgeDir(), "pid")
-	_ = os.Remove(pidFile)
+	if err := os.Remove(pidFile); err != nil && !os.IsNotExist(err) {
+		utils.Debug("Error removing PID file: %v", err)
+	}
 }
 
 func readPID() int {
