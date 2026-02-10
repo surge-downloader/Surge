@@ -23,6 +23,7 @@ const serverStatus = document.getElementById('serverStatus');
 const interceptToggle = document.getElementById('interceptToggle');
 const authTokenInput = document.getElementById('authToken');
 const saveTokenButton = document.getElementById('saveToken');
+const authStatus = document.getElementById('authStatus');
 
 // Duplicate modal elements
 const duplicateModal = document.getElementById('duplicateModal');
@@ -571,10 +572,36 @@ window.addEventListener('unload', () => {
 if (isExtensionContext && saveTokenButton && authTokenInput) {
   saveTokenButton.addEventListener('click', async () => {
     const token = authTokenInput.value.trim();
+    if (authStatus) {
+      authStatus.className = 'auth-status';
+      authStatus.textContent = 'Validating...';
+    }
+    authTokenInput.disabled = true;
+    saveTokenButton.disabled = true;
     try {
       await apiCall('setAuthToken', { token });
+      const result = await apiCall('validateAuth');
+      if (result && result.ok) {
+        if (authStatus) {
+          authStatus.className = 'auth-status ok';
+          authStatus.textContent = 'Token valid';
+        }
+        await fetchDownloads();
+      } else {
+        if (authStatus) {
+          authStatus.className = 'auth-status err';
+          authStatus.textContent = 'Token invalid';
+        }
+      }
     } catch (error) {
       console.error('[Surge Popup] Error saving auth token:', error);
+      if (authStatus) {
+        authStatus.className = 'auth-status err';
+        authStatus.textContent = 'Validation failed';
+      }
+    } finally {
+      authTokenInput.disabled = false;
+      saveTokenButton.disabled = false;
     }
   });
 }

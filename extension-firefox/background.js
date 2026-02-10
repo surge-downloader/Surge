@@ -118,8 +118,14 @@ async function findSurgePort() {
       });
       clearTimeout(timeoutId);
       if (response.ok) {
-        isConnected = true;
-        return cachedPort;
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await response.json().catch(() => null);
+          if (data && data.status === 'ok') {
+            isConnected = true;
+            return cachedPort;
+          }
+        }
       }
     } catch {}
     cachedPort = null;
@@ -136,6 +142,14 @@ async function findSurgePort() {
       });
       clearTimeout(timeoutId);
       if (response.ok) {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          continue;
+        }
+        const data = await response.json().catch(() => null);
+        if (!data || data.status !== 'ok') {
+          continue;
+        }
         cachedPort = port;
         isConnected = true;
         console.log(`[Surge] Found server on port ${port}`);
@@ -182,6 +196,7 @@ async function fetchDownloadList() {
     clearTimeout(timeoutId);
     
     if (response.ok) {
+      isConnected = true;
       const contentType = response.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         isConnected = false;
@@ -221,6 +236,28 @@ async function fetchDownloadList() {
   }
   
   return [];
+}
+
+async function validateAuthToken() {
+  const port = await findSurgePort();
+  if (!port) {
+    isConnected = false;
+    return { ok: false, error: 'no_server' };
+  }
+  try {
+    const headers = await authHeaders();
+    const response = await fetch(`http://127.0.0.1:${port}/list`, {
+      method: 'GET',
+      headers,
+    });
+    if (response.ok) {
+      isConnected = true;
+      return { ok: true };
+    }
+    return { ok: false, status: response.status };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
 }
 
 // === Download Sending ===
@@ -608,6 +645,11 @@ browser.runtime.onMessage.addListener((message, sender) => {
         case 'setAuthToken': {
           await setAuthToken(message.token || '');
           return { success: true };
+        }
+        
+        case 'validateAuth': {
+          const result = await validateAuthToken();
+          return result;
         }
         
         case 'setStatus': {

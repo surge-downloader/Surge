@@ -115,8 +115,14 @@ async function findSurgePort() {
         signal: AbortSignal.timeout(300),
       });
       if (response.ok) {
-        isConnected = true;
-        return cachedPort;
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const data = await response.json().catch(() => null);
+          if (data && data.status === "ok") {
+            isConnected = true;
+            return cachedPort;
+          }
+        }
       }
     } catch {}
     cachedPort = null;
@@ -130,6 +136,14 @@ async function findSurgePort() {
         signal: AbortSignal.timeout(200),
       });
       if (response.ok) {
+        const contentType = response.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          continue;
+        }
+        const data = await response.json().catch(() => null);
+        if (!data || data.status !== "ok") {
+          continue;
+        }
         cachedPort = port;
         isConnected = true;
         console.log(`[Surge] Found server on port ${port}`);
@@ -161,7 +175,7 @@ async function fetchDownloadList() {
   const port = await findSurgePort();
   if (!port) {
     isConnected = false;
-    return [];
+    return { list: [], authError: false };
   }
 
   try {
@@ -173,6 +187,7 @@ async function fetchDownloadList() {
     });
 
     if (response.ok) {
+      isConnected = true;
       const contentType = response.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
         isConnected = false;
@@ -188,11 +203,11 @@ async function fetchDownloadList() {
 
       // Handle null or non-array response
       if (!Array.isArray(list)) {
-        return [];
+        return { list: [], authError: false };
       }
 
       // Calculate ETA for each download
-      return list.map((dl) => {
+      const mapped = list.map((dl) => {
         let eta = null;
         if (dl.status === "downloading" && dl.speed > 0 && dl.total_size > 0) {
           const remaining = dl.total_size - dl.downloaded;
@@ -202,16 +217,43 @@ async function fetchDownloadList() {
         }
         return { ...dl, eta };
       });
+      return { list: mapped, authError: false };
     } else {
-      // Likely auth error or server mismatch
+      if (response.status === 401 || response.status === 403) {
+        isConnected = true;
+        return { list: [], authError: true };
+      }
       isConnected = false;
-      return [];
+      return { list: [], authError: false };
     }
   } catch (error) {
     console.error("[Surge] Error fetching downloads:", error);
   }
 
-  return [];
+  return { list: [], authError: false };
+}
+
+async function validateAuthToken() {
+  const port = await findSurgePort();
+  if (!port) {
+    isConnected = false;
+    return { ok: false, error: "no_server" };
+  }
+  try {
+    const headers = await authHeaders();
+    const response = await fetch(`http://127.0.0.1:${port}/list`, {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(3000),
+    });
+    if (response.ok) {
+      isConnected = true;
+      return { ok: true };
+    }
+    return { ok: false, status: response.status };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
 }
 
 // === Download Sending ===
@@ -646,6 +688,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case "setAuthToken": {
           await setAuthToken(message.token || "");
           sendResponse({ success: true });
+          break;
+        }
+        case "validateAuth": {
+          const result = await validateAuthToken();
+          sendResponse(result);
           break;
         }
 

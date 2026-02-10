@@ -515,6 +515,20 @@ body {
   background: var(--bg-hover);
 }
 
+.auth-status {
+  min-height: 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.auth-status.ok {
+  color: var(--success);
+}
+
+.auth-status.err {
+  color: var(--error);
+}
+
 .toggle-row {
   display: flex;
   justify-content: space-between;
