@@ -171,7 +171,7 @@ func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile
 			os.Exit(1)
 		}
 	} else {
-		port, listener = findAvailablePort(8080)
+		port, listener = findAvailablePort(1700)
 		if listener == nil {
 			fmt.Fprintf(os.Stderr, "Error: could not find available port\n")
 			os.Exit(1)

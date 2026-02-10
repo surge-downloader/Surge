@@ -86,7 +86,7 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 			{Key: "max_global_connections", Label: "Max Global Connections", Description: "Maximum total concurrent connections across all downloads.", Type: "int"},
 			{Key: "max_concurrent_downloads", Label: "Max Concurrent Downloads", Description: "Maximum number of downloads running at once (1-10). Requires restart.", Type: "int"},
 			{Key: "user_agent", Label: "User Agent", Description: "Custom User-Agent string for HTTP requests. Leave empty for default.", Type: "string"},
-			{Key: "proxy_url", Label: "Proxy URL", Description: "HTTP/HTTPS proxy URL (e.g. http://127.0.0.1:8080). Leave empty to use system default.", Type: "string"},
+			{Key: "proxy_url", Label: "Proxy URL", Description: "HTTP/HTTPS proxy URL (e.g. http://127.0.0.1:1700). Leave empty to use system default.", Type: "string"},
 			{Key: "sequential_download", Label: "Sequential Download", Description: "Download pieces in order (Streaming Mode). May be slower.", Type: "bool"},
 			{Key: "min_chunk_size", Label: "Min Chunk Size", Description: "Minimum download chunk size in MB (e.g., 2).", Type: "int64"},
 			{Key: "worker_buffer_size", Label: "Worker Buffer Size", Description: "I/O buffer size per worker in KB (e.g., 512).", Type: "int"},

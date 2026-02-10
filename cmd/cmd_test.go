@@ -428,7 +428,7 @@ func TestHealthEndpoint(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "ok",
-			"port":   8080,
+			"port":   1700,
 		})
 	})
 

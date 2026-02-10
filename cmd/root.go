@@ -100,7 +100,7 @@ var rootCmd = &cobra.Command{
 			}
 		} else {
 			// Auto-discovery mode
-			port, listener = findAvailablePort(8080)
+			port, listener = findAvailablePort(1700)
 			if listener == nil {
 				fmt.Fprintf(os.Stderr, "Error: could not find available port\n")
 				os.Exit(1)
