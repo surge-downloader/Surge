@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -33,8 +35,12 @@ var connectCmd = &cobra.Command{
 			}
 		}
 
-		// Ensure target has scheme
-		baseURL := "http://" + target
+		insecureHTTP, _ := cmd.Flags().GetBool("insecure-http")
+		baseURL, err := resolveConnectBaseURL(target, insecureHTTP)
+		if err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		}
 
 		// Resolve token
 		tokenFlag, _ := cmd.Flags().GetString("token")
@@ -63,7 +69,7 @@ var connectCmd = &cobra.Command{
 		service := core.NewRemoteDownloadService(baseURL, token)
 
 		// Verify connection
-		_, err := service.List()
+		_, err = service.List()
 		if err != nil {
 			fmt.Printf("Failed to connect: %v\n", err)
 			os.Exit(1)
@@ -108,5 +114,54 @@ var connectCmd = &cobra.Command{
 
 func init() {
 	connectCmd.Flags().String("token", "", "Bearer token for remote daemon (or set SURGE_TOKEN)")
+	connectCmd.Flags().Bool("insecure-http", false, "Allow plain HTTP for non-loopback targets")
 	rootCmd.AddCommand(connectCmd)
+}
+
+func resolveConnectBaseURL(target string, allowInsecureHTTP bool) (string, error) {
+	if strings.Contains(target, "://") {
+		u, err := url.Parse(target)
+		if err != nil {
+			return "", fmt.Errorf("Invalid target: %v", err)
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return "", fmt.Errorf("Unsupported scheme %q (use http or https)", u.Scheme)
+		}
+		if u.Host == "" {
+			return "", fmt.Errorf("Invalid target: missing host")
+		}
+		if u.Scheme == "http" && !allowInsecureHTTP && !isLoopbackHost(u.Hostname()) {
+			return "", fmt.Errorf("Refusing insecure HTTP for non-loopback target. Use https:// or --insecure-http")
+		}
+		return fmt.Sprintf("%s://%s", u.Scheme, u.Host), nil
+	}
+
+	scheme := "https"
+	if isLoopbackHost(hostnameFromTarget(target)) {
+		scheme = "http"
+	}
+	return fmt.Sprintf("%s://%s", scheme, target), nil
+}
+
+func hostnameFromTarget(target string) string {
+	host := target
+	if idx := strings.Index(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+	return host
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	h := strings.ToLower(host)
+	if h == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback()
 }

@@ -190,6 +190,47 @@ func TestCorsMiddleware_PassesThrough(t *testing.T) {
 }
 
 // =============================================================================
+// connect target resolution Tests
+// =============================================================================
+
+func TestResolveConnectBaseURL(t *testing.T) {
+	tests := []struct {
+		name         string
+		target       string
+		insecureHTTP bool
+		want         string
+		wantErr      bool
+	}{
+		{name: "loopback host:port defaults http", target: "127.0.0.1:1700", want: "http://127.0.0.1:1700"},
+		{name: "localhost defaults http", target: "localhost:1700", want: "http://localhost:1700"},
+		{name: "remote host defaults https", target: "example.com:1700", want: "https://example.com:1700"},
+		{name: "https URL allowed", target: "https://example.com:1700", want: "https://example.com:1700"},
+		{name: "http URL loopback allowed", target: "http://127.0.0.1:1700", want: "http://127.0.0.1:1700"},
+		{name: "http URL remote rejected", target: "http://example.com:1700", wantErr: true},
+		{name: "http URL remote allowed with flag", target: "http://example.com:1700", insecureHTTP: true, want: "http://example.com:1700"},
+		{name: "invalid scheme rejected", target: "ftp://example.com:1700", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveConnectBaseURL(tt.target, tt.insecureHTTP)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Expected error, got nil (result: %s)", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("Expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+// =============================================================================
 // handleDownload Tests
 // =============================================================================
 
