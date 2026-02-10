@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
@@ -32,6 +33,7 @@ func TestServer_Startup_HandlesResume(t *testing.T) {
 	// 3. Initialize Global Pool (required for resumePausedDownloads)
 	GlobalProgressCh = make(chan any, 10)
 	GlobalPool = download.NewWorkerPool(GlobalProgressCh, 3)
+	GlobalService = core.NewLocalDownloadServiceWithInput(GlobalPool, GlobalProgressCh)
 
 	// 4. Run Resume Logic (Simulate Server Start)
 	resumePausedDownloads()
