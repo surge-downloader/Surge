@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
@@ -178,10 +179,13 @@ func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile
 		}
 	}
 
+	// Initialize Service
+	GlobalService = core.NewLocalDownloadService(GlobalPool, GlobalProgressCh)
+
 	saveActivePort(port)
 	defer removeActivePort()
 
-	go startHTTPServer(listener, port, outputDir)
+	go startHTTPServer(listener, port, outputDir, GlobalService)
 
 	// Queue initial downloads
 	go func() {

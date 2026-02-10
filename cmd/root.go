@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/state"
@@ -37,6 +38,7 @@ var activeDownloads int32
 var (
 	GlobalPool       *download.WorkerPool
 	GlobalProgressCh chan any
+	GlobalService    core.DownloadService
 	serverProgram    *tea.Program
 )
 
@@ -80,6 +82,9 @@ var rootCmd = &cobra.Command{
 			}
 		}()
 
+		// Initialize Service
+		GlobalService = core.NewLocalDownloadService(GlobalPool, GlobalProgressCh)
+
 		portFlag, _ := cmd.Flags().GetInt("port")
 		batchFile, _ := cmd.Flags().GetString("batch")
 		outputDir, _ := cmd.Flags().GetString("output")
@@ -112,7 +117,7 @@ var rootCmd = &cobra.Command{
 		defer removeActivePort()
 
 		// Start HTTP server in background (reuse the listener)
-		go startHTTPServer(listener, port, outputDir)
+		go startHTTPServer(listener, port, outputDir, GlobalService)
 
 		// Queue initial downloads if any
 		go func() {
@@ -150,9 +155,16 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	serverProgram = p // Save reference for HTTP handler
 
+	// Get event stream from service
+	events, err := GlobalService.StreamEvents()
+	if err != nil {
+		fmt.Printf("Error getting event stream: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Background listener for progress events
 	go func() {
-		for msg := range GlobalProgressCh {
+		for msg := range events {
 			p.Send(msg)
 		}
 	}()
@@ -264,10 +276,13 @@ func removeActivePort() {
 }
 
 // startHTTPServer starts the HTTP server using an existing listener
-func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
+func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service core.DownloadService) {
+	authToken := ensureAuthToken()
+	utils.Debug("Using Auth Token: %s", authToken)
+
 	mux := http.NewServeMux()
 
-	// Health check endpoint
+	// Health check endpoint (Public)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(map[string]interface{}{
@@ -278,12 +293,90 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		}
 	})
 
-	// Download endpoint
+	// SSE Events Endpoint (Protected)
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		// Set headers for SSE
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		// Get event stream
+		stream, err := service.StreamEvents()
+		if err != nil {
+			http.Error(w, "Failed to subscribe to events", http.StatusInternalServerError)
+			return
+		}
+
+		// Flush headers immediately
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+		flusher.Flush()
+
+		// Send events
+		// Create a closer notifier
+		done := r.Context().Done()
+
+		for {
+			select {
+			case <-done:
+				return
+			case msg, ok := <-stream:
+				if !ok {
+					return
+				}
+
+				// Encode message to JSON
+				data, err := json.Marshal(msg)
+				if err != nil {
+					utils.Debug("Error marshaling event: %v", err)
+					continue
+				}
+
+				// Determine event type name based on struct
+				// Events are in internal/engine/events package
+				eventType := "unknown"
+				switch msg.(type) {
+				case events.DownloadStartedMsg:
+					eventType = "started"
+				case events.DownloadCompleteMsg:
+					eventType = "complete"
+				case events.DownloadErrorMsg:
+					eventType = "error"
+				case events.ProgressMsg:
+					eventType = "progress"
+				case events.DownloadPausedMsg:
+					eventType = "paused"
+				case events.DownloadResumedMsg:
+					eventType = "resumed"
+				case events.DownloadQueuedMsg:
+					eventType = "queued"
+				case events.DownloadRemovedMsg:
+					eventType = "removed"
+				case events.DownloadRequestMsg:
+					eventType = "request"
+				}
+
+				// SSE Format:
+				// event: <type>
+				// data: <json>
+				// \n
+				fmt.Fprintf(w, "event: %s\n", eventType)
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+			}
+		}
+	})
+
+	// Download endpoint (Protected + Public for simple GET status if needed? No, let's protect all for now)
 	mux.HandleFunc("/download", func(w http.ResponseWriter, r *http.Request) {
 		handleDownload(w, r, defaultOutputDir)
 	})
 
-	// Pause endpoint
+	// Pause endpoint (Protected)
 	mux.HandleFunc("/pause", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -295,36 +388,16 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 			return
 		}
 
-		if GlobalPool == nil {
-			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+		if err := service.Pause(id); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		// Try to pause active download
-		if GlobalPool.Pause(id) {
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id}); err != nil {
-				utils.Debug("Failed to encode response: %v", err)
-			}
-			return
-		}
-
-		// Check if it exists in DB (Cold Pause)
-		// If it exists in DB but not in pool, it's effectively paused or done.
-		entry, err := state.GetDownload(id)
-		if err == nil && entry != nil {
-			// It exists, so we consider it "paused" (or at least stopped)
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id, "message": "Download already stopped"}); err != nil {
-				utils.Debug("Failed to encode response: %v", err)
-			}
-			return
-		}
-
-		http.Error(w, "Download not found", http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id})
 	})
 
-	// Resume endpoint
+	// Resume endpoint (Protected)
 	mux.HandleFunc("/resume", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -336,106 +409,16 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 			return
 		}
 
-		if GlobalPool == nil {
-			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+		if err := service.Resume(id); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		// Try to resume if active/paused in memory
-		if GlobalPool.Resume(id) {
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id}); err != nil {
-				utils.Debug("Failed to encode response: %v", err)
-			}
-			return
-		}
-
-		// Cold Resume: Not in active pool, try loading from DB
-		entry, err := state.GetDownload(id)
-		if err != nil || entry == nil {
-			http.Error(w, "Download not found", http.StatusNotFound)
-			return
-		}
-
-		if entry.Status == "completed" {
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{"status": "completed", "id": id, "message": "Download already completed"}); err != nil {
-				utils.Debug("Failed to encode response: %v", err)
-			}
-			return
-		}
-
-		// Load settings for runtime config
-		settings, err := config.LoadSettings()
-		if err != nil {
-			settings = config.DefaultSettings()
-		}
-
-		// Reconstruct configuration
-		runtimeConfig := convertRuntimeConfig(settings.ToRuntimeConfig())
-		outputPath := filepath.Dir(entry.DestPath)
-		if outputPath == "" || outputPath == "." {
-			outputPath = settings.General.DefaultDownloadDir
-		}
-		if outputPath == "" {
-			outputPath = "."
-		}
-
-		// Load saved state to get full progress/mirrors
-		savedState, stateErr := state.LoadState(entry.URL, entry.DestPath)
-
-		// Re-use mirrors from state if available, otherwise just URL
-		var mirrorURLs []string
-		var dmState *types.ProgressState
-
-		if stateErr == nil && savedState != nil {
-			// Create state populated from saved data
-			dmState = types.NewProgressState(id, savedState.TotalSize)
-			dmState.Downloaded.Store(savedState.Downloaded)
-			if savedState.Elapsed > 0 {
-				dmState.SetSavedElapsed(time.Duration(savedState.Elapsed))
-			}
-
-			if len(savedState.Mirrors) > 0 {
-				var mirrors []types.MirrorStatus
-				for _, u := range savedState.Mirrors {
-					mirrors = append(mirrors, types.MirrorStatus{URL: u, Active: true})
-					mirrorURLs = append(mirrorURLs, u)
-				}
-				dmState.SetMirrors(mirrors)
-			}
-		} else {
-			// Fallback if state file missing but DB entry exists
-			dmState = types.NewProgressState(id, entry.TotalSize)
-			dmState.Downloaded.Store(entry.Downloaded)
-			mirrorURLs = []string{entry.URL}
-		}
-
-		cfg := types.DownloadConfig{
-			URL:        entry.URL,
-			OutputPath: outputPath,
-			DestPath:   entry.DestPath,
-			ID:         id,
-			Filename:   entry.Filename,
-			Verbose:    false,
-			IsResume:   true,
-			ProgressCh: GlobalProgressCh,
-			State:      dmState,
-			Runtime:    runtimeConfig,
-			Mirrors:    mirrorURLs,
-		}
-
-		// Add to pool to start downloading
-		GlobalPool.Add(cfg)
-		atomic.AddInt32(&activeDownloads, 1)
 
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id, "message": "Download cold-resumed"}); err != nil {
-			utils.Debug("Failed to encode response: %v", err)
-		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id})
 	})
 
-	// Delete endpoint
+	// Delete endpoint (Protected)
 	mux.HandleFunc("/delete", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete && r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -446,106 +429,27 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 			http.Error(w, "Missing id parameter", http.StatusBadRequest)
 			return
 		}
-		if GlobalPool != nil {
-			GlobalPool.Cancel(id)
-			// Ensure removed from DB as well
-			if err := state.RemoveFromMasterList(id); err != nil {
-				utils.Debug("Failed to remove from DB: %v", err)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id}); err != nil {
-				utils.Debug("Failed to encode response: %v", err)
-			}
-		} else {
-			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+
+		if err := service.Delete(id); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id})
 	})
 
-	// List endpoint - returns all downloads with current status
+	// List endpoint (Protected)
 	mux.HandleFunc("/list", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		var statuses []types.DownloadStatus
-
-		// Get active downloads from pool
-		if GlobalPool != nil {
-			activeConfigs := GlobalPool.GetAll()
-			for _, cfg := range activeConfigs {
-				status := types.DownloadStatus{
-					ID:       cfg.ID,
-					URL:      cfg.URL,
-					Filename: cfg.Filename,
-					Status:   "downloading",
-				}
-
-				if cfg.State != nil {
-					status.TotalSize = cfg.State.TotalSize
-					status.Downloaded = cfg.State.Downloaded.Load()
-					if status.TotalSize > 0 {
-						status.Progress = float64(status.Downloaded) * 100 / float64(status.TotalSize)
-					}
-
-					// Calculate speed from progress
-					downloaded, _, _, sessionElapsed, connections, sessionStart := cfg.State.GetProgress()
-					sessionDownloaded := downloaded - sessionStart
-					if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
-						status.Speed = float64(sessionDownloaded) / sessionElapsed.Seconds() / (1024 * 1024)
-
-						// Calculate ETA (seconds remaining)
-						remaining := status.TotalSize - status.Downloaded
-						if remaining > 0 && status.Speed > 0 {
-							speedBytes := status.Speed * 1024 * 1024
-							status.ETA = int64(float64(remaining) / speedBytes)
-						}
-					}
-
-					// Get active connections count
-					status.Connections = int(connections)
-
-					// Update status based on state
-					if cfg.State.IsPaused() {
-						status.Status = "paused"
-					} else if cfg.State.Done.Load() {
-						status.Status = "completed"
-					}
-				}
-
-				statuses = append(statuses, status)
-			}
-		}
-
-		// Always fetch from database to get history/paused/completed
-		dbDownloads, err := state.ListAllDownloads()
-		if err == nil {
-			// Create a map of existing IDs to avoid duplicates
-			existingIDs := make(map[string]bool)
-			for _, s := range statuses {
-				existingIDs[s.ID] = true
-			}
-
-			for _, d := range dbDownloads {
-				// Skip if already present (active)
-				if existingIDs[d.ID] {
-					continue
-				}
-
-				var progress float64
-				if d.TotalSize > 0 {
-					progress = float64(d.Downloaded) * 100 / float64(d.TotalSize)
-				}
-				statuses = append(statuses, types.DownloadStatus{
-					ID:         d.ID,
-					URL:        d.URL,
-					Filename:   d.Filename,
-					Status:     d.Status,
-					TotalSize:  d.TotalSize,
-					Downloaded: d.Downloaded,
-					Progress:   progress,
-				})
-			}
+		statuses, err := service.List()
+		if err != nil {
+			http.Error(w, "Failed to list downloads: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -554,7 +458,10 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		}
 	})
 
-	server := &http.Server{Handler: corsMiddleware(mux)}
+	// Wrap mux with Auth and CORS
+	handler := authMiddleware(authToken, corsMiddleware(mux))
+
+	server := &http.Server{Handler: handler}
 	if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
 		utils.Debug("HTTP server error: %v", err)
 	}
@@ -575,6 +482,64 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func authMiddleware(token string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Allow health check without auth
+		if r.URL.Path == "/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Allow localhost for Phase 1 compatibility (Browser Extension, Tests)
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err == nil {
+			if host == "127.0.0.1" || host == "::1" {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		// Check for Authorization header
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" {
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				providedToken := strings.TrimPrefix(authHeader, "Bearer ")
+				if providedToken == token {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+		}
+
+		// Check query param (fallback for SSE/simple clients if needed)
+		if r.URL.Query().Get("token") == token {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Check localhost exception (Temporary for Phase 1 compatibility if needed, but let's be strict for now or log warning)
+		// For now, Strict Auth. Users must use token.
+		// Browser extension needs update? Let's assume browser extension is out of scope for strict breakdown or will be updated.
+
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	})
+}
+
+func ensureAuthToken() string {
+	tokenFile := filepath.Join(config.GetSurgeDir(), "token")
+	data, err := os.ReadFile(tokenFile)
+	if err == nil {
+		return strings.TrimSpace(string(data))
+	}
+
+	// Generate new token
+	token := uuid.New().String()
+	if err := os.WriteFile(tokenFile, []byte(token), 0600); err != nil {
+		utils.Debug("Failed to write token file: %v", err)
+	}
+	return token
 }
 
 // DownloadRequest represents a download request from the browser extension

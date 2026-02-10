@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/engine/types"
 )
@@ -25,7 +26,8 @@ func TestCLI_NewEndpoints(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	// Start server in background
-	go startHTTPServer(ln, port, "")
+	svc := core.NewLocalDownloadService(GlobalPool, GlobalProgressCh)
+	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/download"
 )
 
@@ -557,7 +558,8 @@ func TestStartHTTPServer_HealthEndpoint(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	// Start server in background
-	go startHTTPServer(ln, port, "")
+	svc := core.NewLocalDownloadService(nil, nil) // Mock service with nil pool/chan for health check
+	go startHTTPServer(ln, port, "", svc)
 
 	// Give server time to start
 	time.Sleep(50 * time.Millisecond)
@@ -593,7 +595,8 @@ func TestStartHTTPServer_HasCORSHeaders(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	go startHTTPServer(ln, port, "")
+	svc := core.NewLocalDownloadService(nil, nil)
+	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
 	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/health", port))
@@ -614,7 +617,8 @@ func TestStartHTTPServer_OptionsRequest(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	go startHTTPServer(ln, port, "")
+	svc := core.NewLocalDownloadService(nil, nil)
+	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
 	req, _ := http.NewRequest(http.MethodOptions, fmt.Sprintf("http://127.0.0.1:%d/download", port), nil)
@@ -637,7 +641,8 @@ func TestStartHTTPServer_DownloadEndpoint_MethodNotAllowed(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	go startHTTPServer(ln, port, "")
+	svc := core.NewLocalDownloadService(nil, nil)
+	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
 	// PUT should not be allowed
@@ -660,7 +665,8 @@ func TestStartHTTPServer_DownloadEndpoint_BadRequest(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	go startHTTPServer(ln, port, "")
+	svc := core.NewLocalDownloadService(nil, nil)
+	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
 	// POST with invalid JSON
@@ -686,7 +692,8 @@ func TestStartHTTPServer_DownloadEndpoint_MissingURL(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	go startHTTPServer(ln, port, "")
+	svc := core.NewLocalDownloadService(nil, nil)
+	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
 	// POST with missing URL
@@ -712,7 +719,8 @@ func TestStartHTTPServer_NotFoundEndpoint(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	go startHTTPServer(ln, port, "")
+	svc := core.NewLocalDownloadService(nil, nil)
+	go startHTTPServer(ln, port, "", svc)
 	time.Sleep(50 * time.Millisecond)
 
 	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/nonexistent", port))
