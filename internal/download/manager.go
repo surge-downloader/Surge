@@ -64,18 +64,59 @@ func uniqueFilePath(path string) string {
 		}
 	}
 
-	for i := 0; i < 100; i++ { // Try next 100 numbers
-		candidate := filepath.Join(dir, fmt.Sprintf("%s(%d)%s", base, counter+i, ext))
+	// Helper to check if a numbered filename is free
+	check := func(n int) string {
+		candidate := filepath.Join(dir, fmt.Sprintf("%s(%d)%s", base, n, ext))
 		if _, err := os.Stat(candidate); os.IsNotExist(err) {
 			if _, err := os.Stat(candidate + types.IncompleteSuffix); os.IsNotExist(err) {
 				return candidate
 			}
 		}
+		return ""
 	}
 
-	// Fallback: just append a large random number or give up (original behavior essentially gave up or made ugly names)
-	// Here we fallback to original behavior of appending if the clean one failed 100 times
-	return path
+	// First check the starting point
+	if c := check(counter); c != "" {
+		return c
+	}
+
+	// Exponential search (Galloping) to find a range [L, R] where L is taken and R is free
+	L := counter
+	step := 1
+	var R int
+
+	// Safety cap to prevent infinite loops
+	const maxStep = 1 << 30
+
+	foundUpperBound := false
+	for step < maxStep {
+		R = L + step
+		if c := check(R); c != "" {
+			foundUpperBound = true
+			break
+		}
+		// R is taken, so L becomes R
+		L = R
+		step *= 2
+	}
+
+	if !foundUpperBound {
+		// Fallback if we exhausted maxStep (unlikely)
+		return path
+	}
+
+	// Binary search in (L, R]. We know L is taken, R is free.
+	// We want to find a free slot closer to L.
+	for L < R-1 {
+		mid := L + (R-L)/2
+		if c := check(mid); c != "" {
+			R = mid
+		} else {
+			L = mid
+		}
+	}
+
+	return filepath.Join(dir, fmt.Sprintf("%s(%d)%s", base, R, ext))
 }
 
 // TUIDownload is the main entry point for TUI downloads
