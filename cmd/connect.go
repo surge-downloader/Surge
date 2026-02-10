@@ -3,9 +3,13 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"github.com/surge-downloader/surge/internal/core"
+	"github.com/surge-downloader/surge/internal/tui"
 )
 
 var connectCmd = &cobra.Command{
@@ -46,14 +50,6 @@ var connectCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Initialize TUI with Remote Service
-		// Note: We need to update StartTUI or InitialRootModel to accept the service
-		// For Phase 2 verification, we will just print success and maybe listen to events briefly
-		// Phase 3 will do the full TUI integration.
-
-		fmt.Println("Connection successful!")
-		fmt.Println("Streaming events (Press Ctrl+C to stop)...")
-
 		// Event loop
 		stream, err := service.StreamEvents()
 		if err != nil {
@@ -61,9 +57,31 @@ var connectCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		for msg := range stream {
-			// Print event type and basic info
-			fmt.Printf("Event: %T\n", msg)
+		// Parse port for display
+		port := 0
+		parts := strings.Split(target, ":")
+		if len(parts) == 2 {
+			port, _ = strconv.Atoi(parts[1])
+		}
+
+		// Initialize TUI
+		// Using false for noResume because resume logic is handled by the server (remote service)
+		// we just want to reflect the state.
+		m := tui.InitialRootModel(port, Version, service, stream, false)
+
+		p := tea.NewProgram(m, tea.WithAltScreen())
+
+		// Pipe events to program
+		go func() {
+			for msg := range stream {
+				p.Send(msg)
+			}
+		}()
+
+		// Run TUI
+		if _, err := p.Run(); err != nil {
+			fmt.Printf("Error running TUI: %v\n", err)
+			os.Exit(1)
 		}
 	},
 }
