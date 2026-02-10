@@ -21,6 +21,7 @@ type SingleDownloader struct {
 	ID           string               // Download ID
 	State        *types.ProgressState // Shared state for TUI polling
 	Runtime      *types.RuntimeConfig
+	Headers      map[string]string // Custom HTTP headers (cookies, auth, etc.)
 }
 
 // NewSingleDownloader creates a new single-threaded downloader with all required parameters
@@ -43,6 +44,9 @@ func (d *SingleDownloader) Download(ctx context.Context, rawurl, destPath string
 		return err
 	}
 
+	for key, val := range d.Headers {
+		req.Header.Set(key, val)
+	}
 	req.Header.Set("User-Agent", d.Runtime.GetUserAgent())
 
 	resp, err := d.Client.Do(req)

@@ -252,95 +252,104 @@ func (s *RemoteDownloadService) connectSSE(ctx context.Context, ch chan interfac
 
 	reader := bufio.NewReader(resp.Body)
 	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return err
-		}
+		eventType := ""
+		var dataLines []string
 
-		// Simple SSE parser
-		if strings.HasPrefix(line, "event: ") {
-			eventType := strings.TrimSpace(strings.TrimPrefix(line, "event: "))
-
-			dataLine, err := reader.ReadString('\n')
+		for {
+			line, err := reader.ReadString('\n')
 			if err != nil {
 				return err
 			}
-			if !strings.HasPrefix(dataLine, "data: ") {
+			line = strings.TrimRight(line, "\r\n")
+
+			// Blank line dispatches event
+			if line == "" {
+				break
+			}
+			// Comment/heartbeat
+			if strings.HasPrefix(line, ":") {
 				continue
 			}
-
-			jsonData := strings.TrimSpace(strings.TrimPrefix(dataLine, "data: "))
-
-			// Read empty line
-			_, _ = reader.ReadString('\n')
-
-			var msg interface{}
-
-			switch eventType {
-			case "progress":
-				var m events.ProgressMsg
-				if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
-					continue
-				}
-				msg = m
-			case "started":
-				var m events.DownloadStartedMsg
-				if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
-					continue
-				}
-				msg = m
-			case "complete":
-				var m events.DownloadCompleteMsg
-				if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
-					continue
-				}
-				msg = m
-			case "error":
-				var m events.DownloadErrorMsg
-				if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
-					continue
-				}
-				msg = m
-			case "paused":
-				var m events.DownloadPausedMsg
-				if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
-					continue
-				}
-				msg = m
-			case "resumed":
-				var m events.DownloadResumedMsg
-				if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
-					continue
-				}
-				msg = m
-			case "queued":
-				var m events.DownloadQueuedMsg
-				if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
-					continue
-				}
-				msg = m
-			case "removed":
-				var m events.DownloadRemovedMsg
-				if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
-					continue
-				}
-				msg = m
-			case "request":
-				var m events.DownloadRequestMsg
-				if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
-					continue
-				}
-				msg = m
-			default:
+			if strings.HasPrefix(line, "event:") {
+				eventType = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
 				continue
 			}
-
-			// Non-blocking send
-			select {
-			case ch <- msg:
-			default:
-				// Drop message if channel is full to prevent blocking the reader
+			if strings.HasPrefix(line, "data:") {
+				dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+				continue
 			}
+		}
+
+		if eventType == "" || len(dataLines) == 0 {
+			continue
+		}
+		jsonData := strings.Join(dataLines, "\n")
+
+		var msg interface{}
+		switch eventType {
+		case "progress":
+			var m events.ProgressMsg
+			if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
+				continue
+			}
+			msg = m
+		case "started":
+			var m events.DownloadStartedMsg
+			if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
+				continue
+			}
+			msg = m
+		case "complete":
+			var m events.DownloadCompleteMsg
+			if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
+				continue
+			}
+			msg = m
+		case "error":
+			var m events.DownloadErrorMsg
+			if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
+				continue
+			}
+			msg = m
+		case "paused":
+			var m events.DownloadPausedMsg
+			if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
+				continue
+			}
+			msg = m
+		case "resumed":
+			var m events.DownloadResumedMsg
+			if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
+				continue
+			}
+			msg = m
+		case "queued":
+			var m events.DownloadQueuedMsg
+			if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
+				continue
+			}
+			msg = m
+		case "removed":
+			var m events.DownloadRemovedMsg
+			if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
+				continue
+			}
+			msg = m
+		case "request":
+			var m events.DownloadRequestMsg
+			if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
+				continue
+			}
+			msg = m
+		default:
+			continue
+		}
+
+		// Non-blocking send
+		select {
+		case ch <- msg:
+		default:
+			// Drop message if channel is full to prevent blocking the reader
 		}
 	}
 }

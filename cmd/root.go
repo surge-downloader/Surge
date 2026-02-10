@@ -495,8 +495,8 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service
 		}
 	})
 
-	// Wrap mux with Auth and CORS
-	handler := authMiddleware(authToken, corsMiddleware(mux))
+	// Wrap mux with Auth and CORS (CORS outermost to ensure 401/403 include headers)
+	handler := corsMiddleware(authMiddleware(authToken, mux))
 
 	server := &http.Server{Handler: handler}
 	if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
