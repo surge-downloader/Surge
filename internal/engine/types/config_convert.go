@@ -7,6 +7,7 @@ func ConvertRuntimeConfig(rc *config.RuntimeConfig) *RuntimeConfig {
 	return &RuntimeConfig{
 		MaxConnectionsPerHost: rc.MaxConnectionsPerHost,
 		UserAgent:             rc.UserAgent,
+		ProxyURL:              rc.ProxyURL,
 		SequentialDownload:    rc.SequentialDownload,
 		MinChunkSize:          rc.MinChunkSize,
 		WorkerBufferSize:      rc.WorkerBufferSize,
