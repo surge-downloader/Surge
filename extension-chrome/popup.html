@@ -39,7 +39,10 @@
     <!-- Footer -->
     <footer class="footer">
       <div class="auth-row">
-        <label for="authToken">Auth Token</label>
+        <div class="auth-label">
+          <label for="authToken">Auth Token</label>
+          <span class="auth-help" data-tooltip="Get the token by running: surge token">?</span>
+        </div>
         <div class="auth-input">
           <input type="password" id="authToken" placeholder="Paste token from Surge">
           <button id="saveToken">Save</button>

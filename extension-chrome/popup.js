@@ -37,6 +37,11 @@ let duplicateTimeout = null;
 
 // === API Wrapper (works in extension and standalone modes) ===
 
+function normalizeToken(token) {
+  if (!token) return '';
+  return token.replace(/\s+/g, '');
+}
+
 async function apiCall(action, params = {}) {
   if (isExtensionContext) {
     // Extension mode: use background script
@@ -342,6 +347,16 @@ async function fetchDownloads() {
     const response = await apiCall('getDownloads');
     if (response) {
       updateServerStatus(response.connected);
+      if (response.authError) {
+        if (authStatus) {
+          const tokenValue = authTokenInput ? authTokenInput.value.trim() : '';
+          authStatus.className = 'auth-status err';
+          authStatus.textContent = tokenValue ? 'Token invalid' : 'Token required';
+        }
+      } else if (authStatus && authStatus.classList.contains('err')) {
+        authStatus.className = 'auth-status';
+        authStatus.textContent = '';
+      }
       if (response.downloads) {
         downloads.clear();
         response.downloads.forEach(dl => downloads.set(dl.id, dl));
@@ -411,6 +426,14 @@ interceptToggle.addEventListener('change', async () => {
     }
   }
 });
+
+// Clear auth status on edit
+if (authTokenInput && authStatus) {
+  authTokenInput.addEventListener('input', () => {
+    authStatus.className = 'auth-status';
+    authStatus.textContent = '';
+  });
+}
 
 // === Duplicate Download Modal ===
 
@@ -571,7 +594,8 @@ window.addEventListener('unload', () => {
 // Save auth token
 if (isExtensionContext && saveTokenButton && authTokenInput) {
   saveTokenButton.addEventListener('click', async () => {
-    const token = authTokenInput.value.trim();
+    const token = normalizeToken(authTokenInput.value);
+    authTokenInput.value = token;
     if (authStatus) {
       authStatus.className = 'auth-status';
       authStatus.textContent = 'Validating...';

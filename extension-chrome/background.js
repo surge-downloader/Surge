@@ -94,7 +94,7 @@ async function loadAuthToken() {
 }
 
 async function setAuthToken(token) {
-  cachedAuthToken = token || "";
+  cachedAuthToken = (token || "").replace(/\s+/g, "");
   await chrome.storage.local.set({ [AUTH_TOKEN_KEY]: cachedAuthToken });
 }
 

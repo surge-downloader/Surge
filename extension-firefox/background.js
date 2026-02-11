@@ -94,7 +94,7 @@ async function loadAuthToken() {
 }
 
 async function setAuthToken(token) {
-  cachedAuthToken = token || '';
+  cachedAuthToken = (token || '').replace(/\s+/g, '');
   await browser.storage.local.set({ [AUTH_TOKEN_KEY]: cachedAuthToken });
 }
 
@@ -181,7 +181,7 @@ async function fetchDownloadList() {
   const port = await findSurgePort();
   if (!port) {
     isConnected = false;
-    return [];
+    return { list: [], authError: false };
   }
 
   try {
@@ -200,23 +200,23 @@ async function fetchDownloadList() {
       const contentType = response.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         isConnected = false;
-        return [];
+        return { list: [], authError: false };
       }
       let list;
       try {
         list = await response.json();
       } catch {
         isConnected = false;
-        return [];
+        return { list: [], authError: false };
       }
       
       // Handle null or non-array response
       if (!Array.isArray(list)) {
-        return [];
+        return { list: [], authError: false };
       }
       
       // Calculate ETA for each download
-      return list.map(dl => {
+      const mapped = list.map(dl => {
         let eta = null;
         if (dl.status === 'downloading' && dl.speed > 0 && dl.total_size > 0) {
           const remaining = dl.total_size - dl.downloaded;
@@ -226,16 +226,21 @@ async function fetchDownloadList() {
         }
         return { ...dl, eta };
       });
+      return { list: mapped, authError: false };
     } else {
-      // Likely auth error or server mismatch
+      if (response.status === 401 || response.status === 403) {
+        isConnected = true;
+        return { list: [], authError: true };
+      }
+      // Likely server mismatch or other error
       isConnected = false;
-      return [];
+      return { list: [], authError: false };
     }
   } catch (error) {
     console.error('[Surge] Error fetching downloads:', error);
   }
   
-  return [];
+  return { list: [], authError: false };
 }
 
 async function validateAuthToken() {
@@ -381,10 +386,10 @@ async function isInterceptEnabled() {
 // Check if URL is already being downloaded by Surge
 async function isDuplicateDownload(url) {
   try {
-    const downloadsList = await fetchDownloadList();
-    if (downloadsList && downloadsList.length > 0) {
+    const { list } = await fetchDownloadList();
+    if (list && list.length > 0) {
       const normalizedUrl = url.replace(/\/$/, ''); // Remove trailing slash
-      for (const dl of downloadsList) {
+      for (const dl of list) {
         const normalizedDlUrl = (dl.url || '').replace(/\/$/, '');
         // Flag as duplicate if URL exists in Surge's download list (any status)
         if (normalizedDlUrl === normalizedUrl) {
@@ -658,9 +663,10 @@ browser.runtime.onMessage.addListener((message, sender) => {
         }
         
         case 'getDownloads': {
-          const downloadsList = await fetchDownloadList();
+          const { list, authError } = await fetchDownloadList();
           return { 
-            downloads: downloadsList, 
+            downloads: list, 
+            authError,
             connected: isConnected 
           };
         }
