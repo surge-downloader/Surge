@@ -504,39 +504,39 @@ func (m RootModel) View() string {
 	// Render the Graph
 	graphVisual := renderMultiLineGraph(graphData, graphAreaWidth, graphContentHeight, maxSpeed, ColorNeonPink, nil)
 
-	// Create Y-axis (right side of graph)
-	axisStyle := lipgloss.NewStyle().Width(axisWidth).Foreground(ColorNeonCyan).Align(lipgloss.Right)
-	labelTop := axisStyle.Render(fmt.Sprintf("%.1f MB/s", maxSpeed))
-	labelMid := axisStyle.Render(fmt.Sprintf("%.1f MB/s", maxSpeed/2))
-	labelBot := axisStyle.Render("0 MB/s")
+		// Create Y-axis (right side of graph)
+		axisStyle := lipgloss.NewStyle().Width(axisWidth).Foreground(ColorNeonCyan).Align(lipgloss.Right)
+		label := func(v float64) string {
+			if v <= 0 {
+				return "0 MB/s"
+			}
+			return fmt.Sprintf("%.1f MB/s", v)
+		}
 
-	var axisColumn string
-	// Calculate exact spacing to match graph height
-	// We use manual string concatenation because lipgloss.JoinVertical with explicit newlines
-	// can sometimes add extra height that causes overflow.
-	if graphContentHeight >= 5 {
-		spacesTotal := graphContentHeight - 3
-		spaceTop := spacesTotal / 2
-		spaceBot := spacesTotal - spaceTop
+		axisLines := make([]string, graphContentHeight)
+		for i := range axisLines {
+			axisLines[i] = axisStyle.Render("")
+		}
 
-		// Construction: TopLabel + (spaceTop newlines) + MidLabel + (spaceBot newlines) + BotLabel
-		// Note: We use one newline to separate labels, plus spaceTop/Bot extra newlines.
-		// Example: Top\n\nMid -> 1 empty line gap (spaceTop=1)
+		if graphContentHeight >= 9 {
+			axisLines[0] = axisStyle.Render(label(maxSpeed))
+			axisLines[graphContentHeight/4] = axisStyle.Render(label(maxSpeed * 0.75))
+			axisLines[graphContentHeight/2] = axisStyle.Render(label(maxSpeed * 0.5))
+			axisLines[(graphContentHeight*3)/4] = axisStyle.Render(label(maxSpeed * 0.25))
+			axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
+		} else if graphContentHeight >= 5 {
+			axisLines[0] = axisStyle.Render(label(maxSpeed))
+			axisLines[graphContentHeight/2] = axisStyle.Render(label(maxSpeed * 0.5))
+			axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
+		} else {
+			axisLines[0] = axisStyle.Render(label(maxSpeed))
+			axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
+		}
 
-		axisColumn = labelTop + "\n" + strings.Repeat("\n", spaceTop) +
-			labelMid + "\n" + strings.Repeat("\n", spaceBot) +
-			labelBot
-
-	} else if graphContentHeight >= 3 {
-		spaces := graphContentHeight - 2
-		axisColumn = labelTop + "\n" + strings.Repeat("\n", spaces) + labelBot
-	} else {
-		// Very small height - just show top and bottom
-		axisColumn = labelTop + "\n" + labelBot
-	}
-	// Use a style to ensure alignment is preserved for the entire block if needed,
-	// though individual lines are already aligned.
-	axisColumn = lipgloss.NewStyle().Height(graphContentHeight).Align(lipgloss.Right).Render(axisColumn)
+		axisColumn := lipgloss.NewStyle().
+			Height(graphContentHeight).
+			Align(lipgloss.Right).
+			Render(strings.Join(axisLines, "\n"))
 
 	// Combine: stats box (left) | graph (middle) | axis (right)
 	graphWithAxis := lipgloss.JoinHorizontal(lipgloss.Top,

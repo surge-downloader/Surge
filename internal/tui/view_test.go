@@ -57,3 +57,16 @@ func TestView_SettingsTinyTerminalDoesNotPanic(t *testing.T) {
 		t.Fatal("expected non-empty settings view for tiny terminal")
 	}
 }
+
+func TestView_NetworkActivityShowsFiveAxisLabelsWhenTall(t *testing.T) {
+	m := InitialRootModel(1701, "test-version", nil, false)
+	m.width = 140
+	m.height = 40
+
+	view := m.View()
+	plain := ansiEscapeRE.ReplaceAllString(view, "")
+
+	if !strings.Contains(plain, "0.8 MB/s") || !strings.Contains(plain, "0.2 MB/s") {
+		t.Fatalf("expected 5-axis labels (including 0.8 and 0.2 MB/s), got:\n%s", plain)
+	}
+}
