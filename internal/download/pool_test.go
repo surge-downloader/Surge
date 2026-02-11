@@ -2,6 +2,8 @@ package download
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -439,6 +441,42 @@ func TestWorkerPool_Cancel_MarksDone(t *testing.T) {
 
 	if !state.Done.Load() {
 		t.Error("Expected state.Done to be true after cancel")
+	}
+}
+
+func TestWorkerPool_Cancel_RemovesIncompleteFile(t *testing.T) {
+	ch := make(chan any, 10)
+	pool := NewWorkerPool(ch, 3)
+
+	tmpDir := t.TempDir()
+	destPath := filepath.Join(tmpDir, "cancel.bin")
+	incompletePath := destPath + types.IncompleteSuffix
+	if err := os.WriteFile(incompletePath, []byte("partial"), 0o644); err != nil {
+		t.Fatalf("failed to create .surge file: %v", err)
+	}
+
+	state := types.NewProgressState("test-id", 1000)
+	state.DestPath = destPath
+
+	pool.mu.Lock()
+	pool.downloads["test-id"] = &activeDownload{
+		config: types.DownloadConfig{
+			ID:    "test-id",
+			State: state,
+		},
+	}
+	pool.mu.Unlock()
+
+	pool.Cancel("test-id")
+
+	select {
+	case <-ch:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected removal message")
+	}
+
+	if _, err := os.Stat(incompletePath); !os.IsNotExist(err) {
+		t.Fatalf("expected .surge file to be removed, stat err: %v", err)
 	}
 }
 

@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"os"
 	"sync"
 	"time"
 
@@ -187,6 +188,12 @@ func (p *WorkerPool) Cancel(downloadID string) {
 	// Mark as done to stop polling
 	if ad.config.State != nil {
 		ad.config.State.Done.Store(true)
+	}
+
+	// Best-effort cleanup of active partial file.
+	// This handles cancels before paused state is persisted in DB.
+	if ad.config.State != nil && ad.config.State.DestPath != "" {
+		_ = os.Remove(ad.config.State.DestPath + types.IncompleteSuffix)
 	}
 
 	// Send removal message

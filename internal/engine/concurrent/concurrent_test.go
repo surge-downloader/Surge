@@ -2,6 +2,7 @@ package concurrent
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -362,9 +363,8 @@ func TestConcurrentDownloader_Cancellation(t *testing.T) {
 
 	select {
 	case err := <-done:
-		// Accept context.Canceled or "operation was canceled" error string
-		if err != nil && err != context.Canceled && err.Error() != "context canceled" {
-			t.Logf("Download returned: %v (expected context.Canceled or nil)", err)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context cancellation error, got: %v", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Download didn't respond to cancellation")

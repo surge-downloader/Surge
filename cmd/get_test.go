@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/download"
+	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 )
 
@@ -133,4 +136,126 @@ func TestCLI_NewEndpoints(t *testing.T) {
 			t.Errorf("Expected 400 Bad Request for missing ID, got %d", resp.StatusCode)
 		}
 	})
+}
+
+func TestCLI_DeleteEndpoint_CleansPausedStateAndPartialFile(t *testing.T) {
+	requireTCPListener(t)
+
+	tempDir := t.TempDir()
+	originalConfigHome := os.Getenv("XDG_CONFIG_HOME")
+	if err := os.Setenv("XDG_CONFIG_HOME", tempDir); err != nil {
+		t.Fatalf("failed to set XDG_CONFIG_HOME: %v", err)
+	}
+	defer func() {
+		if originalConfigHome == "" {
+			_ = os.Unsetenv("XDG_CONFIG_HOME")
+		} else {
+			_ = os.Setenv("XDG_CONFIG_HOME", originalConfigHome)
+		}
+		state.CloseDB()
+	}()
+
+	state.CloseDB()
+	initializeGlobalState()
+
+	GlobalProgressCh = make(chan any, 100)
+	GlobalPool = download.NewWorkerPool(GlobalProgressCh, 2)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to create listener: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	svc := core.NewLocalDownloadService(GlobalPool)
+	go startHTTPServer(ln, port, "", svc)
+	time.Sleep(50 * time.Millisecond)
+
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	token := ensureAuthToken()
+	client := &http.Client{}
+
+	doRequest := func(method, url string) (*http.Response, error) {
+		req, err := http.NewRequest(method, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		return client.Do(req)
+	}
+
+	id := "paused-delete-test-id"
+	url := "https://example.com/file.bin"
+	downloadDir := filepath.Join(tempDir, "downloads")
+	if err := os.MkdirAll(downloadDir, 0o755); err != nil {
+		t.Fatalf("failed to create download dir: %v", err)
+	}
+	destPath := filepath.Join(downloadDir, "file.bin")
+	incompletePath := destPath + types.IncompleteSuffix
+	if err := os.WriteFile(incompletePath, []byte("partial-data"), 0o644); err != nil {
+		t.Fatalf("failed to create partial file: %v", err)
+	}
+
+	if err := state.SaveState(url, destPath, &types.DownloadState{
+		ID:         id,
+		URL:        url,
+		DestPath:   destPath,
+		Filename:   "file.bin",
+		TotalSize:  1000,
+		Downloaded: 250,
+		Tasks: []types.Task{
+			{Offset: 250, Length: 750},
+		},
+	}); err != nil {
+		t.Fatalf("failed to seed paused state: %v", err)
+	}
+
+	resp, err := doRequest(http.MethodDelete, baseURL+"/delete?id="+id)
+	if err != nil {
+		t.Fatalf("Failed to request delete: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	var result map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+	if result["status"] != "deleted" {
+		t.Fatalf("Expected status 'deleted', got %v", result["status"])
+	}
+
+	if _, err := os.Stat(incompletePath); !os.IsNotExist(err) {
+		t.Fatalf("expected partial file to be deleted, stat err: %v", err)
+	}
+
+	entry, err := state.GetDownload(id)
+	if err != nil {
+		t.Fatalf("failed to query entry after delete: %v", err)
+	}
+	if entry != nil {
+		t.Fatalf("expected download entry removed from DB, found: %+v", entry)
+	}
+
+	listResp, err := doRequest(http.MethodGet, baseURL+"/list")
+	if err != nil {
+		t.Fatalf("failed to request list: %v", err)
+	}
+	defer func() { _ = listResp.Body.Close() }()
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from /list, got %d", listResp.StatusCode)
+	}
+
+	var statuses []types.DownloadStatus
+	if err := json.NewDecoder(listResp.Body).Decode(&statuses); err != nil {
+		t.Fatalf("failed to decode list: %v", err)
+	}
+	for _, st := range statuses {
+		if st.ID == id {
+			t.Fatalf("expected deleted download to be absent from list, found status: %+v", st)
+		}
+	}
 }
