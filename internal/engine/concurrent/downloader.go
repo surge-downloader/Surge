@@ -21,17 +21,16 @@ import (
 
 // ConcurrentDownloader handles multi-connection downloads
 type ConcurrentDownloader struct {
-	ProgressChan  chan<- any           // Channel for events (start/complete/error)
-	ID            string               // Download ID
-	State         *types.ProgressState // Shared state for TUI polling
-	activeTasks   map[int]*ActiveTask
-	activeMu      sync.Mutex
-	URL           string // For pause/resume
-	DestPath      string // For pause/resume
-	Runtime       *types.RuntimeConfig
-	bufPool       sync.Pool
-	Headers       map[string]string // Custom HTTP headers from browser (cookies, auth, etc.)
-	chunkStatusCh chan ChunkStatusUpdate
+	ProgressChan chan<- any           // Channel for events (start/complete/error)
+	ID           string               // Download ID
+	State        *types.ProgressState // Shared state for TUI polling
+	activeTasks  map[int]*ActiveTask
+	activeMu     sync.Mutex
+	URL          string // For pause/resume
+	DestPath     string // For pause/resume
+	Runtime      *types.RuntimeConfig
+	bufPool      sync.Pool
+	Headers      map[string]string // Custom HTTP headers from browser (cookies, auth, etc.)
 }
 
 // ChunkStatusUpdate represents a request to update chunk status

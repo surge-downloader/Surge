@@ -1,6 +1,7 @@
 package concurrent
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/surge-downloader/surge/internal/utils"
@@ -16,6 +17,8 @@ func (d *ConcurrentDownloader) checkWorkerHealth() {
 	}
 
 	now := time.Now()
+	gracePeriod := d.Runtime.GetSlowWorkerGracePeriod()
+	stallTimeout := d.Runtime.GetStallTimeout()
 
 	// First pass: calculate mean speed
 	var totalSpeed float64
@@ -54,13 +57,25 @@ func (d *ConcurrentDownloader) checkWorkerHealth() {
 	// Second pass: check for slow workers
 	for workerID, active := range d.activeTasks {
 
-		// timeSinceActivity := now.Sub(lastTime)
 		taskDuration := now.Sub(active.StartTime)
 
 		// Skip workers that are still in their grace period
-		gracePeriod := d.Runtime.GetSlowWorkerGracePeriod()
 		if taskDuration < gracePeriod {
 			continue
+		}
+
+		// Hard stall guard: if no bytes have arrived for too long, cancel
+		// even when measured speed is still zero/uninitialized.
+		lastActivityNs := atomic.LoadInt64(&active.LastActivity)
+		if lastActivityNs > 0 {
+			sinceActivity := now.Sub(time.Unix(0, lastActivityNs))
+			if sinceActivity >= stallTimeout {
+				utils.Debug("Health: Worker %d stalled for %v, cancelling", workerID, sinceActivity)
+				if active.Cancel != nil {
+					active.Cancel()
+				}
+				continue
+			}
 		}
 
 		// Check for slow worker

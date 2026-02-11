@@ -144,3 +144,63 @@ func TestHealth_GracePeriod(t *testing.T) {
 	default:
 	}
 }
+
+func TestHealth_StalledWorkerCancelledEvenWithZeroSpeed(t *testing.T) {
+	runtime := &types.RuntimeConfig{
+		SlowWorkerThreshold:   0.5,
+		SlowWorkerGracePeriod: 0,
+		StallTimeout:          2 * time.Second,
+	}
+	state := types.NewProgressState("test", 1000)
+	d := NewConcurrentDownloader("test", nil, state, runtime)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	now := time.Now()
+	d.activeTasks[0] = &ActiveTask{
+		StartTime:    now.Add(-10 * time.Second),
+		LastActivity: now.Add(-5 * time.Second).UnixNano(),
+		Speed:        0, // Uninitialized speed should still be treated as stall
+		Cancel:       cancel,
+	}
+
+	d.checkWorkerHealth()
+
+	select {
+	case <-ctx.Done():
+		// Success
+	default:
+		t.Error("Worker should have been cancelled due to stall timeout")
+	}
+}
+
+func TestHealth_RecentActivityNotCancelledByStallGuard(t *testing.T) {
+	runtime := &types.RuntimeConfig{
+		SlowWorkerThreshold:   0.5,
+		SlowWorkerGracePeriod: 0,
+		StallTimeout:          5 * time.Second,
+	}
+	state := types.NewProgressState("test", 1000)
+	d := NewConcurrentDownloader("test", nil, state, runtime)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	now := time.Now()
+	d.activeTasks[0] = &ActiveTask{
+		StartTime:    now.Add(-10 * time.Second),
+		LastActivity: now.Add(-500 * time.Millisecond).UnixNano(),
+		Speed:        0,
+		Cancel:       cancel,
+	}
+
+	d.checkWorkerHealth()
+
+	select {
+	case <-ctx.Done():
+		t.Error("Worker should NOT have been cancelled with recent activity")
+	default:
+		// Success
+	}
+}
