@@ -501,3 +501,103 @@ func RemoveCompletedDownloads() (int64, error) {
 	count, _ := result.RowsAffected()
 	return count, nil
 }
+
+// LoadStates loads multiple download states from SQLite in batch
+func LoadStates(ids []string) (map[string]*types.DownloadState, error) {
+	if len(ids) == 0 {
+		return make(map[string]*types.DownloadState), nil
+	}
+
+	db := getDBHelper()
+	if db == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+
+	// Prepare IN clause placeholders
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	inClause := strings.Join(placeholders, ",")
+
+	// 1. Load Downloads
+	query := fmt.Sprintf(`
+		SELECT id, url, dest_path, filename, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors, chunk_bitmap, actual_chunk_size
+		FROM downloads
+		WHERE id IN (%s) AND status != 'completed'
+	`, inClause)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query downloads batch: %w", err)
+	}
+
+	states := make(map[string]*types.DownloadState)
+
+	defer func() {
+		if err := rows.Close(); err != nil {
+			utils.Debug("Error closing rows: %v", err)
+		}
+	}()
+
+	for rows.Next() {
+		var state types.DownloadState
+		var timeTaken, createdAt, pausedAt, actualChunkSize sql.NullInt64
+		var mirrors sql.NullString
+		var chunkBitmap []byte
+
+		if err := rows.Scan(
+			&state.ID, &state.URL, &state.DestPath, &state.Filename,
+			&state.TotalSize, &state.Downloaded, &state.URLHash,
+			&createdAt, &pausedAt, &timeTaken, &mirrors, &chunkBitmap, &actualChunkSize,
+		); err != nil {
+			return nil, err
+		}
+
+		if createdAt.Valid {
+			state.CreatedAt = createdAt.Int64
+		}
+		if pausedAt.Valid {
+			state.PausedAt = pausedAt.Int64
+		}
+		if timeTaken.Valid {
+			state.Elapsed = timeTaken.Int64 * 1e6
+		}
+		if mirrors.Valid && mirrors.String != "" {
+			state.Mirrors = strings.Split(mirrors.String, ",")
+		}
+		if actualChunkSize.Valid {
+			state.ActualChunkSize = actualChunkSize.Int64
+		}
+		state.ChunkBitmap = chunkBitmap
+
+		states[state.ID] = &state
+	}
+
+	// 2. Load Tasks for all these downloads
+	taskQuery := fmt.Sprintf(`SELECT download_id, offset, length FROM tasks WHERE download_id IN (%s)`, inClause)
+	taskRows, err := db.Query(taskQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tasks batch: %w", err)
+	}
+	defer func() {
+		if err := taskRows.Close(); err != nil {
+			utils.Debug("Error closing task rows: %v", err)
+		}
+	}()
+
+	for taskRows.Next() {
+		var downloadID string
+		var t types.Task
+		if err := taskRows.Scan(&downloadID, &t.Offset, &t.Length); err != nil {
+			return nil, err
+		}
+		if s, ok := states[downloadID]; ok {
+			s.Tasks = append(s.Tasks, t)
+		}
+	}
+
+	return states, nil
+}

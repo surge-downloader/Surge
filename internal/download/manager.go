@@ -117,8 +117,12 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	// Check if this is a resume (explicitly marked by TUI)
 	var savedState *types.DownloadState
 	if cfg.IsResume && cfg.DestPath != "" {
-		// Resume: use the provided destination path for state lookup
-		savedState, _ = state.LoadState(cfg.URL, cfg.DestPath)
+		if cfg.SavedState != nil {
+			savedState = cfg.SavedState
+		} else {
+			// Resume: use the provided destination path for state lookup
+			savedState, _ = state.LoadState(cfg.URL, cfg.DestPath)
+		}
 
 		// Restore mirrors from state if found
 		if savedState != nil && len(savedState.Mirrors) > 0 {

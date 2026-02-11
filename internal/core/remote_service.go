@@ -163,6 +163,15 @@ func (s *RemoteDownloadService) Resume(id string) error {
 	return nil
 }
 
+// ResumeBatch resumes multiple paused downloads efficiently.
+func (s *RemoteDownloadService) ResumeBatch(ids []string) []error {
+	errs := make([]error, len(ids))
+	for i, id := range ids {
+		errs[i] = s.Resume(id)
+	}
+	return errs
+}
+
 // Delete cancels and removes a download.
 func (s *RemoteDownloadService) Delete(id string) error {
 	resp, err := s.doRequest("POST", "/delete?id="+url.QueryEscape(id), nil)

@@ -508,12 +508,114 @@ func (s *LocalDownloadService) Resume(id string) error {
 		IsResume:   true,
 		ProgressCh: s.InputCh,
 		State:      dmState,
+		SavedState: savedState, // Pass loaded state to avoid re-query
 		Runtime:    types.ConvertRuntimeConfig(settings.ToRuntimeConfig()),
 		Mirrors:    mirrorURLs,
 	}
 
 	s.Pool.Add(cfg)
 	return nil
+}
+
+// ResumeBatch resumes multiple paused downloads efficiently.
+func (s *LocalDownloadService) ResumeBatch(ids []string) []error {
+	errs := make([]error, len(ids))
+
+	if s.Pool == nil {
+		for i := range errs {
+			errs[i] = fmt.Errorf("worker pool not initialized")
+		}
+		return errs
+	}
+
+	// 1. Try pool resume first for all
+	toLoad := []string{}
+	idMap := make(map[string]int)
+
+	for i, id := range ids {
+		if s.Pool.Resume(id) {
+			errs[i] = nil // Success
+		} else {
+			// Need cold resume
+			toLoad = append(toLoad, id)
+			idMap[id] = i
+		}
+	}
+
+	if len(toLoad) == 0 {
+		return errs
+	}
+
+	s.settingsMu.RLock()
+	settings := s.settings
+	s.settingsMu.RUnlock()
+
+	// Default output path
+	outputPath := settings.General.DefaultDownloadDir
+	if outputPath == "" {
+		outputPath = "."
+	}
+
+	// 2. Load states in batch
+	states, err := state.LoadStates(toLoad)
+	if err != nil {
+		// If batch load fails, mark all remaining as failed
+		for _, id := range toLoad {
+			idx := idMap[id]
+			errs[idx] = fmt.Errorf("failed to load state: %w", err)
+		}
+		return errs
+	}
+
+	// 3. Process loaded states
+	for _, id := range toLoad {
+		idx := idMap[id]
+		savedState, ok := states[id]
+		if !ok {
+			// Not found or completed (since LoadStates filters out completed)
+			errs[idx] = fmt.Errorf("download not found or completed")
+			continue
+		}
+
+		// Create Config
+		var dmState *types.ProgressState
+		var mirrorURLs []string
+
+		dmState = types.NewProgressState(id, savedState.TotalSize)
+		dmState.Downloaded.Store(savedState.Downloaded)
+		if savedState.Elapsed > 0 {
+			dmState.SetSavedElapsed(time.Duration(savedState.Elapsed))
+		}
+		if len(savedState.Mirrors) > 0 {
+			var mirrors []types.MirrorStatus
+			for _, u := range savedState.Mirrors {
+				mirrors = append(mirrors, types.MirrorStatus{URL: u, Active: true})
+				mirrorURLs = append(mirrorURLs, u)
+			}
+			dmState.SetMirrors(mirrors)
+		}
+		dmState.DestPath = savedState.DestPath
+
+		cfg := types.DownloadConfig{
+			URL:        savedState.URL,
+			OutputPath: outputPath,
+			DestPath:   savedState.DestPath,
+			ID:         id,
+			Filename:   savedState.Filename,
+			Verbose:    false,
+			IsResume:   true,
+			ProgressCh: s.InputCh,
+			State:      dmState,
+			SavedState: savedState, // Pass loaded state to avoid re-query
+			Runtime:    types.ConvertRuntimeConfig(settings.ToRuntimeConfig()),
+			Mirrors:    mirrorURLs,
+		}
+
+		s.Pool.Add(cfg)
+		errs[idx] = nil
+	}
+
+	return errs
 }
 
 // Delete cancels and removes a download.
