@@ -38,7 +38,7 @@ func TestSanitizeFilename(t *testing.T) {
 		{"filename with underscore", "my_file.zip", "my_file.zip"},
 		{"mixed case", "MyFile.ZIP", "MyFile.ZIP"},
 		{"all spaces becomes empty after trim", "   ", ""},
-		{"tabs and newlines", "\tfile\n.zip", "file\n.zip"},
+		{"tabs and newlines", "\tfile\n.zip", "file.zip"},
 		{"very long extension", "file.verylongextension", "file.verylongextension"},
 		{"numbers in name", "file123.zip", "file123.zip"},
 		{"consecutive bad chars", "file***name.zip", "file___name.zip"},
