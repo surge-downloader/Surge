@@ -16,6 +16,7 @@ import (
 	"github.com/surge-downloader/surge/internal/engine/single"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/source"
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
@@ -80,6 +81,11 @@ func uniqueFilePath(path string) string {
 
 // TUIDownload is the main entry point for TUI downloads
 func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
+
+	if source.IsMagnet(cfg.URL) || source.IsTorrentURL(cfg.URL) {
+		return TorrentDownload(ctx, cfg)
+	}
+
 	// Probe server once to get all metadata
 	utils.Debug("TUIDownload: Probing server... %s", cfg.URL)
 	probe, err := engine.ProbeServer(ctx, cfg.URL, cfg.Filename, cfg.Headers)
