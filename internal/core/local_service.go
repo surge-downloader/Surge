@@ -153,6 +153,13 @@ func (s *LocalDownloadService) reportProgressLoop() {
 				continue
 			}
 
+			// Skip if no active workers (e.g. queued or stalled or single-threaded without atomic update?)
+			// This drastically reduces noise for queued items or items not yet started.
+			// Note: SingleDownloader needs to ensure it updates ActiveWorkers if it wants to be reported.
+			if cfg.State.ActiveWorkers.Load() == 0 {
+				continue
+			}
+
 			// Calculate Progress
 			downloaded, total, totalElapsed, sessionElapsed, connections, sessionStart := cfg.State.GetProgress()
 

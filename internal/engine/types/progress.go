@@ -341,8 +341,10 @@ func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
 	}
 
 	// 1. Assume everything is downloaded initially
+	// Reconstruct the progress array:
+	// Fill with chunkSize.
 	ps.ChunkProgress = make([]int64, ps.BitmapWidth)
-	var totalVerified int64
+
 	for i := 0; i < ps.BitmapWidth; i++ {
 		chunkStart := int64(i) * ps.ActualChunkSize
 		chunkEnd := chunkStart + ps.ActualChunkSize
@@ -350,13 +352,17 @@ func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
 			chunkEnd = ps.TotalSize
 		}
 		ps.ChunkProgress[i] = chunkEnd - chunkStart
-		totalVerified += ps.ChunkProgress[i]
 	}
+
+	var totalVerified int64 = ps.TotalSize // Start assuming full
 
 	// 2. Subtract remaining tasks
 	for _, task := range remainingTasks {
 		offset := task.Offset
 		length := task.Length
+
+		// Subtract from total
+		totalVerified -= length
 
 		startIdx := int(offset / ps.ActualChunkSize)
 		endIdx := int((offset + length - 1) / ps.ActualChunkSize)
@@ -379,7 +385,6 @@ func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
 			if taskStart < chunkStart {
 				taskStart = chunkStart
 			}
-
 			taskEnd := offset + length
 			if taskEnd > chunkEnd {
 				taskEnd = chunkEnd
@@ -388,7 +393,6 @@ func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
 			overlap := taskEnd - taskStart
 			if overlap > 0 {
 				ps.ChunkProgress[i] -= overlap
-				totalVerified -= overlap // Subtract unverified bytes
 			}
 		}
 	}
@@ -409,7 +413,6 @@ func (ps *ProgressState) RecalculateProgress(remainingTasks []Task) {
 			ps.ChunkProgress[i] = chunkSize // clamp
 			ps.SetChunkState(i, ChunkCompleted)
 		} else if ps.ChunkProgress[i] > 0 {
-			// Even if saved bitmap said Pending, if we have bytes, it's actually partial
 			ps.SetChunkState(i, ChunkDownloading)
 		} else {
 			ps.ChunkProgress[i] = 0 // clamp
@@ -427,9 +430,14 @@ func (ps *ProgressState) GetBitmap() ([]byte, int, int64, int64, []int64) {
 		return nil, 0, 0, 0, nil
 	}
 
+	// Optimization: Allocate exactly what's needed
+	// The receiver likely doesn't modify this, but to be safe/correct with concurrency we must copy.
+	// However, we can use a pooled approach if memory is an issue, but for now just standard make/copy.
 	result := make([]byte, len(ps.ChunkBitmap))
 	copy(result, ps.ChunkBitmap)
 
+	// ChunkProgress can be large, only return if really needed?
+	// The UI uses it for "green partials".
 	progressResult := make([]int64, len(ps.ChunkProgress))
 	copy(progressResult, ps.ChunkProgress)
 

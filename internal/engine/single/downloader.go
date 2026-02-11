@@ -81,6 +81,12 @@ func (d *SingleDownloader) Download(ctx context.Context, rawurl, destPath string
 
 	start := time.Now()
 
+	// Mark as active so LocalDownloadService reports progress
+	if d.State != nil {
+		d.State.ActiveWorkers.Add(1)
+		defer d.State.ActiveWorkers.Add(-1)
+	}
+
 	// Copy response body to file with context cancellation support
 	var written int64
 	buf := make([]byte, d.Runtime.GetWorkerBufferSize())
