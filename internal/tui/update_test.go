@@ -176,10 +176,14 @@ func TestUpdate_ResumeResultErrorKeepsFlags(t *testing.T) {
 }
 
 func TestUpdate_DownloadStartedClearsFlags(t *testing.T) {
+	dm := NewDownloadModel("id-1", "http://example.com/file", "file", 0)
+	dm.paused = true
+	dm.pausing = true
+	dm.pendingResume = true
 	m := RootModel{
-		downloads: []*DownloadModel{
-			{ID: "id-1", paused: true, pausing: true, pendingResume: true},
-		},
+		downloads:   []*DownloadModel{dm},
+		list:        NewDownloadList(80, 20),
+		logViewport: viewport.New(40, 5),
 	}
 
 	msg := events.DownloadStartedMsg{
@@ -193,7 +197,16 @@ func TestUpdate_DownloadStartedClearsFlags(t *testing.T) {
 
 	updated, _ := m.Update(msg)
 	m2 := updated.(RootModel)
-	d := m2.downloads[0]
+	var d *DownloadModel
+	for _, dl := range m2.downloads {
+		if dl.ID == "id-1" {
+			d = dl
+			break
+		}
+	}
+	if d == nil {
+		t.Fatal("Expected download id-1 to exist")
+	}
 	if d.paused || d.pausing || d.pendingResume {
 		t.Fatalf("Expected flags cleared on DownloadStartedMsg, got paused=%v pausing=%v pendingResume=%v", d.paused, d.pausing, d.pendingResume)
 	}
@@ -204,6 +217,8 @@ func TestUpdate_PauseResumeEventsNormalizeFlags(t *testing.T) {
 		downloads: []*DownloadModel{
 			{ID: "id-1", paused: false, pausing: true, pendingResume: true},
 		},
+		list:        NewDownloadList(80, 20),
+		logViewport: viewport.New(40, 5),
 	}
 
 	updated, _ := m.Update(events.DownloadPausedMsg{

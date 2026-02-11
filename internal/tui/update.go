@@ -250,7 +250,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if d.Total > 0 {
 					d.progress.SetPercent(0)
 				}
-				d.state.SetTotalSize(msg.Total) // Keep state updated for verification if needed
+				if d.state == nil && msg.State != nil {
+					d.state = msg.State
+				}
+				if d.state != nil {
+					d.state.SetTotalSize(msg.Total) // Keep state updated for verification if needed
+				}
 				found = true
 				break
 			}
