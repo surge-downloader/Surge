@@ -45,7 +45,7 @@ jobs:
 
           python3 benchmark.py \
             $URL \
-            --iterations ${{ github.event.inputs.iterations }} \
+            --iterations ${{ github.event.inputs.iterations || 5 }} \
             --surge \
             --surge-tui \
             --surge-exec ./surge \
