@@ -33,14 +33,13 @@ The existing options were lacking: XDM is no longer maintained, and IDM is close
 
 Most browsers open a single connection for a download. Surge opens multiple (up to 32), splits the file, and downloads chunks in parallel. But we take it a step further:
 
-- **Smart "Work Stealing":** If a fast worker finishes its chunk, it doesn't sit idle. It "steals" work from slower workers to ensure the download finishes as fast as physics allows.
+- **Blazing Fast:** Designed to maximize your bandwidth utilization and download files as quickly as possible.
 - **Multiple Mirrors:** Download from multiple sources simultaneously. Surge distributes workers across all available mirrors and automatically handles failover.
-- **Slow Worker Restart:** We monitor mean speeds. If a worker is lagging (< 0.3x average), Surge kills it and restarts the connection to find a faster route.
 - **Sequential Download:** Option to download files in strict order (Streaming Mode). Ideal for media files that you want to preview while downloading.
 - **Daemon Architecture:** Surge runs a single background "engine." You can open 10 different terminal tabs and queue downloads; they all funnel into one efficient manager.
 - **Beautiful TUI:** Built with Bubble Tea & Lipgloss, it looks good while it works.
 
-For a deep dive into how we make downloads faster, check out our **[Optimization Guide](docs/OPTIMIZATIONS.md)**.
+For a deep dive into how we make downloads faster (like work stealing and slow worker handling), check out our **[Optimization Guide](docs/OPTIMIZATIONS.md)**.
 
 ---
 
