@@ -187,6 +187,15 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case resumeResultMsg:
 		if msg.err != nil {
 			m.addLogEntry(LogStyleError.Render(fmt.Sprintf("✖ Auto-resume failed for %s: %v", msg.id, msg.err)))
+			return m, nil
+		}
+		for _, d := range m.downloads {
+			if d.ID == msg.id {
+				d.pendingResume = false
+				d.paused = false
+				d.pausing = false
+				break
+			}
 		}
 		return m, nil
 
@@ -234,6 +243,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d.Total = msg.Total
 				d.Destination = msg.DestPath
 				d.StartTime = time.Now()
+				d.paused = false
+				d.pausing = false
+				d.pendingResume = false
 				// Update progress bar
 				if d.Total > 0 {
 					d.progress.SetPercent(0)
@@ -356,6 +368,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if d.ID == msg.DownloadID {
 				d.paused = true
 				d.pausing = false
+				d.pendingResume = false
 				d.Downloaded = msg.Downloaded
 				d.Speed = 0
 				m.addLogEntry(LogStylePaused.Render("⏸ Paused: " + d.Filename))
@@ -369,6 +382,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.paused = false
+				d.pausing = false
+				d.pendingResume = false
 				m.addLogEntry(LogStyleStarted.Render("▶ Resumed: " + d.Filename))
 				break
 			}

@@ -318,7 +318,9 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 				status.Connections = int(connections)
 
 				// Update status based on state
-				if cfg.State.IsPaused() {
+				if cfg.State.IsPausing() {
+					status.Status = "pausing"
+				} else if cfg.State.IsPaused() {
 					status.Status = "paused"
 				} else if cfg.State.Done.Load() {
 					status.Status = "completed"
@@ -433,6 +435,14 @@ func (s *LocalDownloadService) Pause(id string) error {
 	// If not in pool, check if it's already paused/stopped in DB
 	entry, err := state.GetDownload(id)
 	if err == nil && entry != nil {
+		// Emit paused event so UI clears "pausing" state
+		if s.InputCh != nil {
+			s.InputCh <- events.DownloadPausedMsg{
+				DownloadID: id,
+				Filename:   entry.Filename,
+				Downloaded: entry.Downloaded,
+			}
+		}
 		return nil // Already stopped
 	}
 
@@ -513,6 +523,12 @@ func (s *LocalDownloadService) Resume(id string) error {
 	}
 
 	s.Pool.Add(cfg)
+	if s.InputCh != nil {
+		s.InputCh <- events.DownloadResumedMsg{
+			DownloadID: id,
+			Filename:   entry.Filename,
+		}
+	}
 	return nil
 }
 

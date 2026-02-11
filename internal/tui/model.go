@@ -236,6 +236,8 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 				case "completed":
 					dm.done = true
 					dm.progress.SetPercent(1.0)
+				case "pausing":
+					dm.pausing = true
 				case "paused":
 					if settings.General.AutoResume {
 						dm.pendingResume = true
