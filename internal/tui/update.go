@@ -231,6 +231,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.Filename = msg.Filename
+				d.FilenameLower = strings.ToLower(msg.Filename)
 				d.Total = msg.Total
 				d.Destination = msg.DestPath
 				d.StartTime = time.Now()
