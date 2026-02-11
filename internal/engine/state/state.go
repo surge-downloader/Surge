@@ -81,7 +81,7 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 			if err != nil {
 				return fmt.Errorf("failed to prepare batch insert: %w", err)
 			}
-			defer stmt.Close()
+			defer func() { _ = stmt.Close() }()
 
 			for i := 0; i < numTasks; i += batchSize {
 				end := i + batchSize

@@ -122,16 +122,16 @@ func resolveConnectBaseURL(target string, allowInsecureHTTP bool) (string, error
 	if strings.Contains(target, "://") {
 		u, err := url.Parse(target)
 		if err != nil {
-			return "", fmt.Errorf("Invalid target: %v", err)
+			return "", fmt.Errorf("invalid target: %v", err)
 		}
 		if u.Scheme != "http" && u.Scheme != "https" {
-			return "", fmt.Errorf("Unsupported scheme %q (use http or https)", u.Scheme)
+			return "", fmt.Errorf("unsupported scheme %q (use http or https)", u.Scheme)
 		}
 		if u.Host == "" {
-			return "", fmt.Errorf("Invalid target: missing host")
+			return "", fmt.Errorf("invalid target: missing host")
 		}
 		if u.Scheme == "http" && !allowInsecureHTTP && !isLoopbackHost(u.Hostname()) {
-			return "", fmt.Errorf("Refusing insecure HTTP for non-loopback target. Use https:// or --insecure-http")
+			return "", fmt.Errorf("refusing insecure HTTP for non-loopback target. Use https:// or --insecure-http")
 		}
 		return fmt.Sprintf("%s://%s", u.Scheme, u.Host), nil
 	}

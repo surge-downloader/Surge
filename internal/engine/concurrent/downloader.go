@@ -320,10 +320,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		}
 	}()
 
-	// Pre-allocate slice capacity to avoid reallocations
-	// Number of chunks = ceil(fileSize / chunkSize)
-	count := (fileSize + chunkSize - 1) / chunkSize
-	tasks := make([]types.Task, 0, int(count))
+	tasks := createTasks(fileSize, chunkSize)
 
 	// Check for saved state BEFORE truncating (resume case)
 	savedState, err := state.LoadState(rawurl, destPath)
@@ -355,7 +352,6 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		if err := outFile.Truncate(fileSize); err != nil {
 			return fmt.Errorf("failed to preallocate file: %w", err)
 		}
-		tasks = createTasks(fileSize, chunkSize)
 		// Robustness: ensure state counter starts at 0 for fresh download
 		if d.State != nil {
 			d.State.Downloaded.Store(0)
