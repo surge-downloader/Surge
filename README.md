@@ -40,6 +40,8 @@ Most browsers open a single connection for a download. Surge opens multiple (up 
 - **Daemon Architecture:** Surge runs a single background "engine." You can open 10 different terminal tabs and queue downloads; they all funnel into one efficient manager.
 - **Beautiful TUI:** Built with Bubble Tea & Lipgloss, it looks good while it works.
 
+For a deep dive into how we make downloads faster, check out our **[Optimization Guide](docs/OPTIMIZATIONS.md)**.
+
 ---
 
 ## Installation
@@ -142,17 +144,6 @@ The Surge extension intercepts browser downloads and sends them straight to your
     - Navigate to `about:debugging#/runtime/this-firefox`.
     - Click **"Load Temporary Add-on..."**.
     - Select the `manifest.json` file inside the `extension-firefox` folder.
-
-### Connection & Troubleshooting
-
-- Ensure Surge is running (either TUI `surge` or Server `surge server start`).
-- The extension icon should show a green dot when connected.
-- If the dot is red, check if Surge is running and listening on port 1700.
-- **Auth required:** the daemon now protects all API endpoints. In the extension popup, paste the token from `surge token` and click **Save**.
-- If downloads are not intercepted, make sure **Intercept Downloads** is enabled in the popup.
-- The extension ignores `blob:` / `data:` URLs and historical downloads (older than ~30s).
-- Chrome debugging: open `chrome://extensions` → Surge → **Service worker** → **Inspect** for logs and errors.
-- Firefox debugging: `about:debugging#/runtime/this-firefox` → Surge → **Inspect**.
 
 ---
 
