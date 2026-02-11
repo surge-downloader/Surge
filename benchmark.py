@@ -52,9 +52,42 @@ class BenchmarkResult:
 # =============================================================================
 # UTILITIES
 # =============================================================================
-def run_command(cmd: List[str], cwd: Optional[str] = None, timeout: int = 3600) -> tuple[bool, str]:
+def run_command(cmd: List[str], cwd: Optional[str] = None, timeout: int = 3600, use_pty: bool = False) -> tuple[bool, str]:
     """Run a command and return (success, output)."""
     try:
+        if use_pty and not IS_WINDOWS:
+            import pty
+            master, slave = pty.openpty()
+            p = subprocess.Popen(
+                cmd,
+                cwd=cwd,
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+                close_fds=True,
+                text=True
+            )
+            os.close(slave)
+            
+            output = ""
+            try:
+                # Read output in chunks until EOF
+                while True:
+                    try:
+                        chunk = os.read(master, 1024).decode('utf-8', errors='ignore')
+                        if not chunk:
+                            break
+                        output += chunk
+                    except OSError:
+                        break
+            except Exception:
+                pass
+            finally:
+                 os.close(master)
+                 p.wait()
+                 
+            return p.returncode == 0, output
+
         result = subprocess.run(
             cmd,
             cwd=cwd,
@@ -180,11 +213,14 @@ def benchmark_surge(executable: Path, url: str, output_dir: Path, label: str = "
     # Common flags
     cmd.extend(["--output", str(output_dir), "--exit-when-done"])
 
+    # Determine if we need PTY (TUI mode needs it, Server mode doesn't)
+    use_pty = "TUI" in label
+
     # Retry logic for lock contention
-    max_retries = 3
+    max_retries = 5
     for attempt in range(max_retries):
         start = time.perf_counter()
-        success, output = run_command(cmd)
+        success, output = run_command(cmd, use_pty=use_pty)
         elapsed = time.perf_counter() - start
         
         if success:
@@ -198,7 +234,7 @@ def benchmark_surge(executable: Path, url: str, output_dir: Path, label: str = "
         break # Other error, don't retry
     elapsed = time.perf_counter() - start
     
-    # Parse internal time if available (Stdout for Server, Log for TUI)
+    # Parse internal time if available (Stdout server, Log TUI)
     actual_time = elapsed
     
     # 1. Try stdout (Server mode)
@@ -374,6 +410,12 @@ def main():
     print(f"  Target:   {args.url[:60]}")
     if len(args.url) > 60: print(f"            {args.url[60:]}")
     print()
+
+    # ISOLATION: Set env vars to use temp_dir for Surge config/state
+    # This prevents lock contention with system instances and keeps benchmarks clean
+    os.environ["XDG_CONFIG_HOME"] = str(temp_dir)
+    os.environ["HOME"] = str(temp_dir)
+    os.environ["APPDATA"] = str(temp_dir)
 
     # Determine tasks
     tasks = []

@@ -19,6 +19,7 @@ func (d *ConcurrentDownloader) checkWorkerHealth() {
 	now := time.Now()
 	gracePeriod := d.Runtime.GetSlowWorkerGracePeriod()
 	stallTimeout := d.Runtime.GetStallTimeout()
+	activeCount := len(d.activeTasks)
 
 	// First pass: calculate mean speed
 	var totalSpeed float64
@@ -69,8 +70,19 @@ func (d *ConcurrentDownloader) checkWorkerHealth() {
 		lastActivityNs := atomic.LoadInt64(&active.LastActivity)
 		if lastActivityNs > 0 {
 			sinceActivity := now.Sub(time.Unix(0, lastActivityNs))
-			if sinceActivity >= stallTimeout {
-				utils.Debug("Health: Worker %d stalled for %v, cancelling", workerID, sinceActivity)
+			// Be less aggressive to avoid retry churn:
+			// 1) New attempts with no progress yet get extra time.
+			// 2) Single remaining worker gets extra time (tail phase).
+			effectiveTimeout := stallTimeout
+			if atomic.LoadInt64(&active.CurrentOffset) <= active.Task.Offset {
+				effectiveTimeout *= 3
+			}
+			if activeCount == 1 {
+				effectiveTimeout *= 2
+			}
+
+			if sinceActivity >= effectiveTimeout {
+				utils.Debug("Health: Worker %d stalled for %v (timeout=%v), cancelling", workerID, sinceActivity, effectiveTimeout)
 				if active.Cancel != nil {
 					active.Cancel()
 				}

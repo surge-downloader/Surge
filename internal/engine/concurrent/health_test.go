@@ -159,10 +159,12 @@ func TestHealth_StalledWorkerCancelledEvenWithZeroSpeed(t *testing.T) {
 
 	now := time.Now()
 	d.activeTasks[0] = &ActiveTask{
-		StartTime:    now.Add(-10 * time.Second),
-		LastActivity: now.Add(-5 * time.Second).UnixNano(),
-		Speed:        0, // Uninitialized speed should still be treated as stall
-		Cancel:       cancel,
+		Task:          types.Task{Offset: 0, Length: 1024},
+		StartTime:     now.Add(-10 * time.Second),
+		CurrentOffset: 512, // Simulate that this attempt had made progress before stalling
+		LastActivity:  now.Add(-5 * time.Second).UnixNano(),
+		Speed:         0, // Zero speed should still be treated as stall
+		Cancel:        cancel,
 	}
 
 	d.checkWorkerHealth()
