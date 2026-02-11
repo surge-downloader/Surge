@@ -42,6 +42,10 @@ func TestSanitizeFilename(t *testing.T) {
 		{"very long extension", "file.verylongextension", "file.verylongextension"},
 		{"numbers in name", "file123.zip", "file123.zip"},
 		{"consecutive bad chars", "file***name.zip", "file___name.zip"},
+
+		// Security test cases
+		{"ansi escape codes", "\x1b[31mred.zip", "red.zip"},
+		{"control chars", "file\x07name.zip", "filename.zip"},
 	}
 
 	for _, tt := range tests {
