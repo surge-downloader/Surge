@@ -161,14 +161,34 @@ func (m RootModel) View() string {
 
 	// === MAIN DASHBOARD LAYOUT ===
 
-	footerHeight := 1                              // Footer is just one line of text
-	availableHeight := m.height - 1 - footerHeight // maximized height with 1 line margin
-	if availableHeight < 10 {
-		availableHeight = 10 // Minimum safe height
-	}
 	availableWidth := m.width - 4 // Margin
 	if availableWidth < 0 {
 		availableWidth = 0
+	}
+
+	// Footer - keybindings on left, version on bottom-right
+	helpText := m.help.View(m.keys.Dashboard)
+	versionBlue := lipgloss.AdaptiveColor{Light: "#005cc5", Dark: "#58a6ff"}
+	versionText := lipgloss.NewStyle().Foreground(versionBlue).Render(fmt.Sprintf("v%s", m.CurrentVersion))
+	footerContentWidth := availableWidth
+	leftFooterWidth := footerContentWidth - lipgloss.Width(versionText)
+	if leftFooterWidth < 0 {
+		leftFooterWidth = 0
+	}
+	footerContent := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		lipgloss.NewStyle().Width(leftFooterWidth).Render(helpText),
+		versionText,
+	)
+	footer := lipgloss.NewStyle().Padding(0, 1).Render(footerContent)
+
+	footerHeight := lipgloss.Height(footer)
+	if footerHeight < 1 {
+		footerHeight = 1
+	}
+	availableHeight := m.height - footerHeight
+	if availableHeight < 1 {
+		availableHeight = 1
 	}
 
 	// Column Widths
@@ -179,7 +199,6 @@ func (m RootModel) View() string {
 	}
 
 	// --- LEFT COLUMN HEIGHTS ---
-	serverBoxHeight := 3
 	headerHeight := 11
 	listHeight := availableHeight - headerHeight
 	if listHeight < 10 {
@@ -321,24 +340,47 @@ func (m RootModel) View() string {
 		logWidth = 4 // Minimum for viewport
 	}
 
-	// Render logo centered in its box (move up to make room for server box)
+	// Render logo and server panel in a shared column
 	gradientLogo := ApplyGradient(logoText, ColorNeonPink, ColorNeonPurple)
 	logoContent := lipgloss.NewStyle().Render(gradientLogo)
-	logoBox := lipgloss.Place(logoWidth, headerHeight-serverBoxHeight, lipgloss.Center, lipgloss.Center, logoContent)
 
-	// Server port box (below logo, same width)
+	// Server info box (below logo, same width)
 	greenDot := lipgloss.NewStyle().Foreground(ColorStateDownloading).Render("●")
-	serverText := lipgloss.NewStyle().Foreground(ColorNeonCyan).Bold(true).Render(fmt.Sprintf(" Listening on :%d", m.ServerPort))
+	host := m.ServerHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	serverAddr := fmt.Sprintf("%s:%d", host, m.ServerPort)
+
+	var statusLine string
+	if m.IsRemote {
+		statusLine = lipgloss.NewStyle().Foreground(ColorNeonCyan).Bold(true).Render(" Connected to " + serverAddr)
+	} else {
+		statusLine = lipgloss.NewStyle().Foreground(ColorNeonCyan).Bold(true).Render(" Serving at " + serverAddr)
+	}
 
 	serverContentWidth := logoWidth - 4
 	if serverContentWidth < 0 {
 		serverContentWidth = 0
 	}
 
+	serverContent := greenDot + statusLine
+
 	serverPortContent := lipgloss.NewStyle().
 		Width(serverContentWidth).
 		Align(lipgloss.Center).
-		Render(greenDot + serverText)
+		Render(serverContent)
+
+	// Keep server box only as tall as needed for its rendered content.
+	serverBoxHeight := lipgloss.Height(serverPortContent) + 2
+	if serverBoxHeight < 3 {
+		serverBoxHeight = 3
+	}
+	logoBoxHeight := headerHeight - serverBoxHeight
+	if logoBoxHeight < 1 {
+		logoBoxHeight = 1
+	}
+	logoBox := lipgloss.Place(logoWidth, logoBoxHeight, lipgloss.Center, lipgloss.Center, logoContent)
 	serverBox := renderBtopBox("", PaneTitleStyle.Render(" Server "), serverPortContent, logoWidth, serverBoxHeight, ColorGray)
 
 	// Combine logo and server box vertically
@@ -622,14 +664,23 @@ func (m RootModel) View() string {
 
 	// Body
 	body := lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, rightColumn)
+	body = lipgloss.NewStyle().
+		Width(availableWidth).
+		Height(availableHeight).
+		MaxWidth(availableWidth).
+		MaxHeight(availableHeight).
+		Render(body)
 
-	// Footer - just keybindings
-	footer := lipgloss.NewStyle().Padding(0, 1).Render(m.help.View(m.keys.Dashboard))
-
-	return lipgloss.JoinVertical(lipgloss.Left,
+	fullView := lipgloss.JoinVertical(lipgloss.Left,
 		body,
 		footer,
 	)
+	return lipgloss.NewStyle().
+		Width(m.width).
+		Height(m.height).
+		MaxWidth(m.width).
+		MaxHeight(m.height).
+		Render(fullView)
 }
 
 // Helper to render the detailed info pane

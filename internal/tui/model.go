@@ -141,6 +141,8 @@ type RootModel struct {
 
 	// Server port for display
 	ServerPort int
+	ServerHost string
+	IsRemote   bool
 
 	// Update check
 	UpdateInfo     *version.UpdateInfo // Update information (nil if no update available)
