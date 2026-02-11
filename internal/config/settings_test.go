@@ -44,9 +44,7 @@ func TestDefaultSettings(t *testing.T) {
 		if settings.Network.MaxConnectionsPerHost > 64 {
 			t.Errorf("MaxConnectionsPerHost shouldn't exceed 64, got: %d", settings.Network.MaxConnectionsPerHost)
 		}
-		if settings.Network.MaxGlobalConnections <= 0 {
-			t.Errorf("MaxGlobalConnections should be positive, got: %d", settings.Network.MaxGlobalConnections)
-		}
+
 		// UserAgent can be empty (means use default)
 		if settings.Network.SequentialDownload {
 			t.Error("SequentialDownload should be false by default")
@@ -141,7 +139,6 @@ func TestSaveAndLoadSettings(t *testing.T) {
 		},
 		Network: NetworkSettings{
 			MaxConnectionsPerHost:  16,
-			MaxGlobalConnections:   50,
 			MaxConcurrentDownloads: 7,
 			UserAgent:              "TestAgent/1.0",
 			MinChunkSize:           1 * MB,
@@ -282,9 +279,7 @@ func TestToRuntimeConfig(t *testing.T) {
 	if runtime.MaxConnectionsPerHost != settings.Network.MaxConnectionsPerHost {
 		t.Error("MaxConnectionsPerHost not correctly mapped")
 	}
-	if runtime.MaxGlobalConnections != settings.Network.MaxGlobalConnections {
-		t.Error("MaxGlobalConnections not correctly mapped")
-	}
+
 	if runtime.UserAgent != settings.Network.UserAgent {
 		t.Error("UserAgent not correctly mapped")
 	}
@@ -495,7 +490,6 @@ func TestSaveAndLoadSettings_RoundTrip(t *testing.T) {
 		},
 		Network: NetworkSettings{
 			MaxConnectionsPerHost: 64,
-			MaxGlobalConnections:  200,
 			UserAgent:             "RoundTripTest/1.0",
 			SequentialDownload:    true,
 			MinChunkSize:          1 * MB,
@@ -529,9 +523,7 @@ func TestSaveAndLoadSettings_RoundTrip(t *testing.T) {
 	if loaded.General.ExtensionPrompt != original.General.ExtensionPrompt {
 		t.Error("ExtensionPrompt mismatch")
 	}
-	if loaded.Network.MaxGlobalConnections != original.Network.MaxGlobalConnections {
-		t.Error("MaxGlobalConnections mismatch")
-	}
+
 	if loaded.Network.SequentialDownload != original.Network.SequentialDownload {
 		t.Error("SequentialDownload mismatch")
 	}
@@ -612,9 +604,7 @@ func TestLegacySettingsMigration_FullLegacy(t *testing.T) {
 	if settings.Network.MaxConnectionsPerHost != 48 {
 		t.Errorf("MaxConnectionsPerHost not migrated: got %d, want 48", settings.Network.MaxConnectionsPerHost)
 	}
-	if settings.Network.MaxGlobalConnections != 200 {
-		t.Errorf("MaxGlobalConnections not migrated: got %d, want 200", settings.Network.MaxGlobalConnections)
-	}
+
 	if settings.Network.MaxConcurrentDownloads != 5 {
 		t.Errorf("MaxConcurrentDownloads not migrated: got %d, want 5", settings.Network.MaxConcurrentDownloads)
 	}
