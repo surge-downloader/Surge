@@ -136,6 +136,16 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 
 			// Only delete from activeTasks on normal completion (not cancelled)
 			d.activeMu.Lock()
+			// Final sync of chunk status before removing from active tasks
+			// This ensures the syncLoop doesn't miss the last few bytes if it hasn't run yet
+			if d.State != nil {
+				current := atomic.LoadInt64(&activeTask.CurrentOffset)
+				start := activeTask.LastSyncedOffset
+				if current > start {
+					length := current - start
+					d.State.UpdateChunkStatus(start, length, types.ChunkCompleted)
+				}
+			}
 			delete(d.activeTasks, id)
 			d.activeMu.Unlock()
 
@@ -229,16 +239,14 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 
 	// Batching state
 	var pendingBytes int64
-	pendingStart := offset
 	// batchThreshold limits the frequency of global lock acquisition for progress updates.
 	// Benchmarks show significant contention reduction (11.6x speedup in status updates)
 	// when batching at 256KB vs ~32KB (buffer size).
 	const batchThreshold = 256 * 1024 // 256KB batch size
 
-	// Ensure pending updates are flushed on exit
+	// Ensure pending bytes are added to total downloaded on exit
 	defer func() {
 		if pendingBytes > 0 && d.State != nil {
-			d.State.UpdateChunkStatus(pendingStart, pendingBytes, types.ChunkCompleted)
 			d.State.Downloaded.Add(pendingBytes)
 		}
 	}()
@@ -307,6 +315,8 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 			atomic.StoreInt64(&activeTask.LastActivity, now.UnixNano())
 
 			// BATCHING: Accumulate bytes locally
+			// With time-based sync, we only need to update the total downloaded count occasionally
+			// to avoid atomic contention on State.Downloaded.Add
 			pendingBytes += int64(readSoFar)
 
 			if pendingBytes >= batchThreshold {
@@ -315,7 +325,6 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 					d.State.Downloaded.Add(pendingBytes)
 				}
 				// Reset batch
-				pendingStart = offset
 				pendingBytes = 0
 			}
 
