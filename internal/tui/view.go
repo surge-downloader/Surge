@@ -161,7 +161,7 @@ func (m RootModel) View() string {
 
 	// === MAIN DASHBOARD LAYOUT ===
 
-	availableWidth := m.width - 4 // Margin
+	availableWidth := m.width - 2
 	if availableWidth < 0 {
 		availableWidth = 0
 	}
@@ -180,7 +180,7 @@ func (m RootModel) View() string {
 		lipgloss.NewStyle().Width(leftFooterWidth).Render(helpText),
 		versionText,
 	)
-	footer := lipgloss.NewStyle().Padding(0, 1).Render(footerContent)
+	footer := footerContent
 
 	footerHeight := lipgloss.Height(footer)
 	if footerHeight < 1 {
@@ -193,7 +193,7 @@ func (m RootModel) View() string {
 
 	// Column Widths
 	leftWidth := int(float64(availableWidth) * ListWidthRatio)
-	rightWidth := availableWidth - leftWidth - 2 // -2 for spacing
+	rightWidth := availableWidth - leftWidth
 	if rightWidth < 0 {
 		rightWidth = 0
 	}
@@ -675,12 +675,12 @@ func (m RootModel) View() string {
 		body,
 		footer,
 	)
-	return lipgloss.NewStyle().
-		Width(m.width).
-		Height(m.height).
-		MaxWidth(m.width).
+	fullView = lipgloss.NewStyle().
+		Width(availableWidth).
+		MaxWidth(availableWidth).
 		MaxHeight(m.height).
 		Render(fullView)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, fullView)
 }
 
 // Helper to render the detailed info pane
