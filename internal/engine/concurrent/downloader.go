@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/surge-downloader/surge/internal/engine/state"
@@ -316,18 +317,9 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		d.State.InitBitmap(fileSize, chunkSize)
 	}
 
-	// Initialize buffered channel for non-blocking chunk updates
-	// Buffer size should be large enough to handle bursts from multiple workers
-	d.chunkStatusCh = make(chan ChunkStatusUpdate, 512)
-
-	// Start consumer goroutine for chunk updates
-	go func() {
-		for update := range d.chunkStatusCh {
-			if d.State != nil {
-				d.State.UpdateChunkStatus(update.Offset, update.Length, update.Status)
-			}
-		}
-	}()
+	// Start time-based sync loop for progress updates
+	// This replaces the event-driven channel approach to prevent worker blocking
+	d.startChunkSyncLoop(downloadCtx)
 
 	// Create and preallocate output file with .surge suffix
 	outFile, err := os.OpenFile(workingPath, os.O_CREATE|os.O_RDWR, 0o644)
@@ -605,10 +597,44 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 
 	// Note: Download completion notifications are handled by the TUI via DownloadCompleteMsg
 
-	// Close chunk status channel and wait for consumer to drain (implicitly by channel close)
-	// We don't strictly need to wait for the consumer to finish because it just updates memory state,
-	// but closing it is good practice.
-	close(d.chunkStatusCh)
-
 	return nil
+}
+
+// startChunkSyncLoop runs a background goroutine that syncs worker progress to the chunk map
+func (d *ConcurrentDownloader) startChunkSyncLoop(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if d.State == nil {
+					continue
+				}
+
+				d.activeMu.Lock()
+				// Snapshot active tasks to minimize lock time
+				// We can't deep copy easily, but we can iterate quickly
+				for _, task := range d.activeTasks {
+					current := atomic.LoadInt64(&task.CurrentOffset)
+					start := task.LastSyncedOffset
+
+					if current > start {
+						// Found progress!
+						length := current - start
+
+						// Update global state (this locks state mutex)
+						d.State.UpdateChunkStatus(start, length, types.ChunkCompleted)
+
+						// Move sync cursor forward
+						task.LastSyncedOffset = current
+					}
+				}
+				d.activeMu.Unlock()
+			}
+		}
+	}()
 }

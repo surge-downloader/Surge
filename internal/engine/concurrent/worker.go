@@ -63,13 +63,14 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 			taskCtx, taskCancel := context.WithCancel(ctx)
 			now := time.Now()
 			activeTask := &ActiveTask{
-				Task:          task,
-				CurrentOffset: task.Offset,
-				StopAt:        task.Offset + task.Length,
-				LastActivity:  now.UnixNano(),
-				StartTime:     now,
-				Cancel:        taskCancel,
-				WindowStart:   now, // Initialize sliding window
+				Task:             task,
+				CurrentOffset:    task.Offset,
+				StopAt:           task.Offset + task.Length,
+				LastActivity:     now.UnixNano(),
+				StartTime:        now,
+				Cancel:           taskCancel,
+				WindowStart:      now, // Initialize sliding window
+				LastSyncedOffset: task.Offset,
 			}
 			d.activeMu.Lock()
 			d.activeTasks[id] = activeTask
@@ -78,14 +79,7 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 			// Update chunk status to Downloading
 			if d.State != nil {
 				utils.Debug("Worker %d: Setting range %d-%d to Downloading", id, task.Offset, task.Offset+task.Length)
-				// Non-blocking update via channel
-				if d.chunkStatusCh != nil {
-					d.chunkStatusCh <- ChunkStatusUpdate{
-						Offset: task.Offset,
-						Length: task.Length,
-						Status: types.ChunkDownloading,
-					}
-				}
+				d.State.UpdateChunkStatus(task.Offset, task.Length, types.ChunkDownloading)
 			} else {
 				utils.Debug("Worker %d: d.State is nil, cannot update chunk status", id)
 			}
@@ -244,14 +238,7 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 	// Ensure pending updates are flushed on exit
 	defer func() {
 		if pendingBytes > 0 && d.State != nil {
-			// Non-blocking update via channel
-			if d.chunkStatusCh != nil {
-				d.chunkStatusCh <- ChunkStatusUpdate{
-					Offset: pendingStart,
-					Length: pendingBytes,
-					Status: types.ChunkCompleted,
-				}
-			}
+			d.State.UpdateChunkStatus(pendingStart, pendingBytes, types.ChunkCompleted)
 			d.State.Downloaded.Add(pendingBytes)
 		}
 	}()
@@ -324,14 +311,7 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 
 			if pendingBytes >= batchThreshold {
 				if d.State != nil {
-					// Update Chunk Map (via buffered channel)
-					if d.chunkStatusCh != nil {
-						d.chunkStatusCh <- ChunkStatusUpdate{
-							Offset: pendingStart,
-							Length: pendingBytes,
-							Status: types.ChunkCompleted,
-						}
-					}
+					// Direct update for total downloaded only
 					d.State.Downloaded.Add(pendingBytes)
 				}
 				// Reset batch

@@ -11,9 +11,10 @@ import (
 
 // ActiveTask tracks a task currently being processed by a worker
 type ActiveTask struct {
-	Task          types.Task
-	CurrentOffset int64 // Atomic
-	StopAt        int64 // Atomic
+	Task             types.Task
+	CurrentOffset    int64 // Atomic
+	StopAt           int64 // Atomic
+	LastSyncedOffset int64
 
 	// Health monitoring fields
 	LastActivity int64              // Atomic: Unix nano timestamp of last data received
