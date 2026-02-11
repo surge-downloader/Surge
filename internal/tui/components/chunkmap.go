@@ -108,9 +108,13 @@ func (m ChunkMapModel) View() string {
 			endChunkIdx = m.BitmapWidth - 1
 		}
 
-		// Calculate total downloaded bytes within this visual block
+		// Calculate total downloaded bytes within this visual block.
+		// A visual block should become completed as soon as all bytes it represents
+		// are downloaded, even if an overlapped source chunk is still marked
+		// Downloading (partial frontier inside the same source chunk).
 		var downloadedInBlock int64
 		allCompleted := true
+		hasApproximateProgress := false
 
 		for cIdx := startChunkIdx; cIdx <= endChunkIdx; cIdx++ {
 			chunkStartByte := int64(cIdx) * m.ActualChunkSize
@@ -172,12 +176,13 @@ func (m ChunkMapModel) View() string {
 					// Assume full benefit of doubt for visualization - render as downloading
 					// treat as if we have some bytes
 					downloadedInBlock += 1
+					hasApproximateProgress = true
 				}
 			}
 		}
 
 		// Determine Status
-		if allCompleted {
+		if allCompleted || (!hasApproximateProgress && downloadedInBlock >= blockSize) {
 			visualChunks[i] = types.ChunkCompleted
 		} else if downloadedInBlock > 0 {
 			// If we have ANY bytes in this visual block, it is "Downloading" (or Paused Partial)

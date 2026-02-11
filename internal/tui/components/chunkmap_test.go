@@ -105,7 +105,7 @@ func TestChunkMap_PausedState(t *testing.T) {
 	setChunk(bitmap, 0, int(types.ChunkDownloading))
 
 	progress := make([]int64, chunkCount)
-	progress[0] = 512 // Half chunk
+	progress[0] = 128 // Partial first visual block to force Downloading render
 
 	// Case 1: Not Paused
 	modelActive := NewChunkMapModel(bitmap, chunkCount, 8, 0, false, 4096, 1024, progress)
@@ -216,5 +216,37 @@ func TestChunkMap_GranularProgress(t *testing.T) {
 	// Row 1 should be Gray
 	if !strings.Contains(rows[1], grayBlock) {
 		t.Errorf("Row 1 should be Gray (Inactive part of chunk)")
+	}
+}
+
+func TestChunkMap_BlockTurnsCompletedWhenItsByteRangeIsFullyDownloaded(t *testing.T) {
+	// One source chunk (10MB), still marked Downloading, with 3MB downloaded.
+	// Rendered as 5 visual blocks (2MB each). The first block is fully covered
+	// by downloaded bytes and should be Completed (green), not Downloading (pink).
+	chunkCount := 1
+	totalSize := int64(10 * 1024 * 1024)
+	chunkSize := totalSize
+
+	bitmap := make([]byte, 1)
+	setChunk(bitmap, 0, int(types.ChunkDownloading))
+	progress := []int64{3 * 1024 * 1024}
+
+	model := NewChunkMapModel(bitmap, chunkCount, 2, 5, false, totalSize, chunkSize, progress)
+	out := model.View()
+	rows := strings.Split(strings.TrimSpace(out), "\n")
+	if len(rows) != 5 {
+		t.Fatalf("Expected 5 rows, got %d", len(rows))
+	}
+
+	completedStyle := lipgloss.NewStyle().Foreground(colors.StateDownloading)
+	completedBlock := completedStyle.Render("■")
+	downloadingStyle := lipgloss.NewStyle().Foreground(colors.NeonPink)
+	downloadingBlock := downloadingStyle.Render("■")
+
+	if !strings.Contains(rows[0], completedBlock) {
+		t.Errorf("Row 0 should be Completed (green/cyan) when fully covered by downloaded bytes")
+	}
+	if strings.Contains(rows[0], downloadingBlock) {
+		t.Errorf("Row 0 should not be Downloading (pink) when fully covered by downloaded bytes")
 	}
 }
