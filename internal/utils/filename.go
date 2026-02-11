@@ -9,7 +9,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/h2non/filetype"
 	"github.com/vfaronov/httpheader"
@@ -118,6 +120,8 @@ func DetermineFilename(rawurl string, resp *http.Response, verbose bool) (string
 	return filename, body, nil
 }
 
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
 func sanitizeFilename(name string) string {
 	// Replace backslashes with forward slashes first so filepath.Base treats them as separators
 	name = strings.ReplaceAll(name, "\\", "/")
@@ -129,6 +133,18 @@ func sanitizeFilename(name string) string {
 		return "_"
 	}
 	name = strings.TrimSpace(name)
+
+	// Remove ANSI escape codes
+	name = ansiRegex.ReplaceAllString(name, "")
+
+	// Remove control characters
+	name = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, name)
+
 	name = strings.ReplaceAll(name, "/", "_")
 	// Additional standard replacements for windows/linux safety
 	name = strings.ReplaceAll(name, ":", "_")
