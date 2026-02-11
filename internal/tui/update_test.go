@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,8 @@ import (
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/types"
 )
+
+var errTest = errors.New("test error")
 
 func TestGenerateUniqueFilename(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "surge-tui-test-*")
@@ -135,6 +138,93 @@ func TestGenerateUniqueFilename(t *testing.T) {
 				t.Errorf("generateUniqueFilename() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestUpdate_ResumeResultClearsFlags(t *testing.T) {
+	m := RootModel{
+		downloads: []*DownloadModel{
+			{ID: "id-1", paused: true, pausing: true, pendingResume: true},
+		},
+	}
+
+	updated, _ := m.Update(resumeResultMsg{id: "id-1", err: nil})
+	m2 := updated.(RootModel)
+
+	if len(m2.downloads) != 1 {
+		t.Fatalf("Expected 1 download, got %d", len(m2.downloads))
+	}
+	d := m2.downloads[0]
+	if d.paused || d.pausing || d.pendingResume {
+		t.Fatalf("Expected flags cleared after resumeResultMsg success, got paused=%v pausing=%v pendingResume=%v", d.paused, d.pausing, d.pendingResume)
+	}
+}
+
+func TestUpdate_ResumeResultErrorKeepsFlags(t *testing.T) {
+	m := RootModel{
+		downloads: []*DownloadModel{
+			{ID: "id-1", paused: true, pausing: true, pendingResume: true},
+		},
+	}
+
+	updated, _ := m.Update(resumeResultMsg{id: "id-1", err: errTest})
+	m2 := updated.(RootModel)
+	d := m2.downloads[0]
+	if !d.paused || !d.pausing || !d.pendingResume {
+		t.Fatalf("Expected flags unchanged on resumeResultMsg error, got paused=%v pausing=%v pendingResume=%v", d.paused, d.pausing, d.pendingResume)
+	}
+}
+
+func TestUpdate_DownloadStartedClearsFlags(t *testing.T) {
+	m := RootModel{
+		downloads: []*DownloadModel{
+			{ID: "id-1", paused: true, pausing: true, pendingResume: true},
+		},
+	}
+
+	msg := events.DownloadStartedMsg{
+		DownloadID: "id-1",
+		URL:        "http://example.com/file",
+		Filename:   "file",
+		Total:      100,
+		DestPath:   "/tmp/file",
+		State:      types.NewProgressState("id-1", 100),
+	}
+
+	updated, _ := m.Update(msg)
+	m2 := updated.(RootModel)
+	d := m2.downloads[0]
+	if d.paused || d.pausing || d.pendingResume {
+		t.Fatalf("Expected flags cleared on DownloadStartedMsg, got paused=%v pausing=%v pendingResume=%v", d.paused, d.pausing, d.pendingResume)
+	}
+}
+
+func TestUpdate_PauseResumeEventsNormalizeFlags(t *testing.T) {
+	m := RootModel{
+		downloads: []*DownloadModel{
+			{ID: "id-1", paused: false, pausing: true, pendingResume: true},
+		},
+	}
+
+	updated, _ := m.Update(events.DownloadPausedMsg{
+		DownloadID: "id-1",
+		Filename:   "file",
+		Downloaded: 50,
+	})
+	m2 := updated.(RootModel)
+	d := m2.downloads[0]
+	if !d.paused || d.pausing || d.pendingResume {
+		t.Fatalf("Expected paused=true and others false after DownloadPausedMsg, got paused=%v pausing=%v pendingResume=%v", d.paused, d.pausing, d.pendingResume)
+	}
+
+	updated, _ = m2.Update(events.DownloadResumedMsg{
+		DownloadID: "id-1",
+		Filename:   "file",
+	})
+	m3 := updated.(RootModel)
+	d = m3.downloads[0]
+	if d.paused || d.pausing || d.pendingResume {
+		t.Fatalf("Expected flags cleared after DownloadResumedMsg, got paused=%v pausing=%v pendingResume=%v", d.paused, d.pausing, d.pendingResume)
 	}
 }
 
