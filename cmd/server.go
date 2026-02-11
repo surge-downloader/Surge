@@ -162,11 +162,12 @@ func readPID() int {
 func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile string, outputDir string, exitWhenDone bool, noResume bool) {
 	var port int
 	var listener net.Listener
+	bindHost := getServerBindHost()
 
 	if portFlag > 0 {
 		port = portFlag
 		var err error
-		listener, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", bindHost, port))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: could not bind to port %d: %v\n", port, err)
 			os.Exit(1)
@@ -207,7 +208,8 @@ func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile
 	}()
 
 	fmt.Printf("Surge %s running in server mode.\n", Version)
-	fmt.Printf("HTTP server listening on port %d\n", port)
+	host := getServerBindHost()
+	fmt.Printf("Serving on %s:%d\n", host, port)
 	fmt.Println("Press Ctrl+C to exit.")
 
 	StartHeadlessConsumer()

@@ -87,6 +87,15 @@ surge server start https://url.com/file.zip
 surge server status
 ```
 
+`surge` and `surge server start` bind the HTTP API to a detected private LAN IPv4 address by default.
+If no private interface is available, Surge falls back to `localhost`.
+
+The API is token-protected. Generate/read your token from:
+
+```bash
+~/.surge/token
+```
+
 ### 3. Remote TUI
 
 Connect to a running Surge daemon (local or remote).
@@ -98,6 +107,10 @@ surge connect
 # Connect to a remote daemon
 surge connect 192.168.1.10:1700 --token <token>
 ```
+
+By default, `surge connect` uses:
+- `http://` for loopback and private IP targets
+- `https://` for public/hostname targets
 
 ---
 

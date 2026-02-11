@@ -141,6 +141,8 @@ type RootModel struct {
 
 	// Server port for display
 	ServerPort int
+	ServerHost string
+	IsRemote   bool
 
 	// Update check
 	UpdateInfo     *version.UpdateInfo // Update information (nil if no update available)
@@ -331,7 +333,7 @@ func (m RootModel) Init() tea.Cmd {
 		}
 	}
 
-	if len(resumeIDs) > 0 {
+	if len(resumeIDs) > 0 && m.Service != nil {
 		cmds = append(cmds, func() tea.Msg {
 			errs := m.Service.ResumeBatch(resumeIDs)
 

@@ -55,7 +55,7 @@ var connectCmd = &cobra.Command{
 			if idx := strings.Index(host, ":"); idx != -1 {
 				host = host[:idx]
 			}
-			if host == "127.0.0.1" || host == "localhost" {
+			if isLocalHost(host) {
 				token = ensureAuthToken()
 			} else {
 				fmt.Println("No token provided. Use --token or set SURGE_TOKEN.")
@@ -85,15 +85,22 @@ var connectCmd = &cobra.Command{
 
 		// Parse port for display
 		port := 0
-		parts := strings.Split(target, ":")
-		if len(parts) == 2 {
-			port, _ = strconv.Atoi(parts[1])
+		serverHost := hostnameFromTarget(target)
+		if u, err := url.Parse(baseURL); err == nil {
+			if h := u.Hostname(); h != "" {
+				serverHost = h
+			}
+			if p := u.Port(); p != "" {
+				port, _ = strconv.Atoi(p)
+			}
 		}
 
 		// Initialize TUI
 		// Using false for noResume because resume logic is handled by the server (remote service)
 		// we just want to reflect the state.
 		m := tui.InitialRootModel(port, Version, service, false)
+		m.ServerHost = serverHost
+		m.IsRemote = true
 
 		p := tea.NewProgram(m, tea.WithAltScreen())
 
@@ -130,14 +137,16 @@ func resolveConnectBaseURL(target string, allowInsecureHTTP bool) (string, error
 		if u.Host == "" {
 			return "", fmt.Errorf("invalid target: missing host")
 		}
-		if u.Scheme == "http" && !allowInsecureHTTP && !isLoopbackHost(u.Hostname()) {
+		host := u.Hostname()
+		if u.Scheme == "http" && !allowInsecureHTTP && !isLoopbackHost(host) && !isPrivateIPHost(host) {
 			return "", fmt.Errorf("refusing insecure HTTP for non-loopback target. Use https:// or --insecure-http")
 		}
 		return fmt.Sprintf("%s://%s", u.Scheme, u.Host), nil
 	}
 
 	scheme := "https"
-	if isLoopbackHost(hostnameFromTarget(target)) {
+	host := hostnameFromTarget(target)
+	if isLoopbackHost(host) || isPrivateIPHost(host) {
 		scheme = "http"
 	}
 	return fmt.Sprintf("%s://%s", scheme, target), nil
@@ -164,4 +173,42 @@ func isLoopbackHost(host string) bool {
 		return false
 	}
 	return ip.IsLoopback()
+}
+
+func isPrivateIPHost(host string) bool {
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsPrivate()
+}
+
+func isLocalHost(host string) bool {
+	if isLoopbackHost(host) {
+		return true
+	}
+	target := net.ParseIP(host)
+	if target == nil {
+		return false
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			switch v := addr.(type) {
+			case *net.IPNet:
+				if v.IP.Equal(target) {
+					return true
+				}
+			case *net.IPAddr:
+				if v.IP.Equal(target) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

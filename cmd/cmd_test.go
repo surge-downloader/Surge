@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,7 +67,7 @@ func TestFindAvailablePort_ReturnsListener(t *testing.T) {
 func TestFindAvailablePort_SkipsOccupiedPorts(t *testing.T) {
 	requireTCPListener(t)
 	// Occupy a port
-	ln1, err := net.Listen("tcp", "127.0.0.1:52000")
+	ln1, err := net.Listen("tcp", fmt.Sprintf("%s:52000", getServerBindHost()))
 	if err != nil {
 		t.Fatalf("Failed to occupy port: %v", err)
 	}
@@ -206,6 +207,8 @@ func TestResolveConnectBaseURL(t *testing.T) {
 		{name: "remote host defaults https", target: "example.com:1700", want: "https://example.com:1700"},
 		{name: "https URL allowed", target: "https://example.com:1700", want: "https://example.com:1700"},
 		{name: "http URL loopback allowed", target: "http://127.0.0.1:1700", want: "http://127.0.0.1:1700"},
+		{name: "private ip host:port defaults http", target: "192.168.1.10:1700", want: "http://192.168.1.10:1700"},
+		{name: "http URL private IP allowed", target: "http://10.0.0.15:1700", want: "http://10.0.0.15:1700"},
 		{name: "http URL remote rejected", target: "http://example.com:1700", wantErr: true},
 		{name: "http URL remote allowed with flag", target: "http://example.com:1700", insecureHTTP: true, want: "http://example.com:1700"},
 		{name: "invalid scheme rejected", target: "ftp://example.com:1700", wantErr: true},
@@ -227,6 +230,80 @@ func TestResolveConnectBaseURL(t *testing.T) {
 				t.Fatalf("Expected %q, got %q", tt.want, got)
 			}
 		})
+	}
+}
+
+func TestIsPrivateIPHost(t *testing.T) {
+	tests := []struct {
+		host string
+		want bool
+	}{
+		{host: "10.1.2.3", want: true},
+		{host: "172.16.5.9", want: true},
+		{host: "192.168.50.7", want: true},
+		{host: "8.8.8.8", want: false},
+		{host: "localhost", want: false},
+		{host: "example.com", want: false},
+		{host: "", want: false},
+	}
+
+	for _, tt := range tests {
+		if got := isPrivateIPHost(tt.host); got != tt.want {
+			t.Fatalf("isPrivateIPHost(%q) = %v, want %v", tt.host, got, tt.want)
+		}
+	}
+}
+
+func TestIsLocalHost(t *testing.T) {
+	tests := []struct {
+		host string
+		want bool
+	}{
+		{host: "127.0.0.1", want: true},
+		{host: "localhost", want: true},
+		{host: "::1", want: true},
+		{host: "8.8.8.8", want: false},
+		{host: "example.com", want: false},
+		{host: "", want: false},
+	}
+
+	for _, tt := range tests {
+		if got := isLocalHost(tt.host); got != tt.want {
+			t.Fatalf("isLocalHost(%q) = %v, want %v", tt.host, got, tt.want)
+		}
+	}
+}
+
+func TestGetPreferredLocalIP(t *testing.T) {
+	got := getPreferredLocalIP()
+	if strings.TrimSpace(got) == "" {
+		// Valid in environments with loopback only.
+		return
+	}
+
+	ip := net.ParseIP(got)
+	if ip == nil {
+		t.Fatalf("getPreferredLocalIP returned invalid IP: %q", got)
+	}
+	if ip.To4() == nil {
+		t.Fatalf("getPreferredLocalIP should return IPv4, got: %q", got)
+	}
+	if !ip.IsPrivate() {
+		t.Fatalf("getPreferredLocalIP should prefer private IPv4, got: %q", got)
+	}
+}
+
+func TestGetServerBindHost(t *testing.T) {
+	host := getServerBindHost()
+	if strings.TrimSpace(host) == "" {
+		t.Fatal("getServerBindHost returned empty string")
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || ip.To4() == nil {
+		t.Fatalf("getServerBindHost returned invalid IPv4: %q", host)
+	}
+	if !ip.IsPrivate() && !ip.IsLoopback() {
+		t.Fatalf("getServerBindHost should be private or loopback, got: %q", host)
 	}
 }
 

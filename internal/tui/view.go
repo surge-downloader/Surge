@@ -161,25 +161,44 @@ func (m RootModel) View() string {
 
 	// === MAIN DASHBOARD LAYOUT ===
 
-	footerHeight := 1                              // Footer is just one line of text
-	availableHeight := m.height - 1 - footerHeight // maximized height with 1 line margin
-	if availableHeight < 10 {
-		availableHeight = 10 // Minimum safe height
-	}
-	availableWidth := m.width - 4 // Margin
+	availableWidth := m.width - 2
 	if availableWidth < 0 {
 		availableWidth = 0
 	}
 
+	// Footer - keybindings on left, version on bottom-right
+	helpText := m.help.View(m.keys.Dashboard)
+	versionBlue := lipgloss.AdaptiveColor{Light: "#005cc5", Dark: "#58a6ff"}
+	versionText := lipgloss.NewStyle().Foreground(versionBlue).Render(fmt.Sprintf("v%s", m.CurrentVersion))
+	footerContentWidth := availableWidth
+	leftFooterWidth := footerContentWidth - lipgloss.Width(versionText)
+	if leftFooterWidth < 0 {
+		leftFooterWidth = 0
+	}
+	footerContent := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		lipgloss.NewStyle().Width(leftFooterWidth).Render(helpText),
+		versionText,
+	)
+	footer := footerContent
+
+	footerHeight := lipgloss.Height(footer)
+	if footerHeight < 1 {
+		footerHeight = 1
+	}
+	availableHeight := m.height - footerHeight
+	if availableHeight < 1 {
+		availableHeight = 1
+	}
+
 	// Column Widths
 	leftWidth := int(float64(availableWidth) * ListWidthRatio)
-	rightWidth := availableWidth - leftWidth - 2 // -2 for spacing
+	rightWidth := availableWidth - leftWidth
 	if rightWidth < 0 {
 		rightWidth = 0
 	}
 
 	// --- LEFT COLUMN HEIGHTS ---
-	serverBoxHeight := 3
 	headerHeight := 11
 	listHeight := availableHeight - headerHeight
 	if listHeight < 10 {
@@ -219,7 +238,7 @@ func (m RootModel) View() string {
 	chunkMapNeeded := 0
 	showChunkMap := false
 
-	if selected != nil {
+	if selected != nil && selected.state != nil {
 		// Show Chunk Map only if:
 		// 1. Not Done (Completed)
 		// 2. Has Chunks (Bitmap initialized)
@@ -233,7 +252,7 @@ func (m RootModel) View() string {
 		}
 	}
 
-	if showChunkMap {
+	if showChunkMap && selected != nil && selected.state != nil {
 		_, bitmapWidth, _, _, _ := selected.state.GetBitmap()
 		// chunkMapWidth = rightWidth - 4 (box border) - 2 (inner padding) = rightWidth - 6
 		// Calculate available height for chunk map (remaining height minus graph minimum 9)
@@ -241,14 +260,14 @@ func (m RootModel) View() string {
 		if availableChunkHeight < 1 {
 			availableChunkHeight = 1
 		}
-		contentLines := components.CalculateHeight(bitmapWidth, rightWidth-6, availableChunkHeight)
-		if contentLines > 0 {
-			// +2 for border, +1 for header
-			chunkMapNeeded = contentLines + 3
-		} else {
-			// Minimum for message "Chunk visualization not available"
-			chunkMapNeeded = 6
-		}
+			contentLines := components.CalculateHeight(bitmapWidth, rightWidth-6, availableChunkHeight)
+			if contentLines > 0 {
+				// +2 for top/bottom borders
+				chunkMapNeeded = contentLines + 2
+			} else {
+				// Minimum for message "Chunk visualization not available"
+				chunkMapNeeded = 6
+			}
 	}
 
 	// Define Minimum Graph Height
@@ -321,24 +340,47 @@ func (m RootModel) View() string {
 		logWidth = 4 // Minimum for viewport
 	}
 
-	// Render logo centered in its box (move up to make room for server box)
+	// Render logo and server panel in a shared column
 	gradientLogo := ApplyGradient(logoText, ColorNeonPink, ColorNeonPurple)
 	logoContent := lipgloss.NewStyle().Render(gradientLogo)
-	logoBox := lipgloss.Place(logoWidth, headerHeight-serverBoxHeight, lipgloss.Center, lipgloss.Center, logoContent)
 
-	// Server port box (below logo, same width)
+	// Server info box (below logo, same width)
 	greenDot := lipgloss.NewStyle().Foreground(ColorStateDownloading).Render("●")
-	serverText := lipgloss.NewStyle().Foreground(ColorNeonCyan).Bold(true).Render(fmt.Sprintf(" Listening on :%d", m.ServerPort))
+	host := m.ServerHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	serverAddr := fmt.Sprintf("%s:%d", host, m.ServerPort)
+
+	var statusLine string
+	if m.IsRemote {
+		statusLine = lipgloss.NewStyle().Foreground(ColorNeonCyan).Bold(true).Render(" Connected to " + serverAddr)
+	} else {
+		statusLine = lipgloss.NewStyle().Foreground(ColorNeonCyan).Bold(true).Render(" Serving at " + serverAddr)
+	}
 
 	serverContentWidth := logoWidth - 4
 	if serverContentWidth < 0 {
 		serverContentWidth = 0
 	}
 
+	serverContent := greenDot + statusLine
+
 	serverPortContent := lipgloss.NewStyle().
 		Width(serverContentWidth).
 		Align(lipgloss.Center).
-		Render(greenDot + serverText)
+		Render(serverContent)
+
+	// Keep server box only as tall as needed for its rendered content.
+	serverBoxHeight := lipgloss.Height(serverPortContent) + 2
+	if serverBoxHeight < 3 {
+		serverBoxHeight = 3
+	}
+	logoBoxHeight := headerHeight - serverBoxHeight
+	if logoBoxHeight < 1 {
+		logoBoxHeight = 1
+	}
+	logoBox := lipgloss.Place(logoWidth, logoBoxHeight, lipgloss.Center, lipgloss.Center, logoContent)
 	serverBox := renderBtopBox("", PaneTitleStyle.Render(" Server "), serverPortContent, logoWidth, serverBoxHeight, ColorGray)
 
 	// Combine logo and server box vertically
@@ -462,39 +504,39 @@ func (m RootModel) View() string {
 	// Render the Graph
 	graphVisual := renderMultiLineGraph(graphData, graphAreaWidth, graphContentHeight, maxSpeed, ColorNeonPink, nil)
 
-	// Create Y-axis (right side of graph)
-	axisStyle := lipgloss.NewStyle().Width(axisWidth).Foreground(ColorNeonCyan).Align(lipgloss.Right)
-	labelTop := axisStyle.Render(fmt.Sprintf("%.1f MB/s", maxSpeed))
-	labelMid := axisStyle.Render(fmt.Sprintf("%.1f MB/s", maxSpeed/2))
-	labelBot := axisStyle.Render("0 MB/s")
+		// Create Y-axis (right side of graph)
+		axisStyle := lipgloss.NewStyle().Width(axisWidth).Foreground(ColorNeonCyan).Align(lipgloss.Right)
+		label := func(v float64) string {
+			if v <= 0 {
+				return "0 MB/s"
+			}
+			return fmt.Sprintf("%.1f MB/s", v)
+		}
 
-	var axisColumn string
-	// Calculate exact spacing to match graph height
-	// We use manual string concatenation because lipgloss.JoinVertical with explicit newlines
-	// can sometimes add extra height that causes overflow.
-	if graphContentHeight >= 5 {
-		spacesTotal := graphContentHeight - 3
-		spaceTop := spacesTotal / 2
-		spaceBot := spacesTotal - spaceTop
+		axisLines := make([]string, graphContentHeight)
+		for i := range axisLines {
+			axisLines[i] = axisStyle.Render("")
+		}
 
-		// Construction: TopLabel + (spaceTop newlines) + MidLabel + (spaceBot newlines) + BotLabel
-		// Note: We use one newline to separate labels, plus spaceTop/Bot extra newlines.
-		// Example: Top\n\nMid -> 1 empty line gap (spaceTop=1)
+		if graphContentHeight >= 9 {
+			axisLines[0] = axisStyle.Render(label(maxSpeed))
+			axisLines[graphContentHeight/4] = axisStyle.Render(label(maxSpeed * 0.75))
+			axisLines[graphContentHeight/2] = axisStyle.Render(label(maxSpeed * 0.5))
+			axisLines[(graphContentHeight*3)/4] = axisStyle.Render(label(maxSpeed * 0.25))
+			axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
+		} else if graphContentHeight >= 5 {
+			axisLines[0] = axisStyle.Render(label(maxSpeed))
+			axisLines[graphContentHeight/2] = axisStyle.Render(label(maxSpeed * 0.5))
+			axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
+		} else {
+			axisLines[0] = axisStyle.Render(label(maxSpeed))
+			axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
+		}
 
-		axisColumn = labelTop + "\n" + strings.Repeat("\n", spaceTop) +
-			labelMid + "\n" + strings.Repeat("\n", spaceBot) +
-			labelBot
-
-	} else if graphContentHeight >= 3 {
-		spaces := graphContentHeight - 2
-		axisColumn = labelTop + "\n" + strings.Repeat("\n", spaces) + labelBot
-	} else {
-		// Very small height - just show top and bottom
-		axisColumn = labelTop + "\n" + labelBot
-	}
-	// Use a style to ensure alignment is preserved for the entire block if needed,
-	// though individual lines are already aligned.
-	axisColumn = lipgloss.NewStyle().Height(graphContentHeight).Align(lipgloss.Right).Render(axisColumn)
+		axisColumn := lipgloss.NewStyle().
+			Height(graphContentHeight).
+			Align(lipgloss.Right).
+			Render(strings.Join(axisLines, "\n"))
 
 	// Combine: stats box (left) | graph (middle) | axis (right)
 	graphWithAxis := lipgloss.JoinHorizontal(lipgloss.Top,
@@ -577,14 +619,14 @@ func (m RootModel) View() string {
 	var chunkBox string
 	if showChunkMap {
 		var chunkContent string
-		if selected != nil {
-			// New chunk map component
-			bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress := selected.state.GetBitmap()
-			// Calculate target rows based on available height (minus padding/borders)
-			targetRows := chunkMapHeight - 3 // -2 border, -1 padding
-			if targetRows < 3 {
-				targetRows = 3 // Minimum 3 rows
-			}
+		if selected != nil && selected.state != nil {
+				// New chunk map component
+				bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress := selected.state.GetBitmap()
+				// Calculate target rows based on available height (minus borders)
+				targetRows := chunkMapHeight - 2
+				if targetRows < 3 {
+					targetRows = 3 // Minimum 3 rows
+				}
 			if targetRows > 5 {
 				targetRows = 5 // Maximum 5 rows for compact look
 			}
@@ -622,14 +664,23 @@ func (m RootModel) View() string {
 
 	// Body
 	body := lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, rightColumn)
+	body = lipgloss.NewStyle().
+		Width(availableWidth).
+		Height(availableHeight).
+		MaxWidth(availableWidth).
+		MaxHeight(availableHeight).
+		Render(body)
 
-	// Footer - just keybindings
-	footer := lipgloss.NewStyle().Padding(0, 1).Render(m.help.View(m.keys.Dashboard))
-
-	return lipgloss.JoinVertical(lipgloss.Left,
+	fullView := lipgloss.JoinVertical(lipgloss.Left,
 		body,
 		footer,
 	)
+	fullView = lipgloss.NewStyle().
+		Width(availableWidth).
+		MaxWidth(availableWidth).
+		MaxHeight(m.height).
+		Render(fullView)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, fullView)
 }
 
 // Helper to render the detailed info pane
