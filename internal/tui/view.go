@@ -260,14 +260,14 @@ func (m RootModel) View() string {
 		if availableChunkHeight < 1 {
 			availableChunkHeight = 1
 		}
-		contentLines := components.CalculateHeight(bitmapWidth, rightWidth-6, availableChunkHeight)
-		if contentLines > 0 {
-			// +2 for border, +1 for header
-			chunkMapNeeded = contentLines + 3
-		} else {
-			// Minimum for message "Chunk visualization not available"
-			chunkMapNeeded = 6
-		}
+			contentLines := components.CalculateHeight(bitmapWidth, rightWidth-6, availableChunkHeight)
+			if contentLines > 0 {
+				// +2 for top/bottom borders
+				chunkMapNeeded = contentLines + 2
+			} else {
+				// Minimum for message "Chunk visualization not available"
+				chunkMapNeeded = 6
+			}
 	}
 
 	// Define Minimum Graph Height
@@ -620,13 +620,13 @@ func (m RootModel) View() string {
 	if showChunkMap {
 		var chunkContent string
 		if selected != nil && selected.state != nil {
-			// New chunk map component
-			bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress := selected.state.GetBitmap()
-			// Calculate target rows based on available height (minus padding/borders)
-			targetRows := chunkMapHeight - 3 // -2 border, -1 padding
-			if targetRows < 3 {
-				targetRows = 3 // Minimum 3 rows
-			}
+				// New chunk map component
+				bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress := selected.state.GetBitmap()
+				// Calculate target rows based on available height (minus borders)
+				targetRows := chunkMapHeight - 2
+				if targetRows < 3 {
+					targetRows = 3 // Minimum 3 rows
+				}
 			if targetRows > 5 {
 				targetRows = 5 // Maximum 5 rows for compact look
 			}
