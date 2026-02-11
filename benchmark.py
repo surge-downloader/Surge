@@ -80,8 +80,9 @@ def run_command(cmd: List[str], cwd: Optional[str] = None, timeout: int = 3600, 
                         output += chunk
                     except OSError:
                         break
-            except Exception:
-                pass
+            except Exception as e:
+                # Unexpected error while reading from PTY; record and stop reading
+                output += f"\n[benchmark.py] Error while reading PTY output: {e}\n"
             finally:
                  os.close(master)
                  p.wait()
