@@ -295,9 +295,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addLogEntry(LogStyleStarted.Render("⬇ Started: " + msg.Filename))
 		return m, tea.Batch(cmds...)
 
-		case events.ProgressMsg:
-			for _, d := range m.downloads {
-				if d.ID == msg.DownloadID {
+	case events.ProgressMsg:
+		for _, d := range m.downloads {
+			if d.ID == msg.DownloadID {
 				if d.done || d.paused {
 					break
 				}
@@ -308,20 +308,20 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d.Elapsed = msg.Elapsed
 				d.Connections = msg.ActiveConnections
 
-					// Update Chunk State if provided
-					if msg.BitmapWidth > 0 && len(msg.ChunkBitmap) > 0 {
-						if d.state != nil && msg.Total > 0 {
-							d.state.SetTotalSize(msg.Total)
-						}
-						// We only get bitmap, no progress array (to save bandwidth)
-						// State needs to be updated carefully
-						if d.state != nil {
-							d.state.RestoreBitmap(msg.ChunkBitmap, msg.ActualChunkSize)
-						}
-						if d.state != nil && len(msg.ChunkProgress) > 0 {
-							d.state.SetChunkProgress(msg.ChunkProgress)
-						}
+				// Update Chunk State if provided
+				if msg.BitmapWidth > 0 && len(msg.ChunkBitmap) > 0 {
+					if d.state != nil && msg.Total > 0 {
+						d.state.SetTotalSize(msg.Total)
 					}
+					// We only get bitmap, no progress array (to save bandwidth)
+					// State needs to be updated carefully
+					if d.state != nil {
+						d.state.RestoreBitmap(msg.ChunkBitmap, msg.ActualChunkSize)
+					}
+					if d.state != nil && len(msg.ChunkProgress) > 0 {
+						d.state.SetChunkProgress(msg.ChunkProgress)
+					}
+				}
 
 				if d.Total > 0 {
 					percentage := float64(d.Downloaded) / float64(d.Total)
@@ -600,21 +600,21 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.UpdateListItems()
 				return m, nil
 			}
-				// Quit
-				if key.Matches(msg, m.keys.Dashboard.Quit) {
-					// Graceful shutdown
-					if m.Service != nil {
-						_ = m.Service.Shutdown()
-					}
-					return m, tea.Quit
+			// Quit
+			if key.Matches(msg, m.keys.Dashboard.Quit) {
+				// Graceful shutdown
+				if m.Service != nil {
+					_ = m.Service.Shutdown()
 				}
-				if key.Matches(msg, m.keys.Dashboard.ForceQuit) {
-					// Force quit (same as shutdown for now, or just exit)
-					if m.Service != nil {
-						_ = m.Service.Shutdown()
-					}
-					return m, tea.Quit
+				return m, tea.Quit
+			}
+			if key.Matches(msg, m.keys.Dashboard.ForceQuit) {
+				// Force quit (same as shutdown for now, or just exit)
+				if m.Service != nil {
+					_ = m.Service.Shutdown()
 				}
+				return m, tea.Quit
+			}
 
 			// Add download
 			if key.Matches(msg, m.keys.Dashboard.Add) {
@@ -655,17 +655,17 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Delete download
-				if key.Matches(msg, m.keys.Dashboard.Delete) {
-					if m.list.FilterState() == list.Filtering {
-						// Fall through
-					} else if d := m.GetSelectedDownload(); d != nil {
-						if m.Service == nil {
-							m.addLogEntry(LogStyleError.Render("✖ Service unavailable"))
-							return m, nil
-						}
-						targetID := d.ID
+			if key.Matches(msg, m.keys.Dashboard.Delete) {
+				if m.list.FilterState() == list.Filtering {
+					// Fall through
+				} else if d := m.GetSelectedDownload(); d != nil {
+					if m.Service == nil {
+						m.addLogEntry(LogStyleError.Render("✖ Service unavailable"))
+						return m, nil
+					}
+					targetID := d.ID
 
-						// Call Service Delete
+					// Call Service Delete
 					if err := m.Service.Delete(targetID); err != nil {
 						m.addLogEntry(LogStyleError.Render("✖ Delete failed: " + err.Error()))
 					} else {
@@ -677,33 +677,33 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// History
-				if key.Matches(msg, m.keys.Dashboard.History) {
-					// Note: accessing state directly here breaks abstraction.
-					// Ideally Service should provide History.
-					// For now, let's keep it as is, knowing "History"
-					// If Remote Service, we might need an API for history.
-					if m.Service == nil {
-						m.addLogEntry(LogStyleError.Render("✖ Service unavailable"))
-						return m, nil
-					}
-					if entries, err := m.Service.History(); err == nil {
-						m.historyEntries = entries
-						m.historyCursor = 0
-						m.state = HistoryState
+			if key.Matches(msg, m.keys.Dashboard.History) {
+				// Note: accessing state directly here breaks abstraction.
+				// Ideally Service should provide History.
+				// For now, let's keep it as is, knowing "History"
+				// If Remote Service, we might need an API for history.
+				if m.Service == nil {
+					m.addLogEntry(LogStyleError.Render("✖ Service unavailable"))
+					return m, nil
+				}
+				if entries, err := m.Service.History(); err == nil {
+					m.historyEntries = entries
+					m.historyCursor = 0
+					m.state = HistoryState
 				}
 				return m, nil
 			}
 
 			// Pause/Resume toggle
-				if key.Matches(msg, m.keys.Dashboard.Pause) {
-					if d := m.GetSelectedDownload(); d != nil {
-						if m.Service == nil {
-							m.addLogEntry(LogStyleError.Render("✖ Service unavailable"))
-							return m, nil
-						}
-						if !d.done {
-							if d.paused {
-								// Resume
+			if key.Matches(msg, m.keys.Dashboard.Pause) {
+				if d := m.GetSelectedDownload(); d != nil {
+					if m.Service == nil {
+						m.addLogEntry(LogStyleError.Render("✖ Service unavailable"))
+						return m, nil
+					}
+					if !d.done {
+						if d.paused {
+							// Resume
 							d.paused = false
 							if err := m.Service.Resume(d.ID); err != nil {
 								m.addLogEntry(LogStyleError.Render("✖ Resume failed: " + err.Error()))
@@ -1144,14 +1144,14 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-			case SettingsState:
-				categoryCount := len(config.CategoryOrder())
-				if categoryCount == 0 {
-					return m, nil
-				}
+		case SettingsState:
+			categoryCount := len(config.CategoryOrder())
+			if categoryCount == 0 {
+				return m, nil
+			}
 
-				// Handle editing mode first
-				if m.SettingsIsEditing {
+			// Handle editing mode first
+			if m.SettingsIsEditing {
 				if key.Matches(msg, m.keys.SettingsEditor.Cancel) {
 					// Cancel editing
 					m.SettingsIsEditing = false
@@ -1182,46 +1182,46 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = DashboardState
 				return m, nil
 			}
-				if key.Matches(msg, m.keys.Settings.Tab1) {
-					if categoryCount > 0 {
-						m.SettingsActiveTab = 0
-					}
-					m.SettingsSelectedRow = 0
-					return m, nil
+			if key.Matches(msg, m.keys.Settings.Tab1) {
+				if categoryCount > 0 {
+					m.SettingsActiveTab = 0
 				}
-				if key.Matches(msg, m.keys.Settings.Tab2) {
-					if categoryCount > 1 {
-						m.SettingsActiveTab = 1
-					}
-					m.SettingsSelectedRow = 0
-					return m, nil
+				m.SettingsSelectedRow = 0
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.Settings.Tab2) {
+				if categoryCount > 1 {
+					m.SettingsActiveTab = 1
 				}
-				if key.Matches(msg, m.keys.Settings.Tab3) {
-					if categoryCount > 2 {
-						m.SettingsActiveTab = 2
-					}
-					m.SettingsSelectedRow = 0
-					return m, nil
+				m.SettingsSelectedRow = 0
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.Settings.Tab3) {
+				if categoryCount > 2 {
+					m.SettingsActiveTab = 2
 				}
-				if key.Matches(msg, m.keys.Settings.Tab4) {
-					if categoryCount > 3 {
-						m.SettingsActiveTab = 3
-					}
-					m.SettingsSelectedRow = 0
-					return m, nil
+				m.SettingsSelectedRow = 0
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.Settings.Tab4) {
+				if categoryCount > 3 {
+					m.SettingsActiveTab = 3
 				}
+				m.SettingsSelectedRow = 0
+				return m, nil
+			}
 
-				// Tab Navigation
-				if key.Matches(msg, m.keys.Settings.NextTab) {
-					m.SettingsActiveTab = (m.SettingsActiveTab + 1) % categoryCount
-					m.SettingsSelectedRow = 0
-					return m, nil
-				}
-				if key.Matches(msg, m.keys.Settings.PrevTab) {
-					m.SettingsActiveTab = (m.SettingsActiveTab - 1 + categoryCount) % categoryCount
-					m.SettingsSelectedRow = 0
-					return m, nil
-				}
+			// Tab Navigation
+			if key.Matches(msg, m.keys.Settings.NextTab) {
+				m.SettingsActiveTab = (m.SettingsActiveTab + 1) % categoryCount
+				m.SettingsSelectedRow = 0
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.Settings.PrevTab) {
+				m.SettingsActiveTab = (m.SettingsActiveTab - 1 + categoryCount) % categoryCount
+				m.SettingsSelectedRow = 0
+				return m, nil
+			}
 
 			// Open file browser for default_download_dir
 			if key.Matches(msg, m.keys.Settings.Browse) {

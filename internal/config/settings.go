@@ -36,7 +36,6 @@ const (
 // NetworkSettings contains network connection parameters.
 type NetworkSettings struct {
 	MaxConnectionsPerHost  int    `json:"max_connections_per_host"`
-	MaxGlobalConnections   int    `json:"max_global_connections"`
 	MaxConcurrentDownloads int    `json:"max_concurrent_downloads"`
 	UserAgent              string `json:"user_agent"`
 	ProxyURL               string `json:"proxy_url"`
@@ -108,7 +107,6 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 		},
 		"Network": {
 			{Key: "max_connections_per_host", Label: "Max Connections/Host", Description: "Maximum concurrent connections per host (1-64).", Type: "int"},
-			{Key: "max_global_connections", Label: "Max Global Connections", Description: "Maximum total concurrent connections across all downloads.", Type: "int"},
 			{Key: "max_concurrent_downloads", Label: "Max Concurrent Downloads", Description: "Maximum number of downloads running at once (1-10). Requires restart.", Type: "int"},
 			{Key: "user_agent", Label: "User Agent", Description: "Custom User-Agent string for HTTP requests. Leave empty for default.", Type: "string"},
 			{Key: "proxy_url", Label: "Proxy URL", Description: "HTTP/HTTPS proxy URL (e.g. http://127.0.0.1:1700). Leave empty to use system default.", Type: "string"},
@@ -170,7 +168,6 @@ func DefaultSettings() *Settings {
 		},
 		Network: NetworkSettings{
 			MaxConnectionsPerHost:  32,
-			MaxGlobalConnections:   100,
 			MaxConcurrentDownloads: 3,
 			UserAgent:              "", // Empty means use default UA
 			SequentialDownload:     false,
@@ -240,7 +237,6 @@ func SaveSettings(s *Settings) error {
 // This is used to pass user settings to the download engine
 type RuntimeConfig struct {
 	MaxConnectionsPerHost int
-	MaxGlobalConnections  int
 	UserAgent             string
 	ProxyURL              string
 	SequentialDownload    bool
@@ -257,7 +253,6 @@ type RuntimeConfig struct {
 func (s *Settings) ToRuntimeConfig() *RuntimeConfig {
 	return &RuntimeConfig{
 		MaxConnectionsPerHost: s.Network.MaxConnectionsPerHost,
-		MaxGlobalConnections:  s.Network.MaxGlobalConnections,
 		UserAgent:             s.Network.UserAgent,
 		ProxyURL:              s.Network.ProxyURL,
 		SequentialDownload:    s.Network.SequentialDownload,

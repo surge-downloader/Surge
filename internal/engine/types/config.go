@@ -66,7 +66,6 @@ type DownloadConfig struct {
 // RuntimeConfig holds dynamic settings that can override defaults
 type RuntimeConfig struct {
 	MaxConnectionsPerHost int
-	MaxGlobalConnections  int
 	UserAgent             string
 	ProxyURL              string
 	SequentialDownload    bool

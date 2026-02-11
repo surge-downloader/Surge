@@ -260,7 +260,7 @@ func (m RootModel) getSettingsValues(category string) map[string]interface{} {
 
 	case "Network":
 		values["max_connections_per_host"] = m.Settings.Network.MaxConnectionsPerHost
-		values["max_global_connections"] = m.Settings.Network.MaxGlobalConnections
+
 		values["max_concurrent_downloads"] = m.Settings.Network.MaxConcurrentDownloads
 		values["user_agent"] = m.Settings.Network.UserAgent
 		values["sequential_download"] = m.Settings.Network.SequentialDownload
@@ -358,10 +358,7 @@ func (m *RootModel) setNetworkSetting(key, value, typ string) error {
 		if v, err := strconv.Atoi(value); err == nil {
 			m.Settings.Network.MaxConnectionsPerHost = v
 		}
-	case "max_global_connections":
-		if v, err := strconv.Atoi(value); err == nil {
-			m.Settings.Network.MaxGlobalConnections = v
-		}
+
 	case "max_concurrent_downloads":
 		if v, err := strconv.Atoi(value); err == nil {
 			if v < 1 {
@@ -636,8 +633,7 @@ func (m *RootModel) resetSettingToDefault(category, key string, defaults *config
 		switch key {
 		case "max_connections_per_host":
 			m.Settings.Network.MaxConnectionsPerHost = defaults.Network.MaxConnectionsPerHost
-		case "max_global_connections":
-			m.Settings.Network.MaxGlobalConnections = defaults.Network.MaxGlobalConnections
+
 		case "max_concurrent_downloads":
 			m.Settings.Network.MaxConcurrentDownloads = defaults.Network.MaxConcurrentDownloads
 		case "user_agent":
