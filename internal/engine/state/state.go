@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/source"
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
@@ -32,6 +33,12 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 
 	// Set hashes and timestamps
 	state.URLHash = URLHash(url)
+	if state.SourceKey == "" || state.SourceType == "" {
+		if k, key := source.CanonicalKey(url); key != "" {
+			state.SourceType = string(k)
+			state.SourceKey = key
+		}
+	}
 	state.PausedAt = time.Now().Unix()
 	if state.CreatedAt == 0 {
 		state.CreatedAt = time.Now().Unix()
@@ -41,10 +48,12 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 		// 1. Upsert into downloads table
 		_, err := tx.Exec(`
 			INSERT INTO downloads (
-				id, url, dest_path, filename, status, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors, chunk_bitmap, actual_chunk_size
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				id, url, source_type, source_key, dest_path, filename, status, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors, chunk_bitmap, actual_chunk_size
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				url=excluded.url,
+				source_type=excluded.source_type,
+				source_key=excluded.source_key,
 				dest_path=excluded.dest_path,
 				filename=excluded.filename,
 				status=excluded.status,
@@ -56,7 +65,7 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 				mirrors=excluded.mirrors,
 				chunk_bitmap=excluded.chunk_bitmap,
 				actual_chunk_size=excluded.actual_chunk_size
-		`, state.ID, state.URL, state.DestPath, state.Filename, "paused", state.TotalSize, state.Downloaded, state.URLHash, state.CreatedAt, state.PausedAt, state.Elapsed/1e6, strings.Join(state.Mirrors, ","), state.ChunkBitmap, state.ActualChunkSize)
+		`, state.ID, state.URL, state.SourceType, state.SourceKey, state.DestPath, state.Filename, "paused", state.TotalSize, state.Downloaded, state.URLHash, state.CreatedAt, state.PausedAt, state.Elapsed/1e6, strings.Join(state.Mirrors, ","), state.ChunkBitmap, state.ActualChunkSize)
 		if err != nil {
 			return fmt.Errorf("failed to upsert download: %w", err)
 		}
@@ -138,14 +147,14 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 	var chunkBitmap []byte
 
 	row := db.QueryRow(`
-		SELECT id, url, dest_path, filename, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors, chunk_bitmap, actual_chunk_size
+		SELECT id, url, source_type, source_key, dest_path, filename, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors, chunk_bitmap, actual_chunk_size
 		FROM downloads 
 		WHERE url = ? AND dest_path = ? AND status != 'completed'
 		ORDER BY paused_at DESC LIMIT 1
 	`, url, destPath)
 
 	err := row.Scan(
-		&state.ID, &state.URL, &state.DestPath, &state.Filename,
+		&state.ID, &state.URL, &state.SourceType, &state.SourceKey, &state.DestPath, &state.Filename,
 		&state.TotalSize, &state.Downloaded, &state.URLHash,
 		&createdAt, &pausedAt, &timeTaken, &mirrors, &chunkBitmap, &actualChunkSize,
 	)
@@ -245,7 +254,7 @@ func LoadMasterList() (*types.MasterList, error) {
 	}
 
 	rows, err := db.Query(`
-		SELECT id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors 
+		SELECT id, url, source_type, source_key, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors 
 		FROM downloads
 	`)
 	if err != nil {
@@ -264,7 +273,7 @@ func LoadMasterList() (*types.MasterList, error) {
 		var filename, urlHash, mirrors sql.NullString // handle nulls
 
 		if err := rows.Scan(
-			&e.ID, &e.URL, &e.DestPath, &filename, &e.Status, &e.TotalSize, &e.Downloaded,
+			&e.ID, &e.URL, &e.SourceType, &e.SourceKey, &e.DestPath, &filename, &e.Status, &e.TotalSize, &e.Downloaded,
 			&completedAt, &timeTaken, &urlHash, &mirrors,
 		); err != nil {
 			return nil, err
@@ -304,13 +313,22 @@ func AddToMasterList(entry types.DownloadEntry) error {
 		}
 	}
 
+	if entry.SourceKey == "" || entry.SourceType == "" {
+		if k, key := source.CanonicalKey(entry.URL); key != "" {
+			entry.SourceType = string(k)
+			entry.SourceKey = key
+		}
+	}
+
 	return withTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`
 			INSERT INTO downloads (
-				id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				id, url, source_type, source_key, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				url=excluded.url,
+				source_type=excluded.source_type,
+				source_key=excluded.source_key,
 				dest_path=excluded.dest_path,
 				filename=excluded.filename,
 				status=excluded.status,
@@ -321,7 +339,7 @@ func AddToMasterList(entry types.DownloadEntry) error {
 				url_hash=excluded.url_hash,
 				mirrors=excluded.mirrors
 		`,
-			entry.ID, entry.URL, entry.DestPath, entry.Filename, entry.Status, entry.TotalSize, entry.Downloaded,
+			entry.ID, entry.URL, entry.SourceType, entry.SourceKey, entry.DestPath, entry.Filename, entry.Status, entry.TotalSize, entry.Downloaded,
 			entry.CompletedAt, entry.TimeTaken, entry.URLHash, strings.Join(entry.Mirrors, ","))
 
 		return err
@@ -351,13 +369,13 @@ func GetDownload(id string) (*types.DownloadEntry, error) {
 	var urlHash, filename, mirrors sql.NullString
 
 	row := db.QueryRow(`
-		SELECT id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors 
+		SELECT id, url, source_type, source_key, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors 
 		FROM downloads
 		WHERE id = ?
 	`, id)
 
 	if err := row.Scan(
-		&e.ID, &e.URL, &e.DestPath, &filename, &e.Status, &e.TotalSize, &e.Downloaded,
+		&e.ID, &e.URL, &e.SourceType, &e.SourceKey, &e.DestPath, &filename, &e.Status, &e.TotalSize, &e.Downloaded,
 		&completedAt, &timeTaken, &urlHash, &mirrors,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -428,6 +446,25 @@ func CheckDownloadExists(url string) (bool, error) {
 	var count int
 	// Check for any status (active, paused, completed)
 	err := db.QueryRow("SELECT COUNT(*) FROM downloads WHERE url = ?", url).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to query download existence: %w", err)
+	}
+
+	return count > 0, nil
+}
+
+// CheckDownloadExistsBySourceKey checks for a download by canonical source key.
+func CheckDownloadExistsBySourceKey(key string) (bool, error) {
+	db := getDBHelper()
+	if db == nil {
+		return false, fmt.Errorf("database not initialized")
+	}
+	if key == "" {
+		return false, nil
+	}
+
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM downloads WHERE source_key = ?", key).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("failed to query download existence: %w", err)
 	}
@@ -524,7 +561,7 @@ func LoadStates(ids []string) (map[string]*types.DownloadState, error) {
 
 	// 1. Load Downloads
 	query := fmt.Sprintf(`
-		SELECT id, url, dest_path, filename, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors, chunk_bitmap, actual_chunk_size
+		SELECT id, url, source_type, source_key, dest_path, filename, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors, chunk_bitmap, actual_chunk_size
 		FROM downloads
 		WHERE id IN (%s) AND status != 'completed'
 	`, inClause)
@@ -549,7 +586,7 @@ func LoadStates(ids []string) (map[string]*types.DownloadState, error) {
 		var chunkBitmap []byte
 
 		if err := rows.Scan(
-			&state.ID, &state.URL, &state.DestPath, &state.Filename,
+			&state.ID, &state.URL, &state.SourceType, &state.SourceKey, &state.DestPath, &state.Filename,
 			&state.TotalSize, &state.Downloaded, &state.URLHash,
 			&createdAt, &pausedAt, &timeTaken, &mirrors, &chunkBitmap, &actualChunkSize,
 		); err != nil {

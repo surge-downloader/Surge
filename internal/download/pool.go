@@ -9,6 +9,7 @@ import (
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/source"
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
@@ -63,10 +64,16 @@ func (p *WorkerPool) Add(cfg types.DownloadConfig) {
 
 // HasDownload checks if a download with the given URL already exists
 func (p *WorkerPool) HasDownload(url string) bool {
+	_, key := source.CanonicalKey(url)
 	p.mu.RLock()
 	// Check active downloads
 	for _, ad := range p.downloads {
-		if ad.config.URL == url {
+		_, existingKey := source.CanonicalKey(ad.config.URL)
+		if key != "" && existingKey == key {
+			p.mu.RUnlock()
+			return true
+		}
+		if key == "" && ad.config.URL == url {
 			p.mu.RUnlock()
 			return true
 		}
@@ -75,9 +82,15 @@ func (p *WorkerPool) HasDownload(url string) bool {
 
 	// Check persistent store (completed/queued/paused)
 	// We do this outside the lock to avoid holding it during DB query
-	exists, err := state.CheckDownloadExists(url)
+	exists, err := state.CheckDownloadExistsBySourceKey(key)
 	if err == nil && exists {
 		return true
+	}
+	// Backward compatibility for legacy rows without source_key.
+	if key != "" {
+		if legacy, legacyErr := state.CheckDownloadExists(url); legacyErr == nil && legacy {
+			return true
+		}
 	}
 
 	return false

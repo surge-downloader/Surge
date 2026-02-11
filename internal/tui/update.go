@@ -142,14 +142,14 @@ func (m RootModel) checkForDuplicate(url string) *DownloadModel {
 	if !m.Settings.General.WarnOnDuplicate {
 		return nil
 	}
-	normalizedInputURL := strings.TrimRight(url, "/")
+	_, inputKey := source.CanonicalKey(url)
 	for _, d := range m.downloads {
 		// Ignore completed downloads
 		if d.done {
 			continue
 		}
-		normalizedExistingURL := strings.TrimRight(d.URL, "/")
-		if normalizedExistingURL == normalizedInputURL {
+		_, existingKey := source.CanonicalKey(d.URL)
+		if inputKey != "" && existingKey == inputKey {
 			return d
 		}
 	}

@@ -51,6 +51,8 @@ func initDB() error {
 	CREATE TABLE IF NOT EXISTS downloads (
 		id TEXT PRIMARY KEY,
 		url TEXT NOT NULL,
+		source_type TEXT,
+		source_key TEXT,
 		dest_path TEXT NOT NULL,
 		filename TEXT,
 		status TEXT,
@@ -78,6 +80,10 @@ func initDB() error {
 
 	// Migration: Add mirrors column if not exists
 	_, _ = db.Exec("ALTER TABLE downloads ADD COLUMN mirrors TEXT")
+
+	// Migration: Add source_type and source_key columns for torrents
+	_, _ = db.Exec("ALTER TABLE downloads ADD COLUMN source_type TEXT")
+	_, _ = db.Exec("ALTER TABLE downloads ADD COLUMN source_key TEXT")
 
 	// Migration: Add chunk bitmap columns
 	_, _ = db.Exec("ALTER TABLE downloads ADD COLUMN chunk_bitmap BLOB")

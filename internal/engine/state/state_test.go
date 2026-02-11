@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/source"
 )
 
 func setupTestDB(t *testing.T) string {
@@ -70,6 +71,16 @@ func TestURLHashUniqueness(t *testing.T) {
 
 	if hash1 == hash2 {
 		t.Errorf("Different URLs produced same hash: %s", hash1)
+	}
+}
+
+func TestCanonicalKey_MagnetInfohash(t *testing.T) {
+	kind, key := source.CanonicalKey("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567")
+	if kind != source.KindMagnet {
+		t.Fatalf("expected magnet kind, got %s", kind)
+	}
+	if key != "btih:0123456789abcdef0123456789abcdef01234567" {
+		t.Fatalf("unexpected key: %s", key)
 	}
 }
 

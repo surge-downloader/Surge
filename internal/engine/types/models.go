@@ -11,6 +11,8 @@ type DownloadState struct {
 	ID         string   `json:"id"`       // Unique ID of the download
 	URLHash    string   `json:"url_hash"` // Hash of URL only (for master list compatibility)
 	URL        string   `json:"url"`
+	SourceType string   `json:"source_type,omitempty"`
+	SourceKey  string   `json:"source_key,omitempty"`
 	DestPath   string   `json:"dest_path"`
 	TotalSize  int64    `json:"total_size"`
 	Downloaded int64    `json:"downloaded"`
@@ -31,6 +33,8 @@ type DownloadEntry struct {
 	ID          string   `json:"id"`       // Unique ID of the download
 	URLHash     string   `json:"url_hash"` // Hash of URL only (backward compatibility)
 	URL         string   `json:"url"`
+	SourceType  string   `json:"source_type,omitempty"`
+	SourceKey   string   `json:"source_key,omitempty"`
 	DestPath    string   `json:"dest_path"`
 	Filename    string   `json:"filename"`
 	Status      string   `json:"status"`       // "paused", "completed", "error"
