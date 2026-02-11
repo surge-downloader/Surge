@@ -45,3 +45,15 @@ func TestView_DashboardFitsViewportWithoutTopCutoff(t *testing.T) {
 		}
 	}
 }
+
+func TestView_SettingsTinyTerminalDoesNotPanic(t *testing.T) {
+	m := InitialRootModel(1701, "test-version", nil, false)
+	m.state = SettingsState
+	m.width = 20
+	m.height = 8
+
+	view := m.View()
+	if strings.TrimSpace(ansiEscapeRE.ReplaceAllString(view, "")) == "" {
+		t.Fatal("expected non-empty settings view for tiny terminal")
+	}
+}

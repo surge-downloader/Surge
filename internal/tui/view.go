@@ -238,7 +238,7 @@ func (m RootModel) View() string {
 	chunkMapNeeded := 0
 	showChunkMap := false
 
-	if selected != nil {
+	if selected != nil && selected.state != nil {
 		// Show Chunk Map only if:
 		// 1. Not Done (Completed)
 		// 2. Has Chunks (Bitmap initialized)
@@ -252,7 +252,7 @@ func (m RootModel) View() string {
 		}
 	}
 
-	if showChunkMap {
+	if showChunkMap && selected != nil && selected.state != nil {
 		_, bitmapWidth, _, _, _ := selected.state.GetBitmap()
 		// chunkMapWidth = rightWidth - 4 (box border) - 2 (inner padding) = rightWidth - 6
 		// Calculate available height for chunk map (remaining height minus graph minimum 9)
@@ -619,7 +619,7 @@ func (m RootModel) View() string {
 	var chunkBox string
 	if showChunkMap {
 		var chunkContent string
-		if selected != nil {
+		if selected != nil && selected.state != nil {
 			// New chunk map component
 			bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress := selected.state.GetBitmap()
 			// Calculate target rows based on available height (minus padding/borders)

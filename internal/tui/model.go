@@ -333,7 +333,7 @@ func (m RootModel) Init() tea.Cmd {
 		}
 	}
 
-	if len(resumeIDs) > 0 {
+	if len(resumeIDs) > 0 && m.Service != nil {
 		cmds = append(cmds, func() tea.Msg {
 			errs := m.Service.ResumeBatch(resumeIDs)
 

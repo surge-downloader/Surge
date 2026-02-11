@@ -15,6 +15,10 @@ import (
 
 // viewSettings renders the Btop-style settings page
 func (m RootModel) viewSettings() string {
+	if m.width <= 0 || m.height <= 0 {
+		return ""
+	}
+
 	// Larger, more spacious modal size (responsive to terminal width)
 	width := int(float64(m.width) * 0.65) // 65% of terminal width
 	if width < 90 {
@@ -29,6 +33,14 @@ func (m RootModel) viewSettings() string {
 	}
 	if m.height < height+4 {
 		height = m.height - 4
+	}
+	if width < 40 || height < 10 {
+		content := lipgloss.NewStyle().
+			Padding(1, 2).
+			Foreground(ColorLightGray).
+			Render("Terminal too small for settings view")
+		box := renderBtopBox(PaneTitleStyle.Render(" Settings "), "", content, width, height, ColorNeonPurple)
+		return m.renderModalWithOverlay(box)
 	}
 
 	// Get category metadata
@@ -61,7 +73,17 @@ func (m RootModel) viewSettings() string {
 
 	// Calculate column widths - give left panel more room
 	leftWidth := 32
+	minRightWidth := 16
+	if width-leftWidth-8 < minRightWidth {
+		leftWidth = width - minRightWidth - 8
+	}
+	if leftWidth < 12 {
+		leftWidth = 12
+	}
 	rightWidth := width - leftWidth - 8
+	if rightWidth < minRightWidth {
+		rightWidth = minRightWidth
+	}
 
 	// === LEFT COLUMN: Settings List (names only) ===
 	var listLines []string
@@ -142,9 +164,13 @@ func (m RootModel) viewSettings() string {
 		valueDisplay := valueLabelStyle.Render(valueLabel) + valueContentStyle.Render(valueStr)
 
 		// Subtle divider between value and description
+		dividerWidth := rightWidth - 4
+		if dividerWidth < 1 {
+			dividerWidth = 1
+		}
 		divider := lipgloss.NewStyle().
 			Foreground(ColorGray).
-			Render(strings.Repeat("─", rightWidth-4))
+			Render(strings.Repeat("─", dividerWidth))
 
 		// Description with better formatting
 		descDisplay := lipgloss.NewStyle().
@@ -171,6 +197,9 @@ func (m RootModel) viewSettings() string {
 	listBoxHeight := lipgloss.Height(listBox)
 	dividerStyle := lipgloss.NewStyle().
 		Foreground(ColorGray)
+	if listBoxHeight < 1 {
+		listBoxHeight = 1
+	}
 	divider := dividerStyle.Render(strings.Repeat("│\n", listBoxHeight-1) + "│")
 
 	// === COMBINE COLUMNS ===
@@ -427,6 +456,12 @@ func (m *RootModel) setPerformanceSetting(key, value, typ string) error {
 // getCurrentSettingKey returns the key of the currently selected setting
 func (m RootModel) getCurrentSettingKey() string {
 	categories := config.CategoryOrder()
+	if len(categories) == 0 {
+		return ""
+	}
+	if m.SettingsActiveTab < 0 || m.SettingsActiveTab >= len(categories) {
+		return ""
+	}
 	metadata := config.GetSettingsMetadata()
 	currentCategory := categories[m.SettingsActiveTab]
 	settingsMeta := metadata[currentCategory]
@@ -440,6 +475,12 @@ func (m RootModel) getCurrentSettingKey() string {
 // getCurrentSettingType returns the type of the currently selected setting
 func (m RootModel) getCurrentSettingType() string {
 	categories := config.CategoryOrder()
+	if len(categories) == 0 {
+		return ""
+	}
+	if m.SettingsActiveTab < 0 || m.SettingsActiveTab >= len(categories) {
+		return ""
+	}
 	metadata := config.GetSettingsMetadata()
 	currentCategory := categories[m.SettingsActiveTab]
 	settingsMeta := metadata[currentCategory]
@@ -453,6 +494,12 @@ func (m RootModel) getCurrentSettingType() string {
 // getSettingsCount returns the number of settings in the current category
 func (m RootModel) getSettingsCount() int {
 	categories := config.CategoryOrder()
+	if len(categories) == 0 {
+		return 0
+	}
+	if m.SettingsActiveTab < 0 || m.SettingsActiveTab >= len(categories) {
+		return 0
+	}
 	metadata := config.GetSettingsMetadata()
 	currentCategory := categories[m.SettingsActiveTab]
 	return len(metadata[currentCategory])

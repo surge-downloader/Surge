@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/core"
 	"github.com/surge-downloader/surge/internal/download"
@@ -240,6 +241,40 @@ func TestUpdate_PauseResumeEventsNormalizeFlags(t *testing.T) {
 	d = m3.downloads[0]
 	if d.paused || d.pausing || d.pendingResume {
 		t.Fatalf("Expected flags cleared after DownloadResumedMsg, got paused=%v pausing=%v pendingResume=%v", d.paused, d.pausing, d.pendingResume)
+	}
+}
+
+func TestUpdate_SettingsIgnoresMissingFourthTab(t *testing.T) {
+	m := RootModel{
+		state:    SettingsState,
+		Settings: config.DefaultSettings(),
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}})
+	m2 := updated.(RootModel)
+
+	if m2.SettingsActiveTab >= len(config.CategoryOrder()) {
+		t.Fatalf("invalid settings tab index: %d", m2.SettingsActiveTab)
+	}
+
+	// Ensure subsequent navigation does not panic with this state.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m3 := updated.(RootModel)
+	if m3.SettingsActiveTab >= len(config.CategoryOrder()) {
+		t.Fatalf("invalid settings tab index after down: %d", m3.SettingsActiveTab)
+	}
+}
+
+func TestUpdate_DashboardWithNilSettingsDoesNotPanic(t *testing.T) {
+	m := RootModel{
+		state: DashboardState,
+		list:  NewDownloadList(80, 20),
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m2 := updated.(RootModel)
+	if m2.Settings == nil {
+		t.Fatal("expected default settings to be initialized")
 	}
 }
 
