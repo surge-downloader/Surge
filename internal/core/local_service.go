@@ -640,10 +640,13 @@ func (s *LocalDownloadService) Delete(id string) error {
 		return fmt.Errorf("worker pool not initialized")
 	}
 
+	removedFilename := ""
+
 	s.Pool.Cancel(id)
 
 	// Cleanup persisted state and partials if available
 	if entry, err := state.GetDownload(id); err == nil && entry != nil {
+		removedFilename = entry.Filename
 		_ = state.DeleteState(entry.ID, entry.URL, entry.DestPath)
 		if entry.DestPath != "" && entry.Status != "completed" {
 			_ = os.Remove(entry.DestPath + types.IncompleteSuffix)
@@ -652,6 +655,15 @@ func (s *LocalDownloadService) Delete(id string) error {
 
 	if err := state.RemoveFromMasterList(id); err != nil {
 		return err
+	}
+
+	// Broadcast removal for multi-client UIs (including remote SSE clients).
+	// This also covers non-active (DB-only) deletes where WorkerPool.Cancel doesn't emit.
+	if s.InputCh != nil {
+		s.InputCh <- events.DownloadRemovedMsg{
+			DownloadID: id,
+			Filename:   removedFilename,
+		}
 	}
 	return nil
 }

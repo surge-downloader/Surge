@@ -124,6 +124,18 @@ func (m *RootModel) addLogEntry(msg string) {
 	m.logViewport.GotoBottom()
 }
 
+// removeDownloadByID removes a download from the in-memory list.
+// Returns true if a download was removed.
+func (m *RootModel) removeDownloadByID(id string) bool {
+	for i, d := range m.downloads {
+		if d.ID == id {
+			m.downloads = append(m.downloads[:i], m.downloads[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
 // checkForDuplicate checks if a compatible download already exists
 func (m RootModel) checkForDuplicate(url string) *DownloadModel {
 	if !m.Settings.General.WarnOnDuplicate {
@@ -415,8 +427,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case events.DownloadRemovedMsg:
-		// Handled via list refresh usually, but we can explicitly remove if needed
-		// For now, rely on list refresh or explicit Delete action removal
+		if m.removeDownloadByID(msg.DownloadID) {
+			if msg.Filename != "" {
+				m.addLogEntry(LogStyleError.Render("✖ Removed: " + msg.Filename))
+			}
+			m.UpdateListItems()
+		}
 		return m, tea.Batch(cmds...)
 
 	case tea.WindowSizeMsg:
@@ -635,17 +651,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if err := m.Service.Delete(targetID); err != nil {
 						m.addLogEntry(LogStyleError.Render("✖ Delete failed: " + err.Error()))
 					} else {
-						// Remove from list
-						realIdx := -1
-						for i, dl := range m.downloads {
-							if dl.ID == targetID {
-								realIdx = i
-								break
-							}
-						}
-						if realIdx != -1 {
-							m.downloads = append(m.downloads[:realIdx], m.downloads[realIdx+1:]...)
-						}
+						m.removeDownloadByID(targetID)
 					}
 					m.UpdateListItems()
 					return m, nil

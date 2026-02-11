@@ -243,6 +243,50 @@ func TestUpdate_PauseResumeEventsNormalizeFlags(t *testing.T) {
 	}
 }
 
+func TestUpdate_DownloadRemovedRemovesFromModelAndList(t *testing.T) {
+	dm := NewDownloadModel("id-1", "http://example.com/file", "file", 100)
+	m := RootModel{
+		downloads:   []*DownloadModel{dm},
+		list:        NewDownloadList(80, 20),
+		logViewport: viewport.New(40, 5),
+	}
+	m.UpdateListItems()
+
+	updated, _ := m.Update(events.DownloadRemovedMsg{
+		DownloadID: "id-1",
+		Filename:   "file",
+	})
+	m2 := updated.(RootModel)
+
+	if len(m2.downloads) != 0 {
+		t.Fatalf("expected removed download to be absent, got %d entries", len(m2.downloads))
+	}
+
+	if len(m2.list.Items()) != 0 {
+		t.Fatalf("expected list to be empty after removal, got %d items", len(m2.list.Items()))
+	}
+}
+
+func TestUpdate_DownloadRemoved_NoOpWhenUnknownID(t *testing.T) {
+	dm := NewDownloadModel("id-1", "http://example.com/file", "file", 100)
+	m := RootModel{
+		downloads:   []*DownloadModel{dm},
+		list:        NewDownloadList(80, 20),
+		logViewport: viewport.New(40, 5),
+	}
+	m.UpdateListItems()
+
+	updated, _ := m.Update(events.DownloadRemovedMsg{
+		DownloadID: "id-unknown",
+		Filename:   "file",
+	})
+	m2 := updated.(RootModel)
+
+	if len(m2.downloads) != 1 {
+		t.Fatalf("expected unknown remove to keep entries, got %d", len(m2.downloads))
+	}
+}
+
 func TestGenerateUniqueFilename_EmptyFilename(t *testing.T) {
 	m := &RootModel{}
 	got := m.generateUniqueFilename("/tmp", "")
