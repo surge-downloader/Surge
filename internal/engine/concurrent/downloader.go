@@ -20,16 +20,24 @@ import (
 
 // ConcurrentDownloader handles multi-connection downloads
 type ConcurrentDownloader struct {
-	ProgressChan chan<- any           // Channel for events (start/complete/error)
-	ID           string               // Download ID
-	State        *types.ProgressState // Shared state for TUI polling
-	activeTasks  map[int]*ActiveTask
-	activeMu     sync.Mutex
-	URL          string // For pause/resume
-	DestPath     string // For pause/resume
-	Runtime      *types.RuntimeConfig
-	bufPool      sync.Pool
-	Headers      map[string]string // Custom HTTP headers from browser (cookies, auth, etc.)
+	ProgressChan  chan<- any           // Channel for events (start/complete/error)
+	ID            string               // Download ID
+	State         *types.ProgressState // Shared state for TUI polling
+	activeTasks   map[int]*ActiveTask
+	activeMu      sync.Mutex
+	URL           string // For pause/resume
+	DestPath      string // For pause/resume
+	Runtime       *types.RuntimeConfig
+	bufPool       sync.Pool
+	Headers       map[string]string // Custom HTTP headers from browser (cookies, auth, etc.)
+	chunkStatusCh chan ChunkStatusUpdate
+}
+
+// ChunkStatusUpdate represents a request to update chunk status
+type ChunkStatusUpdate struct {
+	Offset int64
+	Length int64
+	Status types.ChunkStatus
 }
 
 // NewConcurrentDownloader creates a new concurrent downloader with all required parameters
@@ -304,10 +312,22 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 			utils.ConvertBytesToHumanReadable(chunkSize))
 	}
 
-	// Initialize chunk visualization
 	if d.State != nil {
 		d.State.InitBitmap(fileSize, chunkSize)
 	}
+
+	// Initialize buffered channel for non-blocking chunk updates
+	// Buffer size should be large enough to handle bursts from multiple workers
+	d.chunkStatusCh = make(chan ChunkStatusUpdate, 512)
+
+	// Start consumer goroutine for chunk updates
+	go func() {
+		for update := range d.chunkStatusCh {
+			if d.State != nil {
+				d.State.UpdateChunkStatus(update.Offset, update.Length, update.Status)
+			}
+		}
+	}()
 
 	// Create and preallocate output file with .surge suffix
 	outFile, err := os.OpenFile(workingPath, os.O_CREATE|os.O_RDWR, 0o644)
@@ -584,6 +604,11 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	_ = state.DeleteState(d.ID, d.URL, destPath)
 
 	// Note: Download completion notifications are handled by the TUI via DownloadCompleteMsg
+
+	// Close chunk status channel and wait for consumer to drain (implicitly by channel close)
+	// We don't strictly need to wait for the consumer to finish because it just updates memory state,
+	// but closing it is good practice.
+	close(d.chunkStatusCh)
 
 	return nil
 }
