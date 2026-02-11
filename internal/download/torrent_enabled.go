@@ -16,6 +16,7 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 
 	"github.com/surge-downloader/surge/internal/engine/events"
+	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/source"
 	"github.com/surge-downloader/surge/internal/utils"
@@ -109,12 +110,18 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 
 	t.DownloadAll()
 
+	start := time.Now()
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-downloadCtx.Done():
+			if cfg.State != nil && (cfg.State.IsPaused() || cfg.State.IsPausing()) {
+				persistTorrentEntry(cfg, destPath, name, total, start, "paused")
+				return types.ErrPaused
+			}
+			persistTorrentEntry(cfg, destPath, name, total, start, "error")
 			return downloadCtx.Err()
 		case <-ticker.C:
 			completed := t.BytesCompleted()
@@ -123,8 +130,54 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 				cfg.State.VerifiedProgress.Store(completed)
 			}
 			if completed >= total {
+				persistTorrentEntry(cfg, destPath, name, total, start, "completed")
+				if cfg.ProgressCh != nil {
+					cfg.ProgressCh <- events.DownloadCompleteMsg{
+						DownloadID: cfg.ID,
+						Filename:   name,
+						Elapsed:    time.Since(start),
+						Total:      total,
+					}
+				}
 				return nil
 			}
+		}
+	}
+}
+
+func persistTorrentEntry(cfg *types.DownloadConfig, destPath, name string, total int64, start time.Time, status string) {
+	if cfg == nil {
+		return
+	}
+	downloaded := int64(0)
+	if cfg.State != nil {
+		downloaded = cfg.State.Downloaded.Load()
+	}
+
+	entry := types.DownloadEntry{
+		ID:         cfg.ID,
+		URL:        cfg.URL,
+		DestPath:   destPath,
+		Filename:   name,
+		Status:     status,
+		TotalSize:  total,
+		Downloaded: downloaded,
+	}
+
+	switch status {
+	case "completed":
+		entry.CompletedAt = time.Now().Unix()
+		entry.TimeTaken = time.Since(start).Milliseconds()
+	}
+
+	if err := state.AddToMasterList(entry); err != nil {
+		utils.Debug("Torrent: failed to persist %s entry: %v", status, err)
+	}
+	if status == "error" && cfg.ProgressCh != nil {
+		cfg.ProgressCh <- events.DownloadErrorMsg{
+			DownloadID: cfg.ID,
+			Filename:   name,
+			Err:        fmt.Errorf("torrent download failed"),
 		}
 	}
 }
