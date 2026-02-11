@@ -9,6 +9,7 @@ Benchmark script to compare Surge against other download tools:
 
 import argparse
 import platform
+import os
 import shutil
 import subprocess
 import tempfile
@@ -101,6 +102,38 @@ def print_box_header(title: str, width: int = 60):
     print(f"└{'─' * (width - 2)}┘")
 
 # =============================================================================
+# LOGGING UTILS
+# =============================================================================
+def get_surge_log_dir() -> Path:
+    """Get the Surge log directory based on OS conventions."""
+    home = Path.home()
+    if IS_WINDOWS:
+        app_data = os.environ.get("APPDATA")
+        if not app_data:
+            app_data = home / "AppData" / "Roaming"
+        return Path(app_data) / "surge" / "logs"
+    elif platform.system() == "Darwin":
+        return home / "Library" / "Application Support" / "surge" / "logs"
+    else:
+        # Linux
+        config_home = os.environ.get("XDG_CONFIG_HOME")
+        if not config_home:
+            config_home = home / ".config"
+        return Path(config_home) / "surge" / "logs"
+
+def get_latest_log_file() -> Optional[Path]:
+    """Find the most recently modified debug log file."""
+    log_dir = get_surge_log_dir()
+    if not log_dir.exists():
+        return None
+    
+    logs = list(log_dir.glob("debug-*.log"))
+    if not logs:
+        return None
+        
+    return max(logs, key=lambda p: p.stat().st_mtime)
+
+# =============================================================================
 # SETUP & BUILD
 # =============================================================================
 def build_surge(project_dir: Path) -> bool:
@@ -136,15 +169,39 @@ def benchmark_surge(executable: Path, url: str, output_dir: Path, label: str = "
             cleanup_file(f)
 
     start = time.perf_counter()
-    success, output = run_command([
-        str(executable), "server", "start", url,
-        "--output", str(output_dir),
-        "--exit-when-done"
-    ])
+    # Determine command based on mode
+    cmd = [str(executable)]
+    if label == "Surge Server" or "Server" in label:
+        cmd.extend(["server", "start", url])
+    else:
+        # TUI mode (default)
+        cmd.append(url)
+
+    # Common flags
+    cmd.extend(["--output", str(output_dir), "--exit-when-done"])
+
+    # Retry logic for lock contention
+    max_retries = 3
+    for attempt in range(max_retries):
+        start = time.perf_counter()
+        success, output = run_command(cmd)
+        elapsed = time.perf_counter() - start
+        
+        if success:
+            break
+            
+        if "Surge is already running" in output or "Error acquiring lock" in output:
+             print(f"  [!] Lock contention (attempt {attempt+1}/{max_retries}), retrying in 2s...")
+             time.sleep(2)
+             continue
+        
+        break # Other error, don't retry
     elapsed = time.perf_counter() - start
     
-    # Parse internal time if available
+    # Parse internal time if available (Stdout for Server, Log for TUI)
     actual_time = elapsed
+    
+    # 1. Try stdout (Server mode)
     match = re.search(r"Completed: .*? \[.*?\] \(in (.*?)\)", output)
     if match:
         try:
@@ -152,6 +209,20 @@ def benchmark_surge(executable: Path, url: str, output_dir: Path, label: str = "
             if t > 0: actual_time = t
         except ValueError:
             pass
+    elif "TUI" in label:
+        # 2. Try latest log file (TUI mode)
+        log_file = get_latest_log_file()
+        if log_file:
+            try:
+                content = log_file.read_text()
+                # Find the last completion message
+                matches = list(re.finditer(r"Completed: .*? \[.*?\] \(in (.*?)\)", content))
+                if matches:
+                    last_match = matches[-1]
+                    t = parse_go_duration(last_match.group(1))
+                    if t > 0: actual_time = t
+            except Exception as e:
+                print(f"  [!] Failed to parse log: {e}")
 
     # Find the downloaded file
     downloaded_files = [f for f in output_dir.iterdir() if f.is_file()]
@@ -281,6 +352,7 @@ def main():
     parser.add_argument("-n", "--iterations", type=int, default=1, help="Iterations per tool")
     parser.add_argument("--surge-exec", type=Path, help="Specific Surge binary")
     parser.add_argument("--surge-baseline", type=Path, help="Baseline Surge binary for comparison")
+    parser.add_argument("--surge-tui", action="store_true", help="Run Surge TUI benchmark")
     parser.add_argument("--mirror-suite", action="store_true", help="Run multi-mirror test suite")
     parser.add_argument("--speedtest", action="store_true", help="Run network speedtest-cli")
     
@@ -344,7 +416,10 @@ def main():
 
         # Surge tasks
         if (run_all or args.surge) and surge_bin:
-            tasks.append(lambda: benchmark_surge(surge_bin, args.url, download_dir, "Surge (Current)"))
+            tasks.append(lambda: benchmark_surge(surge_bin, args.url, download_dir, "Surge Server"))
+        
+        if (run_all or args.surge_tui) and surge_bin:
+            tasks.append(lambda: benchmark_surge(surge_bin, args.url, download_dir, "Surge TUI"))
         
         if args.surge_baseline and args.surge_baseline.exists():
             tasks.append(lambda: benchmark_surge(args.surge_baseline, args.url, download_dir, "Surge (Baseline)"))

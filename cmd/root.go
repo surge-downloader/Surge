@@ -181,8 +181,8 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 	if exitWhenDone {
 		go func() {
 			// Wait a bit for initial downloads to be queued
-			time.Sleep(3 * time.Second)
-			ticker := time.NewTicker(2 * time.Second)
+			time.Sleep(500 * time.Millisecond)
+			ticker := time.NewTicker(500 * time.Millisecond)
 			defer ticker.Stop()
 			for range ticker.C {
 				if GlobalPool != nil && GlobalPool.ActiveCount() == 0 {

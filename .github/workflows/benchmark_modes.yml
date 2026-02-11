@@ -1,0 +1,58 @@
+name: Benchmark Modes
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: "Number of iterations"
+        required: true
+        default: "5"
+
+jobs:
+  benchmark-modes:
+    name: Compare Server vs TUI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.4+auto"
+
+      - name: Build Surge
+        run: go build -o surge .
+
+      - name: Create 1GB Test File
+        run: dd if=/dev/urandom of=1GB.bin bs=1M count=1024 status=progress
+
+      - name: Start Local HTTP Server
+        run: |
+          python3 -m http.server 8000 &
+          echo "HTTP_SERVER_PID=$!" >> $GITHUB_ENV
+
+      - name: Run Benchmark
+        run: |
+          # Use local URL
+          URL="http://localhost:8000/1GB.bin"
+
+          python3 benchmark.py \
+            $URL \
+            --iterations ${{ github.event.inputs.iterations }} \
+            --surge \
+            --surge-tui \
+            --surge-exec ./surge \
+            | tee benchmark_output.txt
+
+      - name: Stop Local HTTP Server
+        if: always()
+        run: kill $HTTP_SERVER_PID
+
+      - name: Write Summary
+        run: |
+          echo "## 🚀 Mode Comparison Results" >> $GITHUB_STEP_SUMMARY
+          echo "**Iterations:** ${{ github.event.inputs.iterations }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat benchmark_output.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
