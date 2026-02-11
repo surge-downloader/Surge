@@ -94,12 +94,13 @@ var rootCmd = &cobra.Command{
 
 		var port int
 		var listener net.Listener
+		bindHost := getServerBindHost()
 
 		if portFlag > 0 {
 			// Strict port mode
 			port = portFlag
 			var err error
-			listener, err = net.Listen("tcp", fmt.Sprintf(":%d", port))
+			listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", bindHost, port))
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: could not bind to port %d: %v\n", port, err)
 				os.Exit(1)
@@ -150,7 +151,7 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 	// GlobalService and GlobalProgressCh are already initialized in PersistentPreRun or Run
 
 	m := tui.InitialRootModel(port, Version, GlobalService, noResume)
-	m.ServerHost = getPreferredLocalIP()
+	m.ServerHost = getServerBindHost()
 	if m.ServerHost == "" {
 		m.ServerHost = "127.0.0.1"
 	}
@@ -203,7 +204,34 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 func getPreferredLocalIP() string {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return "127.0.0.1"
+		return ""
+	}
+
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			if ipv4 := ip.To4(); ipv4 != nil {
+				if ipv4.IsPrivate() {
+					return ipv4.String()
+				}
+			}
+		}
 	}
 
 	for _, iface := range ifaces {
@@ -231,6 +259,13 @@ func getPreferredLocalIP() string {
 		}
 	}
 
+	return ""
+}
+
+func getServerBindHost() string {
+	if host := getPreferredLocalIP(); host != "" {
+		return host
+	}
 	return "127.0.0.1"
 }
 
@@ -300,8 +335,9 @@ func StartHeadlessConsumer() {
 
 // findAvailablePort tries ports starting from 'start' until one is available
 func findAvailablePort(start int) (int, net.Listener) {
+	bindHost := getServerBindHost()
 	for port := start; port < start+100; port++ {
-		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+		ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", bindHost, port))
 		if err == nil {
 			return port, ln
 		}

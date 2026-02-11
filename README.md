@@ -87,8 +87,8 @@ surge server start https://url.com/file.zip
 surge server status
 ```
 
-`surge` and `surge server start` bind the HTTP API on all interfaces (`0.0.0.0`) by default.
-Use firewall rules or network policy if you only want local access.
+`surge` and `surge server start` bind the HTTP API to a detected private LAN IPv4 address by default.
+If no private interface is available, Surge falls back to `localhost`.
 
 The API is token-protected. Generate/read your token from:
 

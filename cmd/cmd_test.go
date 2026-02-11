@@ -67,7 +67,7 @@ func TestFindAvailablePort_ReturnsListener(t *testing.T) {
 func TestFindAvailablePort_SkipsOccupiedPorts(t *testing.T) {
 	requireTCPListener(t)
 	// Occupy a port
-	ln1, err := net.Listen("tcp", "127.0.0.1:52000")
+	ln1, err := net.Listen("tcp", fmt.Sprintf("%s:52000", getServerBindHost()))
 	if err != nil {
 		t.Fatalf("Failed to occupy port: %v", err)
 	}
@@ -277,7 +277,8 @@ func TestIsLocalHost(t *testing.T) {
 func TestGetPreferredLocalIP(t *testing.T) {
 	got := getPreferredLocalIP()
 	if strings.TrimSpace(got) == "" {
-		t.Fatal("getPreferredLocalIP returned empty string")
+		// Valid in environments with loopback only.
+		return
 	}
 
 	ip := net.ParseIP(got)
@@ -286,6 +287,23 @@ func TestGetPreferredLocalIP(t *testing.T) {
 	}
 	if ip.To4() == nil {
 		t.Fatalf("getPreferredLocalIP should return IPv4, got: %q", got)
+	}
+	if !ip.IsPrivate() {
+		t.Fatalf("getPreferredLocalIP should prefer private IPv4, got: %q", got)
+	}
+}
+
+func TestGetServerBindHost(t *testing.T) {
+	host := getServerBindHost()
+	if strings.TrimSpace(host) == "" {
+		t.Fatal("getServerBindHost returned empty string")
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || ip.To4() == nil {
+		t.Fatalf("getServerBindHost returned invalid IPv4: %q", host)
+	}
+	if !ip.IsPrivate() && !ip.IsLoopback() {
+		t.Fatalf("getServerBindHost should be private or loopback, got: %q", host)
 	}
 }
 
