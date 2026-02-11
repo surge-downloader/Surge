@@ -172,7 +172,8 @@ func copyFile(src, dst string) error {
 		}
 	}()
 
-	if _, err := io.Copy(out, in); err != nil {
+	buf := make([]byte, 1024*1024)
+	if _, err := io.CopyBuffer(out, in, buf); err != nil {
 		return err
 	}
 	return out.Sync()
