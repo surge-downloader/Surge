@@ -67,20 +67,53 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 			return fmt.Errorf("failed to delete old tasks: %w", err)
 		}
 
-		// Insert new tasks
-		stmt, err := tx.Prepare("INSERT INTO tasks (download_id, offset, length) VALUES (?, ?, ?)")
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if err := stmt.Close(); err != nil {
-				utils.Debug("Error closing statement: %v", err)
-			}
-		}()
+		// Insert new tasks using batch insert
+		// SQLite limit is often 999 or 32766 params. Safe batch size: 50 tasks * 3 params = 150 params.
+		const batchSize = 50
+		tasks := state.Tasks
+		numTasks := len(tasks)
 
-		for _, task := range state.Tasks {
-			if _, err := stmt.Exec(state.ID, task.Offset, task.Length); err != nil {
-				return fmt.Errorf("failed to insert task: %w", err)
+		if numTasks > 0 {
+			// Prepare statement for full batches
+			placeholders := strings.Repeat("(?, ?, ?),", batchSize)
+			placeholders = placeholders[:len(placeholders)-1] // remove trailing comma
+			stmt, err := tx.Prepare("INSERT INTO tasks (download_id, offset, length) VALUES " + placeholders)
+			if err != nil {
+				return fmt.Errorf("failed to prepare batch insert: %w", err)
+			}
+			defer stmt.Close()
+
+			for i := 0; i < numTasks; i += batchSize {
+				end := i + batchSize
+				if end > numTasks {
+					// Last batch (partial)
+					end = numTasks
+					batch := tasks[i:end]
+
+					var q strings.Builder
+					q.WriteString("INSERT INTO tasks (download_id, offset, length) VALUES ")
+					args := make([]interface{}, 0, len(batch)*3)
+					for j, task := range batch {
+						if j > 0 {
+							q.WriteString(",")
+						}
+						q.WriteString("(?, ?, ?)")
+						args = append(args, state.ID, task.Offset, task.Length)
+					}
+					if _, err := tx.Exec(q.String(), args...); err != nil {
+						return fmt.Errorf("failed to insert partial batch: %w", err)
+					}
+				} else {
+					// Full batch
+					batch := tasks[i:end]
+					args := make([]interface{}, 0, batchSize*3)
+					for _, task := range batch {
+						args = append(args, state.ID, task.Offset, task.Length)
+					}
+					if _, err := stmt.Exec(args...); err != nil {
+						return fmt.Errorf("failed to insert tasks batch: %w", err)
+					}
+				}
 			}
 		}
 
