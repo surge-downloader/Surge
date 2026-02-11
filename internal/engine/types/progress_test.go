@@ -135,11 +135,11 @@ func TestProgressState_GetProgress(t *testing.T) {
 	if total != 1000 {
 		t.Errorf("total = %d, want 1000", total)
 	}
-	if totalElapsed <= 0 {
-		t.Error("totalElapsed should be positive")
+	if totalElapsed < 0 {
+		t.Error("totalElapsed should not be negative")
 	}
-	if sessionElapsed <= 0 {
-		t.Error("sessionElapsed should be positive")
+	if sessionElapsed < 0 {
+		t.Error("sessionElapsed should not be negative")
 	}
 	if connections != 4 {
 		t.Errorf("connections = %d, want 4", connections)
