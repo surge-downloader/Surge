@@ -156,8 +156,6 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 		m.ServerHost = "127.0.0.1"
 	}
 	m.IsRemote = false
-	// m := tui.InitialRootModel(port, Version)
-	// No need to instantiate separate pool
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	serverProgram = p // Save reference for HTTP handler
@@ -816,7 +814,6 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 func processDownloads(urls []string, outputDir string, port int) int {
 	successCount := 0
 
-	// If port > 0, we are sending to a remote server
 	// If port > 0, we are sending to a remote server
 	if port > 0 {
 		for _, arg := range urls {
