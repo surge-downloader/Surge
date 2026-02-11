@@ -159,7 +159,11 @@ func createTasks(fileSize, chunkSize int64) []types.Task {
 	if chunkSize <= 0 {
 		return nil
 	}
-	var tasks []types.Task
+
+	// preallocate slice capacity
+	count := (fileSize + chunkSize - 1) / chunkSize
+	tasks := make([]types.Task, 0, int(count))
+
 	for offset := int64(0); offset < fileSize; offset += chunkSize {
 		length := chunkSize
 		if offset+length > fileSize {
@@ -316,8 +320,12 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		}
 	}()
 
+	// Pre-allocate slice capacity to avoid reallocations
+	// Number of chunks = ceil(fileSize / chunkSize)
+	count := (fileSize + chunkSize - 1) / chunkSize
+	tasks := make([]types.Task, 0, int(count))
+
 	// Check for saved state BEFORE truncating (resume case)
-	var tasks []types.Task
 	savedState, err := state.LoadState(rawurl, destPath)
 	isResume := err == nil && savedState != nil && len(savedState.Tasks) > 0
 
