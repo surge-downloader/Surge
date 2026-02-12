@@ -262,36 +262,44 @@ func (m RootModel) View() string {
 	chunkMapNeeded := 0
 	showChunkMap := false
 
+	// Pre-fetch bitmap data if available
+	var bitmap []byte
+	var bitmapWidth int
+	var totalSize, chunkSize int64
+	var chunkProgress []int64
+
+	if selected != nil && selected.state != nil {
+		bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress = selected.state.GetBitmap()
+	}
+
 	if selected != nil && selected.state != nil {
 		// Show Chunk Map only if:
 		// 1. Not Done (Completed)
 		// 2. Has Chunks (Bitmap initialized)
 		// We prioritize showing the map if data is available, even if speed is 0 (connecting/queued)
 
-		bitmap, width, _, _, _ := selected.state.GetBitmap()
-		hasChunks := selected.state != nil && len(bitmap) > 0 && width > 0
+		hasChunks := len(bitmap) > 0 && bitmapWidth > 0
 
 		if !selected.done && hasChunks {
 			showChunkMap = true
 		}
 	}
 
-	if showChunkMap && selected != nil && selected.state != nil {
-		_, bitmapWidth, _, _, _ := selected.state.GetBitmap()
+	if showChunkMap {
 		// chunkMapWidth = rightWidth - 4 (box border) - 2 (inner padding) = rightWidth - 6
 		// Calculate available height for chunk map (remaining height minus graph minimum 9)
 		availableChunkHeight := remainingHeight - 9 - 4 // -9 for min graph, -4 for borders/padding
 		if availableChunkHeight < 1 {
 			availableChunkHeight = 1
 		}
-			contentLines := components.CalculateHeight(bitmapWidth, rightWidth-6, availableChunkHeight)
-			if contentLines > 0 {
-				// +2 for top/bottom borders
-				chunkMapNeeded = contentLines + 2
-			} else {
-				// Minimum for message "Chunk visualization not available"
-				chunkMapNeeded = 6
-			}
+		contentLines := components.CalculateHeight(bitmapWidth, rightWidth-6, availableChunkHeight)
+		if contentLines > 0 {
+			// +2 for top/bottom borders
+			chunkMapNeeded = contentLines + 2
+		} else {
+			// Minimum for message "Chunk visualization not available"
+			chunkMapNeeded = 6
+		}
 	}
 
 	// Define Minimum Graph Height
@@ -528,39 +536,39 @@ func (m RootModel) View() string {
 	// Render the Graph
 	graphVisual := renderMultiLineGraph(graphData, graphAreaWidth, graphContentHeight, maxSpeed, ColorNeonPink, nil)
 
-		// Create Y-axis (right side of graph)
-		axisStyle := lipgloss.NewStyle().Width(axisWidth).Foreground(ColorNeonCyan).Align(lipgloss.Right)
-		label := func(v float64) string {
-			if v <= 0 {
-				return "0 MB/s"
-			}
-			return fmt.Sprintf("%.1f MB/s", v)
+	// Create Y-axis (right side of graph)
+	axisStyle := lipgloss.NewStyle().Width(axisWidth).Foreground(ColorNeonCyan).Align(lipgloss.Right)
+	label := func(v float64) string {
+		if v <= 0 {
+			return "0 MB/s"
 		}
+		return fmt.Sprintf("%.1f MB/s", v)
+	}
 
-		axisLines := make([]string, graphContentHeight)
-		for i := range axisLines {
-			axisLines[i] = axisStyle.Render("")
-		}
+	axisLines := make([]string, graphContentHeight)
+	for i := range axisLines {
+		axisLines[i] = axisStyle.Render("")
+	}
 
-		if graphContentHeight >= 9 {
-			axisLines[0] = axisStyle.Render(label(maxSpeed))
-			axisLines[graphContentHeight/4] = axisStyle.Render(label(maxSpeed * 0.75))
-			axisLines[graphContentHeight/2] = axisStyle.Render(label(maxSpeed * 0.5))
-			axisLines[(graphContentHeight*3)/4] = axisStyle.Render(label(maxSpeed * 0.25))
-			axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
-		} else if graphContentHeight >= 5 {
-			axisLines[0] = axisStyle.Render(label(maxSpeed))
-			axisLines[graphContentHeight/2] = axisStyle.Render(label(maxSpeed * 0.5))
-			axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
-		} else {
-			axisLines[0] = axisStyle.Render(label(maxSpeed))
-			axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
-		}
+	if graphContentHeight >= 9 {
+		axisLines[0] = axisStyle.Render(label(maxSpeed))
+		axisLines[graphContentHeight/4] = axisStyle.Render(label(maxSpeed * 0.75))
+		axisLines[graphContentHeight/2] = axisStyle.Render(label(maxSpeed * 0.5))
+		axisLines[(graphContentHeight*3)/4] = axisStyle.Render(label(maxSpeed * 0.25))
+		axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
+	} else if graphContentHeight >= 5 {
+		axisLines[0] = axisStyle.Render(label(maxSpeed))
+		axisLines[graphContentHeight/2] = axisStyle.Render(label(maxSpeed * 0.5))
+		axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
+	} else {
+		axisLines[0] = axisStyle.Render(label(maxSpeed))
+		axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
+	}
 
-		axisColumn := lipgloss.NewStyle().
-			Height(graphContentHeight).
-			Align(lipgloss.Right).
-			Render(strings.Join(axisLines, "\n"))
+	axisColumn := lipgloss.NewStyle().
+		Height(graphContentHeight).
+		Align(lipgloss.Right).
+		Render(strings.Join(axisLines, "\n"))
 
 	// Combine: stats box (left) | graph (middle) | axis (right)
 	graphWithAxis := lipgloss.JoinHorizontal(lipgloss.Top,
@@ -643,14 +651,14 @@ func (m RootModel) View() string {
 	var chunkBox string
 	if showChunkMap {
 		var chunkContent string
-		if selected != nil && selected.state != nil {
-				// New chunk map component
-				bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress := selected.state.GetBitmap()
-				// Calculate target rows based on available height (minus borders)
-				targetRows := chunkMapHeight - 2
-				if targetRows < 3 {
-					targetRows = 3 // Minimum 3 rows
-				}
+		// Bitmap data already fetched above
+		if len(bitmap) > 0 {
+			// New chunk map component
+			// Calculate target rows based on available height (minus borders)
+			targetRows := chunkMapHeight - 2
+			if targetRows < 3 {
+				targetRows = 3 // Minimum 3 rows
+			}
 			if targetRows > 5 {
 				targetRows = 5 // Maximum 5 rows for compact look
 			}
