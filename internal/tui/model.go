@@ -108,6 +108,7 @@ type RootModel struct {
 
 	// Graph Data
 	SpeedHistory           []float64 // Stores the last ~60 ticks of speed data
+	speedBuffer            []float64 // Buffer for smoothing speed updates
 	lastSpeedHistoryUpdate time.Time // Last time SpeedHistory was updated (for 0.5s sampling)
 
 	// Notification log system
