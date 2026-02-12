@@ -303,13 +303,6 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	// Create tuned HTTP client for concurrent downloads
 	client := d.newConcurrentClient(numConns)
 
-	if utils.IsVerbose() {
-		fmt.Printf("File size: %s, connections: %d, chunk size: %s\n",
-			utils.ConvertBytesToHumanReadable(fileSize),
-			numConns,
-			utils.ConvertBytesToHumanReadable(chunkSize))
-	}
-
 	// Initialize chunk visualization
 	if d.State != nil {
 		d.State.InitBitmap(fileSize, chunkSize)
@@ -396,7 +389,15 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 						}
 					}
 
-					// If we couldn't split or steal anything, stop trying for this tick
+					// If stealing failed (chunks too small), try hedged request:
+					// Duplicate a task so an idle worker races on a fresh connection
+					if !didWork && queue.Len() == 0 {
+						if d.HedgeWork(queue) {
+							didWork = true
+						}
+					}
+
+					// If we couldn't split, steal, or hedge anything, stop trying for this tick
 					if !didWork {
 						break
 					}

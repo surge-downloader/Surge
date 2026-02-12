@@ -1,6 +1,7 @@
 package concurrent
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/surge-downloader/surge/internal/utils"
@@ -51,7 +52,8 @@ func (d *ConcurrentDownloader) checkWorkerHealth() {
 		}
 	}
 
-	// Second pass: check for slow workers
+	// Second pass: check for slow and stalled workers
+	stallTimeout := d.Runtime.GetStallTimeout()
 	for workerID, active := range d.activeTasks {
 
 		// timeSinceActivity := now.Sub(lastTime)
@@ -63,7 +65,22 @@ func (d *ConcurrentDownloader) checkWorkerHealth() {
 			continue
 		}
 
-		// Check for slow worker
+		// Check for absolute stall: no data received for StallTimeout
+		// This catches dead connections that the relative speed check misses
+		lastActivity := atomic.LoadInt64(&active.LastActivity)
+		if lastActivity > 0 {
+			timeSinceData := now.Sub(time.Unix(0, lastActivity))
+			if timeSinceData >= stallTimeout {
+				utils.Debug("Health: Worker %d stalled (no data for %v), cancelling",
+					workerID, timeSinceData.Truncate(time.Millisecond))
+				if active.Cancel != nil {
+					active.Cancel()
+				}
+				continue // Already cancelled, skip speed check
+			}
+		}
+
+		// Check for slow worker (relative speed)
 		// Only cancel if: below threshold
 		if meanSpeed > 0 {
 			workerSpeed := active.GetSpeed()

@@ -136,16 +136,13 @@ func (d *SingleDownloader) Download(ctx context.Context, rawurl, destPath string
 
 	success = true // Mark successful so defer doesn't clean up
 
-	// Only print stats in verbose mode
-	if utils.IsVerbose() {
-		elapsed := time.Since(start)
-		speed := float64(written) / elapsed.Seconds()
-		fmt.Fprintf(os.Stderr, "\nDownloaded %s in %s (%s/s)\n",
-			destPath,
-			elapsed.Round(time.Second),
-			utils.ConvertBytesToHumanReadable(int64(speed)),
-		)
-	}
+	elapsed := time.Since(start)
+	speed := float64(written) / elapsed.Seconds()
+	utils.Debug("\nDownloaded %s in %s (%s/s)\n",
+		destPath,
+		elapsed.Round(time.Second),
+		utils.ConvertBytesToHumanReadable(int64(speed)),
+	)
 
 	return nil
 }

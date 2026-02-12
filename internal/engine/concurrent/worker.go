@@ -433,3 +433,60 @@ func (d *ConcurrentDownloader) StealWork(queue *TaskQueue) bool {
 
 	return true
 }
+
+// HedgeWork creates a duplicate task when stealing isn't possible (chunks too small).
+// An idle worker picks up the duplicate and races the original on a fresh HTTP connection.
+// Both workers write identical data to the same file offsets (WriteAt is idempotent),
+// so the file is always correct. Whichever finishes first wins; the other exits
+// naturally when the queue closes or its next read returns data already counted.
+func (d *ConcurrentDownloader) HedgeWork(queue *TaskQueue) bool {
+	d.activeMu.Lock()
+	defer d.activeMu.Unlock()
+
+	if len(d.activeTasks) == 0 {
+		return false
+	}
+
+	// Find the active task with the most remaining work that hasn't been hedged yet
+	var bestActive *ActiveTask
+	var maxRemaining int64
+
+	for _, active := range d.activeTasks {
+		// Skip tasks already being raced
+		if atomic.LoadInt32(&active.Hedged) != 0 {
+			continue
+		}
+		remaining := active.RemainingBytes()
+		if remaining > 0 && remaining > maxRemaining {
+			maxRemaining = remaining
+			bestActive = active
+		}
+	}
+
+	if bestActive == nil || maxRemaining == 0 {
+		return false
+	}
+
+	// Mark as hedged so we don't create multiple duplicates
+	if !atomic.CompareAndSwapInt32(&bestActive.Hedged, 0, 1) {
+		return false // Another goroutine hedged it first
+	}
+
+	// Create a duplicate task for the remaining byte range
+	current := atomic.LoadInt64(&bestActive.CurrentOffset)
+	stopAt := atomic.LoadInt64(&bestActive.StopAt)
+	if current >= stopAt {
+		return false
+	}
+
+	hedgedTask := types.Task{
+		Offset: current,
+		Length: stopAt - current,
+	}
+
+	queue.Push(hedgedTask)
+	utils.Debug("Balancer: hedged %s (range: %d-%d) — idle worker will race on fresh connection",
+		utils.ConvertBytesToHumanReadable(hedgedTask.Length), hedgedTask.Offset, hedgedTask.Offset+hedgedTask.Length)
+
+	return true
+}
