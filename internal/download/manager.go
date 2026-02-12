@@ -241,6 +241,12 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 		}
 
 		// Persist to history before sending event
+		// Compute average download speed in bytes/sec
+		var avgSpeed float64
+		if elapsed.Seconds() > 0 {
+			avgSpeed = float64(probe.FileSize) / elapsed.Seconds()
+		}
+
 		if err := state.AddToMasterList(types.DownloadEntry{
 			ID:          cfg.ID,
 			URL:         cfg.URL,
@@ -252,6 +258,7 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 			Downloaded:  probe.FileSize,
 			CompletedAt: time.Now().Unix(),
 			TimeTaken:   elapsed.Milliseconds(),
+			AvgSpeed:    avgSpeed,
 		}); err != nil {
 			utils.Debug("Failed to persist completed download: %v", err)
 		}
@@ -262,6 +269,7 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 				Filename:   finalFilename,
 				Elapsed:    elapsed,
 				Total:      probe.FileSize,
+				AvgSpeed:   avgSpeed,
 			}
 		}
 	} else if downloadErr != nil && !isPaused {

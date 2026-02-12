@@ -28,6 +28,7 @@ type DownloadCompleteMsg struct {
 	Filename   string
 	Elapsed    time.Duration
 	Total      int64
+	AvgSpeed   float64 // Average download speed in bytes/sec
 }
 
 // DownloadErrorMsg signals that an error occurred

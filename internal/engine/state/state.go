@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -38,11 +39,16 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 	}
 
 	return withTx(func(tx *sql.Tx) error {
+		// Compute file hash for integrity verification
+		surgePath := state.DestPath + types.IncompleteSuffix
+		fileHash, _ := computeFileHash(surgePath)
+		state.FileHash = fileHash
+
 		// 1. Upsert into downloads table
 		_, err := tx.Exec(`
 			INSERT INTO downloads (
-				id, url, dest_path, filename, status, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors, chunk_bitmap, actual_chunk_size
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				id, url, dest_path, filename, status, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors, chunk_bitmap, actual_chunk_size, file_hash
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				url=excluded.url,
 				dest_path=excluded.dest_path,
@@ -55,8 +61,9 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 				time_taken=excluded.time_taken,
 				mirrors=excluded.mirrors,
 				chunk_bitmap=excluded.chunk_bitmap,
-				actual_chunk_size=excluded.actual_chunk_size
-		`, state.ID, state.URL, state.DestPath, state.Filename, "paused", state.TotalSize, state.Downloaded, state.URLHash, state.CreatedAt, state.PausedAt, state.Elapsed/1e6, strings.Join(state.Mirrors, ","), state.ChunkBitmap, state.ActualChunkSize)
+				actual_chunk_size=excluded.actual_chunk_size,
+				file_hash=excluded.file_hash
+		`, state.ID, state.URL, state.DestPath, state.Filename, "paused", state.TotalSize, state.Downloaded, state.URLHash, state.CreatedAt, state.PausedAt, state.Elapsed/1e6, strings.Join(state.Mirrors, ","), state.ChunkBitmap, state.ActualChunkSize, state.FileHash)
 		if err != nil {
 			return fmt.Errorf("failed to upsert download: %w", err)
 		}
@@ -134,11 +141,11 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 
 	var state types.DownloadState
 	var timeTaken, createdAt, pausedAt, actualChunkSize sql.NullInt64 // handle null
-	var mirrors sql.NullString                                        // handle null mirrors
+	var mirrors, fileHash sql.NullString                              // handle null mirrors/hash
 	var chunkBitmap []byte
 
 	row := db.QueryRow(`
-		SELECT id, url, dest_path, filename, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors, chunk_bitmap, actual_chunk_size
+		SELECT id, url, dest_path, filename, total_size, downloaded, url_hash, created_at, paused_at, time_taken, mirrors, chunk_bitmap, actual_chunk_size, file_hash
 		FROM downloads 
 		WHERE url = ? AND dest_path = ? AND status != 'completed'
 		ORDER BY paused_at DESC LIMIT 1
@@ -147,7 +154,7 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 	err := row.Scan(
 		&state.ID, &state.URL, &state.DestPath, &state.Filename,
 		&state.TotalSize, &state.Downloaded, &state.URLHash,
-		&createdAt, &pausedAt, &timeTaken, &mirrors, &chunkBitmap, &actualChunkSize,
+		&createdAt, &pausedAt, &timeTaken, &mirrors, &chunkBitmap, &actualChunkSize, &fileHash,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -173,6 +180,9 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 		state.ActualChunkSize = actualChunkSize.Int64
 	}
 	state.ChunkBitmap = chunkBitmap
+	if fileHash.Valid {
+		state.FileHash = fileHash.String
+	}
 
 	// Load tasks
 	rows, err := db.Query("SELECT offset, length FROM tasks WHERE download_id = ?", state.ID)
@@ -245,7 +255,7 @@ func LoadMasterList() (*types.MasterList, error) {
 	}
 
 	rows, err := db.Query(`
-		SELECT id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors 
+		SELECT id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors, avg_speed 
 		FROM downloads
 	`)
 	if err != nil {
@@ -262,10 +272,11 @@ func LoadMasterList() (*types.MasterList, error) {
 		var e types.DownloadEntry
 		var completedAt, timeTaken sql.NullInt64      // handle nulls
 		var filename, urlHash, mirrors sql.NullString // handle nulls
+		var avgSpeed sql.NullFloat64                  // handle null avg_speed
 
 		if err := rows.Scan(
 			&e.ID, &e.URL, &e.DestPath, &filename, &e.Status, &e.TotalSize, &e.Downloaded,
-			&completedAt, &timeTaken, &urlHash, &mirrors,
+			&completedAt, &timeTaken, &urlHash, &mirrors, &avgSpeed,
 		); err != nil {
 			return nil, err
 		}
@@ -284,6 +295,9 @@ func LoadMasterList() (*types.MasterList, error) {
 		}
 		if mirrors.Valid && mirrors.String != "" {
 			e.Mirrors = strings.Split(mirrors.String, ",")
+		}
+		if avgSpeed.Valid {
+			e.AvgSpeed = avgSpeed.Float64
 		}
 
 		list.Downloads = append(list.Downloads, e)
@@ -307,8 +321,8 @@ func AddToMasterList(entry types.DownloadEntry) error {
 	return withTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`
 			INSERT INTO downloads (
-				id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors, avg_speed
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				url=excluded.url,
 				dest_path=excluded.dest_path,
@@ -319,10 +333,11 @@ func AddToMasterList(entry types.DownloadEntry) error {
 				completed_at=excluded.completed_at,
 				time_taken=excluded.time_taken,
 				url_hash=excluded.url_hash,
-				mirrors=excluded.mirrors
+				mirrors=excluded.mirrors,
+				avg_speed=excluded.avg_speed
 		`,
 			entry.ID, entry.URL, entry.DestPath, entry.Filename, entry.Status, entry.TotalSize, entry.Downloaded,
-			entry.CompletedAt, entry.TimeTaken, entry.URLHash, strings.Join(entry.Mirrors, ","))
+			entry.CompletedAt, entry.TimeTaken, entry.URLHash, strings.Join(entry.Mirrors, ","), entry.AvgSpeed)
 
 		return err
 	})
@@ -349,16 +364,17 @@ func GetDownload(id string) (*types.DownloadEntry, error) {
 	var e types.DownloadEntry
 	var completedAt, timeTaken sql.NullInt64
 	var urlHash, filename, mirrors sql.NullString
+	var avgSpeed sql.NullFloat64
 
 	row := db.QueryRow(`
-		SELECT id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors 
+		SELECT id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors, avg_speed 
 		FROM downloads
 		WHERE id = ?
 	`, id)
 
 	if err := row.Scan(
 		&e.ID, &e.URL, &e.DestPath, &filename, &e.Status, &e.TotalSize, &e.Downloaded,
-		&completedAt, &timeTaken, &urlHash, &mirrors,
+		&completedAt, &timeTaken, &urlHash, &mirrors, &avgSpeed,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // Not found
@@ -380,6 +396,9 @@ func GetDownload(id string) (*types.DownloadEntry, error) {
 	}
 	if mirrors.Valid && mirrors.String != "" {
 		e.Mirrors = strings.Split(mirrors.String, ",")
+	}
+	if avgSpeed.Valid {
+		e.AvgSpeed = avgSpeed.Float64
 	}
 
 	return &e, nil
@@ -600,4 +619,96 @@ func LoadStates(ids []string) (map[string]*types.DownloadState, error) {
 	}
 
 	return states, nil
+}
+
+// computeFileHash computes SHA-256 hash of a file for integrity verification.
+// Returns the hex-encoded hash or empty string on error.
+func computeFileHash(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("failed to hash file: %w", err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// ValidateIntegrity checks that paused .surge files still exist and haven't been tampered with.
+// Removes orphaned or corrupted entries from the database.
+// Returns the number of entries removed.
+func ValidateIntegrity() (int, error) {
+	db := getDBHelper()
+	if db == nil {
+		return 0, fmt.Errorf("database not initialized")
+	}
+
+	// Load all paused/queued downloads
+	rows, err := db.Query(`
+		SELECT id, dest_path, file_hash
+		FROM downloads
+		WHERE status IN ('paused', 'queued')
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query paused downloads: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	type entry struct {
+		id       string
+		destPath string
+		fileHash string
+	}
+
+	var entries []entry
+	for rows.Next() {
+		var e entry
+		var fh sql.NullString
+		if err := rows.Scan(&e.id, &e.destPath, &fh); err != nil {
+			return 0, err
+		}
+		if fh.Valid {
+			e.fileHash = fh.String
+		}
+		entries = append(entries, e)
+	}
+
+	removed := 0
+	for _, e := range entries {
+		surgePath := e.destPath + types.IncompleteSuffix
+
+		// Check if .surge file exists
+		if _, err := os.Stat(surgePath); os.IsNotExist(err) {
+			// File missing — remove orphaned DB entry
+			utils.Debug("Integrity: .surge file missing for %s, removing entry %s", e.destPath, e.id)
+			_ = RemoveFromMasterList(e.id)
+			// Also clean up tasks
+			_, _ = db.Exec("DELETE FROM tasks WHERE download_id = ?", e.id)
+			removed++
+			continue
+		}
+
+		// If we have a stored hash, verify it
+		if e.fileHash != "" {
+			currentHash, err := computeFileHash(surgePath)
+			if err != nil {
+				utils.Debug("Integrity: failed to hash %s: %v", surgePath, err)
+				continue // Don't remove on hash computation failure
+			}
+
+			if currentHash != e.fileHash {
+				// File has been tampered with — remove entry and corrupted file
+				utils.Debug("Integrity: hash mismatch for %s (expected %s, got %s), removing", surgePath, e.fileHash, currentHash)
+				_ = os.Remove(surgePath)
+				_ = RemoveFromMasterList(e.id)
+				_, _ = db.Exec("DELETE FROM tasks WHERE download_id = ?", e.id)
+				removed++
+			}
+		}
+	}
+
+	return removed, nil
 }

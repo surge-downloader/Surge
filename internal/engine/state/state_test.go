@@ -612,3 +612,248 @@ func TestMirrorsPersistence(t *testing.T) {
 		t.Error("Completed download not found in list")
 	}
 }
+
+// =============================================================================
+// ValidateIntegrity Tests
+// =============================================================================
+
+func TestValidateIntegrity_MissingFile(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	defer CloseDB()
+
+	destPath := filepath.Join(tmpDir, "missing.zip")
+	// Insert a paused download — but DO NOT create the .surge file
+	entry := types.DownloadEntry{
+		ID:       "integrity-missing",
+		URL:      "https://example.com/missing.zip",
+		DestPath: destPath,
+		Filename: "missing.zip",
+		Status:   "paused",
+	}
+	if err := AddToMasterList(entry); err != nil {
+		t.Fatalf("AddToMasterList failed: %v", err)
+	}
+
+	// Verify entry exists
+	dl, err := GetDownload("integrity-missing")
+	if err != nil || dl == nil {
+		t.Fatalf("Expected entry to exist before integrity check")
+	}
+
+	// Run integrity check — file is missing, entry should be removed
+	removed, err := ValidateIntegrity()
+	if err != nil {
+		t.Fatalf("ValidateIntegrity failed: %v", err)
+	}
+	if removed != 1 {
+		t.Errorf("ValidateIntegrity removed = %d, want 1", removed)
+	}
+
+	// Verify entry is gone
+	dl, err = GetDownload("integrity-missing")
+	if err != nil {
+		t.Fatalf("GetDownload failed: %v", err)
+	}
+	if dl != nil {
+		t.Error("Entry should have been removed after integrity check")
+	}
+}
+
+func TestValidateIntegrity_ValidFile(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	defer CloseDB()
+
+	destPath := filepath.Join(tmpDir, "valid.zip")
+	surgePath := destPath + types.IncompleteSuffix
+
+	// Create a .surge file with known content
+	content := []byte("hello world test content")
+	if err := os.WriteFile(surgePath, content, 0o644); err != nil {
+		t.Fatalf("Failed to create .surge file: %v", err)
+	}
+
+	// Compute expected hash
+	expectedHash, err := computeFileHash(surgePath)
+	if err != nil {
+		t.Fatalf("computeFileHash failed: %v", err)
+	}
+
+	// Insert a paused download with correct file hash
+	if err := AddToMasterList(types.DownloadEntry{
+		ID:       "integrity-valid",
+		URL:      "https://example.com/valid.zip",
+		DestPath: destPath,
+		Filename: "valid.zip",
+		Status:   "paused",
+	}); err != nil {
+		t.Fatalf("AddToMasterList failed: %v", err)
+	}
+
+	// Set file_hash directly in DB (simulating SaveState having computed it)
+	d := getDBHelper()
+	_, err = d.Exec("UPDATE downloads SET file_hash = ? WHERE id = ?", expectedHash, "integrity-valid")
+	if err != nil {
+		t.Fatalf("Failed to set file_hash: %v", err)
+	}
+
+	// Run integrity check — file exists with matching hash, should keep it
+	removed, err := ValidateIntegrity()
+	if err != nil {
+		t.Fatalf("ValidateIntegrity failed: %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("ValidateIntegrity removed = %d, want 0 (file is valid)", removed)
+	}
+
+	// Verify entry still exists
+	dl, _ := GetDownload("integrity-valid")
+	if dl == nil {
+		t.Error("Valid entry should not have been removed")
+	}
+
+	// Verify .surge file still exists
+	if _, err := os.Stat(surgePath); os.IsNotExist(err) {
+		t.Error("Valid .surge file should not have been deleted")
+	}
+}
+
+func TestValidateIntegrity_TamperedFile(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	defer CloseDB()
+
+	destPath := filepath.Join(tmpDir, "tampered.zip")
+	surgePath := destPath + types.IncompleteSuffix
+
+	// Create a .surge file
+	if err := os.WriteFile(surgePath, []byte("original content"), 0o644); err != nil {
+		t.Fatalf("Failed to create .surge file: %v", err)
+	}
+
+	// Insert entry with a WRONG hash (simulating tampering)
+	if err := AddToMasterList(types.DownloadEntry{
+		ID:       "integrity-tampered",
+		URL:      "https://example.com/tampered.zip",
+		DestPath: destPath,
+		Filename: "tampered.zip",
+		Status:   "paused",
+	}); err != nil {
+		t.Fatalf("AddToMasterList failed: %v", err)
+	}
+
+	// Set a fake hash that won't match the file content
+	d := getDBHelper()
+	_, _ = d.Exec("UPDATE downloads SET file_hash = ? WHERE id = ?", "0000000000000000000000000000000000000000000000000000000000000000", "integrity-tampered")
+
+	// Run integrity check — hash mismatch, entry AND file should be removed
+	removed, err := ValidateIntegrity()
+	if err != nil {
+		t.Fatalf("ValidateIntegrity failed: %v", err)
+	}
+	if removed != 1 {
+		t.Errorf("ValidateIntegrity removed = %d, want 1", removed)
+	}
+
+	// Verify entry is gone
+	dl, _ := GetDownload("integrity-tampered")
+	if dl != nil {
+		t.Error("Tampered entry should have been removed")
+	}
+
+	// Verify .surge file was deleted
+	if _, err := os.Stat(surgePath); !os.IsNotExist(err) {
+		t.Error("Tampered .surge file should have been deleted")
+	}
+}
+
+func TestValidateIntegrity_CompletedIgnored(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	defer CloseDB()
+
+	// Insert a completed download — should NOT be touched by integrity check
+	if err := AddToMasterList(types.DownloadEntry{
+		ID:          "integrity-completed",
+		URL:         "https://example.com/done.zip",
+		DestPath:    filepath.Join(tmpDir, "done.zip"),
+		Filename:    "done.zip",
+		Status:      "completed",
+		CompletedAt: time.Now().Unix(),
+	}); err != nil {
+		t.Fatalf("AddToMasterList failed: %v", err)
+	}
+
+	removed, err := ValidateIntegrity()
+	if err != nil {
+		t.Fatalf("ValidateIntegrity failed: %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("ValidateIntegrity removed = %d, want 0 (completed downloads ignored)", removed)
+	}
+
+	// Verify entry still exists
+	dl, _ := GetDownload("integrity-completed")
+	if dl == nil {
+		t.Error("Completed entry should not have been affected")
+	}
+}
+
+// =============================================================================
+// AvgSpeed Persistence Tests
+// =============================================================================
+
+func TestAvgSpeedPersistence(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	defer CloseDB()
+
+	entry := types.DownloadEntry{
+		ID:          "speed-test",
+		URL:         "https://example.com/speed.zip",
+		DestPath:    filepath.Join(tmpDir, "speed.zip"),
+		Filename:    "speed.zip",
+		Status:      "completed",
+		TotalSize:   100 * 1024 * 1024, // 100 MB
+		Downloaded:  100 * 1024 * 1024,
+		CompletedAt: time.Now().Unix(),
+		TimeTaken:   10000,                  // 10 seconds in ms
+		AvgSpeed:    10.0 * 1024.0 * 1024.0, // 10 MB/s
+	}
+
+	if err := AddToMasterList(entry); err != nil {
+		t.Fatalf("AddToMasterList failed: %v", err)
+	}
+
+	// Verify via GetDownload
+	loaded, err := GetDownload("speed-test")
+	if err != nil {
+		t.Fatalf("GetDownload failed: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("GetDownload returned nil")
+	}
+	if loaded.AvgSpeed != entry.AvgSpeed {
+		t.Errorf("AvgSpeed = %f, want %f", loaded.AvgSpeed, entry.AvgSpeed)
+	}
+
+	// Verify via LoadMasterList
+	list, err := LoadMasterList()
+	if err != nil {
+		t.Fatalf("LoadMasterList failed: %v", err)
+	}
+	found := false
+	for _, e := range list.Downloads {
+		if e.ID == "speed-test" {
+			found = true
+			if e.AvgSpeed != entry.AvgSpeed {
+				t.Errorf("LoadMasterList AvgSpeed = %f, want %f", e.AvgSpeed, entry.AvgSpeed)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("Entry not found in master list")
+	}
+}

@@ -17,6 +17,19 @@ import (
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
+func completedSpeedMBps(entry types.DownloadEntry) float64 {
+	if entry.Status != "completed" {
+		return 0
+	}
+	if entry.AvgSpeed > 0 {
+		return entry.AvgSpeed / (1024 * 1024)
+	}
+	if entry.TimeTaken > 0 {
+		return float64(entry.TotalSize) * 1000 / float64(entry.TimeTaken) / (1024 * 1024)
+	}
+	return 0
+}
+
 // ReloadSettings reloads settings from disk
 func (s *LocalDownloadService) ReloadSettings() error {
 	settings, err := config.LoadSettings()
@@ -379,12 +392,6 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 				progress = 100.0
 			}
 
-			// Calculate speed for completed items if data available
-			var speed float64
-			if d.Status == "completed" && d.TimeTaken > 0 {
-				speed = float64(d.TotalSize) * 1000 / float64(d.TimeTaken) / (1024 * 1024)
-			}
-
 			statuses = append(statuses, types.DownloadStatus{
 				ID:          d.ID,
 				URL:         d.URL,
@@ -394,8 +401,10 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 				TotalSize:   d.TotalSize,
 				Downloaded:  d.Downloaded,
 				Progress:    progress,
-				Speed:       speed,
+				Speed:       completedSpeedMBps(d),
 				Connections: 0,
+				TimeTaken:   d.TimeTaken,
+				AvgSpeed:    d.AvgSpeed,
 			})
 		}
 	}
@@ -715,11 +724,6 @@ func (s *LocalDownloadService) GetStatus(id string) (*types.DownloadStatus, erro
 			progress = 100.0
 		}
 
-		var speed float64
-		if entry.Status == "completed" && entry.TimeTaken > 0 {
-			speed = float64(entry.TotalSize) * 1000 / float64(entry.TimeTaken) / (1024 * 1024)
-		}
-
 		status := types.DownloadStatus{
 			ID:         entry.ID,
 			URL:        entry.URL,
@@ -727,8 +731,10 @@ func (s *LocalDownloadService) GetStatus(id string) (*types.DownloadStatus, erro
 			TotalSize:  entry.TotalSize,
 			Downloaded: entry.Downloaded,
 			Progress:   progress,
-			Speed:      speed,
+			Speed:      completedSpeedMBps(*entry),
 			Status:     entry.Status,
+			TimeTaken:  entry.TimeTaken,
+			AvgSpeed:   entry.AvgSpeed,
 		}
 		return &status, nil
 	}
