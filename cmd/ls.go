@@ -125,7 +125,7 @@ func printDownloads(jsonOutput bool) {
 
 	for _, d := range downloads {
 		progress := fmt.Sprintf("%.1f%%", d.Progress)
-		size := formatSize(d.TotalSize)
+		size := utils.ConvertBytesToHumanReadable(d.TotalSize)
 
 		// Speed display
 		var speed string
@@ -150,22 +150,6 @@ func printDownloads(jsonOutput bool) {
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", id, filename, d.Status, progress, speed, size)
 	}
 	_ = w.Flush()
-}
-
-func formatSize(bytes int64) string {
-	if bytes == 0 {
-		return "-"
-	}
-	const unit = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := int64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 func showDownloadDetails(partialID string, jsonOutput bool) {
@@ -245,7 +229,7 @@ func printDownloadDetail(d types.DownloadStatus, jsonOutput bool) {
 	fmt.Printf("Filename:   %s\n", d.Filename)
 	fmt.Printf("Status:     %s\n", d.Status)
 	fmt.Printf("Progress:   %.1f%%\n", d.Progress)
-	fmt.Printf("Downloaded: %s / %s\n", formatSize(d.Downloaded), formatSize(d.TotalSize))
+	fmt.Printf("Downloaded: %s / %s\n", utils.ConvertBytesToHumanReadable(d.Downloaded), utils.ConvertBytesToHumanReadable(d.TotalSize))
 	if d.Speed > 0 {
 		fmt.Printf("Speed:      %.1f MB/s\n", d.Speed)
 	}

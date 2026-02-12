@@ -19,6 +19,7 @@ import (
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/testutil"
+	"github.com/surge-downloader/surge/internal/utils"
 )
 
 // TestResolveDownloadID_Remote verifies that resolveDownloadID queries the server
@@ -171,7 +172,7 @@ func TestFormatSize_Table(t *testing.T) {
 		bytes int64
 		want  string
 	}{
-		{name: "zero", bytes: 0, want: "-"},
+		{name: "zero", bytes: 0, want: "0 B"},
 		{name: "bytes", bytes: 512, want: "512 B"},
 		{name: "kb", bytes: 1024, want: "1.0 KB"},
 		{name: "kb-fraction", bytes: 1536, want: "1.5 KB"},
@@ -180,8 +181,8 @@ func TestFormatSize_Table(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := formatSize(tt.bytes); got != tt.want {
-				t.Fatalf("formatSize(%d) = %q, want %q", tt.bytes, got, tt.want)
+			if got := utils.ConvertBytesToHumanReadable(tt.bytes); got != tt.want {
+				t.Fatalf("ConvertBytesToHumanReadable(%d) = %q, want %q", tt.bytes, got, tt.want)
 			}
 		})
 	}
