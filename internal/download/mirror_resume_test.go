@@ -152,12 +152,22 @@ func TestIntegration_MirrorResume(t *testing.T) {
 	progState.Pause()
 	<-errCh
 
-	// Check if resumeCfg.Mirrors was updated?
+	// Check if resumeCfg.Mirrors was updated
 	// Since resumeCfg is passed by pointer, it should be updated if TUIDownload modifies it.
-	if len(resumeCfg.Mirrors) == 0 {
-		t.Fatal("resumeCfg.Mirrors was not updated from saved state")
+	// Check if progState has mirrors
+	stateMirrors := progState.GetMirrors()
+	if len(stateMirrors) == 0 {
+		t.Fatal("progState mirrors were not updated from saved state")
 	}
-	if resumeCfg.Mirrors[0] != mirror.URL() {
-		t.Errorf("Resume config mirror mismatch. Want %s, got %v", mirror.URL(), resumeCfg.Mirrors)
+
+	found := false
+	for _, m := range stateMirrors {
+		if m.URL == mirror.URL() {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Resume state mirrors missing secondary. Got %v, want to include %s", stateMirrors, mirror.URL())
 	}
 }

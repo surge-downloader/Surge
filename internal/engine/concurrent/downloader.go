@@ -284,9 +284,15 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 
 	// Create cancellable context for pause support
 	downloadCtx, cancel := context.WithCancel(ctx)
+
+	// Helper synchronization
+	var wgHelpers sync.WaitGroup
+	// Ensure we wait for helpers to finish; run wait AFTER cancel (LIFO: cancel runs first)
+	defer wgHelpers.Wait()
 	defer cancel()
+
 	if d.State != nil {
-		d.State.CancelFunc = cancel
+		d.State.SetCancelFunc(cancel)
 	}
 
 	// Determine connections and chunk size
@@ -368,7 +374,9 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	balancerCtx, cancelBalancer := context.WithCancel(downloadCtx)
 	defer cancelBalancer()
 
+	wgHelpers.Add(1)
 	go func() {
+		defer wgHelpers.Done()
 		ticker := time.NewTicker(200 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -398,7 +406,9 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	}()
 
 	// Monitor for completion
+	wgHelpers.Add(1)
 	go func() {
+		defer wgHelpers.Done()
 		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -422,7 +432,9 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	}()
 
 	// Health monitor: detect slow workers
+	wgHelpers.Add(1)
 	go func() {
+		defer wgHelpers.Done()
 		ticker := time.NewTicker(types.HealthCheckInterval) // Fixed: using types constant
 		defer ticker.Stop()
 

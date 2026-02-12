@@ -107,7 +107,23 @@ func (p *WorkerPool) GetAll() []types.DownloadConfig {
 
 	var configs []types.DownloadConfig
 	for _, ad := range p.downloads {
-		configs = append(configs, ad.config)
+		cfg := ad.config
+		if cfg.State != nil {
+			if fn := cfg.State.GetFilename(); fn != "" {
+				cfg.Filename = fn
+			}
+			if dp := cfg.State.GetDestPath(); dp != "" {
+				cfg.DestPath = dp
+			}
+			if ms := cfg.State.GetMirrors(); len(ms) > 0 {
+				var urls []string
+				for _, m := range ms {
+					urls = append(urls, m.URL)
+				}
+				cfg.Mirrors = urls
+			}
+		}
+		configs = append(configs, cfg)
 	}
 	for _, cfg := range p.queued {
 		configs = append(configs, cfg)
@@ -339,12 +355,21 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 		return nil
 	}
 
+	// Use state filename/destpath if available (thread-safe)
+	filename := ad.config.Filename
+	if str := state.GetFilename(); str != "" {
+		filename = str
+	}
+
+	// Calculate progress and speed (thread-safe)
+	downloaded, totalSize, _, sessionElapsed, _, sessionStart := state.GetProgress()
+
 	status := &types.DownloadStatus{
 		ID:         id,
 		URL:        ad.config.URL,
-		Filename:   ad.config.Filename,
-		TotalSize:  state.TotalSize,
-		Downloaded: state.Downloaded.Load(),
+		Filename:   filename,
+		TotalSize:  totalSize,
+		Downloaded: downloaded,
 		Status:     "downloading",
 	}
 
@@ -367,7 +392,6 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 	}
 
 	// Calculate speed (MB/s)
-	downloaded, _, _, sessionElapsed, _, sessionStart := state.GetProgress()
 	sessionDownloaded := downloaded - sessionStart
 	if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
 		bytesPerSec := float64(sessionDownloaded) / sessionElapsed.Seconds()

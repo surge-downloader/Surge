@@ -296,10 +296,13 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 			}
 
 			if cfg.State != nil {
-				status.TotalSize = cfg.State.TotalSize
-				status.Downloaded = cfg.State.Downloaded.Load()
-				if cfg.State.DestPath != "" {
-					status.DestPath = cfg.State.DestPath
+				// Calculate progress and speed (thread-safe)
+				downloaded, totalSize, _, sessionElapsed, connections, sessionStart := cfg.State.GetProgress()
+
+				status.TotalSize = totalSize
+				status.Downloaded = downloaded
+				if dp := cfg.State.GetDestPath(); dp != "" {
+					status.DestPath = dp
 				}
 
 				if status.TotalSize > 0 {
@@ -307,7 +310,6 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 				}
 
 				// Calculate speed from progress
-				downloaded, _, _, sessionElapsed, connections, sessionStart := cfg.State.GetProgress()
 				sessionDownloaded := downloaded - sessionStart
 				if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
 					status.Speed = float64(sessionDownloaded) / sessionElapsed.Seconds() / (1024 * 1024)

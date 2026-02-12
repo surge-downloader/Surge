@@ -101,7 +101,7 @@ func TestProgressState_PauseWithCancelFunc(t *testing.T) {
 	ps := NewProgressState("test", 100)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	ps.CancelFunc = cancel
+	ps.SetCancelFunc(cancel)
 
 	// Verify context is not cancelled
 	select {
