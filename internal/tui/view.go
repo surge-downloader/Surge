@@ -844,23 +844,21 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 
 	timeStr = formatDurationForUI(elapsed)
 
-	// Connections
-	var connStr string
-	if d.done || d.paused {
-		connStr = "N/A"
-	} else if d.Connections > 0 {
-		connStr = fmt.Sprintf("%d", d.Connections)
-	} else {
-		connStr = "0"
-	}
-
 	// Stats Layout
 	colWidth := (contentWidth - 4) / 2
-	leftCol := lipgloss.JoinVertical(lipgloss.Left,
+	leftColItems := []string{
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Size:"), StatsValueStyle.Render(sizeStr)),
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Speed:"), StatsValueStyle.Render(speedStr)),
-		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Conns:"), StatsValueStyle.Render(connStr)),
-	)
+	}
+	isActive := !d.done && !d.paused && !d.pausing && d.Speed > 0
+	if isActive {
+		connStr := "0"
+		if d.Connections > 0 {
+			connStr = fmt.Sprintf("%d", d.Connections)
+		}
+		leftColItems = append(leftColItems, lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Conns:"), StatsValueStyle.Render(connStr)))
+	}
+	leftCol := lipgloss.JoinVertical(lipgloss.Left, leftColItems...)
 	rightCol := lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Time:"), StatsValueStyle.Render(timeStr)),
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("ETA:"), StatsValueStyle.Render(etaStr)),
