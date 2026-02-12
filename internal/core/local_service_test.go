@@ -100,7 +100,9 @@ func TestLocalDownloadService_BatchProgress(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 
 		// Send some data
-		w.Write(make([]byte, 500))
+		if _, err := w.Write(make([]byte, 500)); err != nil {
+			t.Errorf("failed to write data: %v", err)
+		}
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}
