@@ -307,14 +307,11 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 			}
 
 			now := time.Now()
-			// oldOffset := offset // Unused since we use batch logic now, but logically here
 			rangeStart := offset // Start of this write
 			offset += int64(readSoFar)
 			atomic.StoreInt64(&activeTask.CurrentOffset, offset)
 			atomic.AddInt64(&activeTask.WindowBytes, int64(readSoFar))
 			atomic.StoreInt64(&activeTask.LastActivity, now.UnixNano())
-
-			// --- BATCHING LOGIC START ---
 
 			// Calculate effective contribution (clamping to StopAt is done above via readSoFar truncation)
 			// So readSoFar is exactly what we wrote and what we "own"
@@ -328,8 +325,6 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 			if pendingBytes >= batchSizeThreshold || now.Sub(lastUpdate) >= batchTimeThreshold {
 				flushUpdates()
 			}
-
-			// --- BATCHING LOGIC END ---
 
 			// Update EMA speed using sliding window (2 second window)
 			// This relies on WindowBytes which is updated atomically above, so independent of batching
