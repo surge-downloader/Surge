@@ -144,6 +144,7 @@ func (s *LocalDownloadService) reportProgressLoop() {
 		if s.Pool == nil {
 			continue
 		}
+		alpha := s.getSpeedEmaAlpha()
 
 		var batch events.BatchProgressMsg
 
@@ -170,7 +171,7 @@ func (s *LocalDownloadService) reportProgressLoop() {
 			if lastSpeed == 0 {
 				currentSpeed = instantSpeed
 			} else {
-				currentSpeed = SpeedSmoothingAlpha*instantSpeed + (1-SpeedSmoothingAlpha)*lastSpeed
+				currentSpeed = alpha*instantSpeed + (1-alpha)*lastSpeed
 			}
 			lastSpeeds[cfg.ID] = currentSpeed
 
@@ -210,6 +211,23 @@ func (s *LocalDownloadService) reportProgressLoop() {
 			}
 		}
 	}
+}
+
+func (s *LocalDownloadService) getSpeedEmaAlpha() float64 {
+	s.settingsMu.RLock()
+	settings := s.settings
+	s.settingsMu.RUnlock()
+
+	if settings == nil {
+		return SpeedSmoothingAlpha
+	}
+
+	alpha := settings.Performance.SpeedEmaAlpha
+	if alpha <= 0 || alpha > 1 {
+		return SpeedSmoothingAlpha
+	}
+
+	return alpha
 }
 
 // StreamEvents returns a channel that receives real-time download events.
