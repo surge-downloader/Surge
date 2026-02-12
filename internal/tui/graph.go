@@ -59,15 +59,31 @@ func renderMultiLineGraph(data []float64, width, height int, maxVal float64, col
 	blocks := []string{" ", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
 
 	// Pre-calculate styles for every row to avoid re-creating them in the loop
-	rowStyles := make([]lipgloss.Style, height)
+	// Optimization: Pre-render all possible block characters for each row style
+	// This avoids calling style.Render() width*height times
+	rowChars := make([][]string, height)
 	for y := 0; y < height; y++ {
 		// Map height 'y' to an index in graphGradient
-		// y=0 is the bottom in the loop logic below, but let's map it visually
 		colorIdx := (y * len(graphGradient)) / height
 		if colorIdx >= len(graphGradient) {
 			colorIdx = len(graphGradient) - 1
 		}
-		rowStyles[y] = lipgloss.NewStyle().Foreground(graphGradient[colorIdx])
+		style := lipgloss.NewStyle().Foreground(graphGradient[colorIdx])
+
+		// Pre-render the 8 block characters + space
+		rowChars[y] = make([]string, 9)
+		rowChars[y][0] = " " // Empty
+		for k := 1; k <= 8; k++ {
+			rowChars[y][k] = style.Render(blocks[k-1]) // blocks is 0-indexed (space is 0) but we use 1-8 for blocks
+		}
+		// rowChars[y][0] = " " (unstyled or styled space)
+		// rowChars[y][1..8] = styled blocks
+
+		// blocks := []string{" ", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
+		rowChars[y] = make([]string, len(blocks))
+		for k, b := range blocks {
+			rowChars[y][k] = style.Render(b)
+		}
 	}
 
 	// 2. Scale data to fill full width
@@ -99,17 +115,19 @@ func renderMultiLineGraph(data []float64, width, height int, maxVal float64, col
 					rowIndex := height - 1 - y
 					rowValue := totalSubBlocks - float64(y*8)
 
-					var char string
+					var charIndex int
 					if rowValue <= 0 {
-						continue
+						charIndex = 0 // Space
 					} else if rowValue >= 8 {
-						char = "█"
+						charIndex = 7 // Full block (█)
 					} else {
-						char = blocks[int(rowValue)]
+						charIndex = int(rowValue) // Partial block
 					}
 
-					// USE THE ROW STYLE HERE
-					rows[rowIndex][col] = rowStyles[y].Render(char)
+					// USE PRE-RENDERED CACHE
+					if charIndex > 0 { // Only render if not empty space (optimization)
+						rows[rowIndex][col] = rowChars[y][charIndex]
+					}
 				}
 			}
 		}

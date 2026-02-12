@@ -327,6 +327,13 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 	return m
 }
 
+type ViewStats struct {
+	ActiveCount     int
+	QueuedCount     int
+	DownloadedCount int
+	TotalDownloaded int64
+}
+
 func (m RootModel) Init() tea.Cmd {
 	var cmds []tea.Cmd
 

@@ -368,7 +368,10 @@ func (m RootModel) View() string {
                 /____/       `
 
 	// Calculate stats for tab bar
-	active, queued, downloaded := m.CalculateStats()
+	stats := m.ComputeViewStats()
+	active := stats.ActiveCount
+	queued := stats.QueuedCount
+	downloaded := stats.DownloadedCount
 
 	// Logo takes ~45% of header width
 	logoWidth := int(float64(leftWidth) * 0.45)
@@ -509,10 +512,7 @@ func (m RootModel) View() string {
 	}
 
 	// Calculate total downloaded across all downloads
-	var totalDownloaded int64
-	for _, d := range m.downloads {
-		totalDownloaded += d.Downloaded
-	}
+	totalDownloaded := stats.TotalDownloaded
 
 	// Create stats content (left side inside box)
 	speedMbps := currentSpeed * 8
@@ -943,17 +943,19 @@ func (m RootModel) calcTotalSpeed() float64 {
 	return total / Megabyte
 }
 
-func (m RootModel) CalculateStats() (active, queued, downloaded int) {
+func (m RootModel) ComputeViewStats() ViewStats {
+	var stats ViewStats
 	for _, d := range m.downloads {
 		if d.done {
-			downloaded++
+			stats.DownloadedCount++
 		} else if d.Speed > 0 {
-			active++
+			stats.ActiveCount++
 		} else {
-			queued++
+			stats.QueuedCount++
 		}
+		stats.TotalDownloaded += d.Downloaded
 	}
-	return
+	return stats
 }
 
 func truncateString(s string, i int) string {
