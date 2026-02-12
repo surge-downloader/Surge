@@ -16,7 +16,6 @@ func (m *RootModel) processProgressMsg(msg events.ProgressMsg) {
 			d.Downloaded = msg.Downloaded
 			d.Total = msg.Total
 			d.Speed = msg.Speed
-			d.Elapsed = msg.Elapsed
 			d.Connections = msg.ActiveConnections
 
 			// Update Chunk State if provided
@@ -39,23 +38,20 @@ func (m *RootModel) processProgressMsg(msg events.ProgressMsg) {
 				d.progress.SetPercent(percentage)
 			}
 
-			// Rolling average history logic
-			totalSpeed := m.calcTotalSpeed()
-			m.speedBuffer = append(m.speedBuffer, totalSpeed)
-			if len(m.speedBuffer) > 10 {
-				m.speedBuffer = m.speedBuffer[1:]
-			}
-
+			// Update speed graph history with EMA smoothing for smooth transitions
 			if time.Since(m.lastSpeedHistoryUpdate) >= GraphUpdateInterval {
-				var avgSpeed float64
-				if len(m.speedBuffer) > 0 {
-					for _, s := range m.speedBuffer {
-						avgSpeed += s
-					}
-					avgSpeed /= float64(len(m.speedBuffer))
+				totalSpeed := m.calcTotalSpeed()
+				// EMA smooth against previous graph point for visual continuity
+				var smoothed float64
+				if len(m.SpeedHistory) > 0 {
+					prev := m.SpeedHistory[len(m.SpeedHistory)-1]
+					const graphAlpha = 0.3 // Graph smoothing factor
+					smoothed = graphAlpha*totalSpeed + (1-graphAlpha)*prev
+				} else {
+					smoothed = totalSpeed
 				}
 				if len(m.SpeedHistory) > 0 {
-					m.SpeedHistory = append(m.SpeedHistory[1:], avgSpeed)
+					m.SpeedHistory = append(m.SpeedHistory[1:], smoothed)
 				}
 				m.lastSpeedHistoryUpdate = time.Now()
 			}

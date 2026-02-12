@@ -57,6 +57,7 @@ type DownloadModel struct {
 
 	StartTime time.Time
 	Elapsed   time.Duration
+	lastETA   time.Duration // EMA-smoothed ETA for UI stability
 
 	progress progress.Model
 
@@ -108,7 +109,6 @@ type RootModel struct {
 	// Graph Data
 	SpeedHistory           []float64 // Stores the last ~60 ticks of speed data
 	lastSpeedHistoryUpdate time.Time // Last time SpeedHistory was updated (for 0.5s sampling)
-	speedBuffer            []float64 // Buffer for rolling average (last 10 speed readings)
 
 	// Notification log system
 	logViewport viewport.Model // Scrollable log viewport

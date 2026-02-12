@@ -18,6 +18,8 @@ const (
 
 const maxUIDuration = 30 * 24 * time.Hour
 
+// formatDurationForUI formats a duration as a human-readable clock string.
+// Returns "M:SS" for sub-hour durations, "H:MM:SS" for multi-hour, "Xd Yh" for days.
 func formatDurationForUI(d time.Duration) string {
 	if d < 0 {
 		d = 0
@@ -26,18 +28,25 @@ func formatDurationForUI(d time.Duration) string {
 		return "∞"
 	}
 
-	d = d.Round(time.Second)
-	if d >= 24*time.Hour {
-		totalSeconds := int64(d.Seconds())
-		days := totalSeconds / 86400
-		hours := (totalSeconds % 86400) / 3600
+	totalSec := int(d.Seconds())
+
+	if totalSec >= 86400 {
+		days := totalSec / 86400
+		hours := (totalSec % 86400) / 3600
 		if hours > 0 {
 			return fmt.Sprintf("%dd %dh", days, hours)
 		}
 		return fmt.Sprintf("%dd", days)
 	}
 
-	return d.String()
+	hours := totalSec / 3600
+	mins := (totalSec % 3600) / 60
+	secs := totalSec % 60
+
+	if hours > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", hours, mins, secs)
+	}
+	return fmt.Sprintf("%d:%02d", mins, secs)
 }
 
 // renderModalWithOverlay renders a modal centered on screen with a dark overlay effect
@@ -779,9 +788,13 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 
 	// --- 4. Stats Grid Section ---
 	var speedStr, etaStr, sizeStr, timeStr string
-	elapsed := d.Elapsed
-	if elapsed < 0 {
-		elapsed = 0
+	// TUI owns elapsed time: compute from StartTime for active downloads,
+	// use frozen d.Elapsed for completed downloads.
+	var elapsed time.Duration
+	if d.done {
+		elapsed = d.Elapsed
+	} else if !d.StartTime.IsZero() {
+		elapsed = time.Since(d.StartTime)
 	}
 
 	// Size
@@ -808,8 +821,20 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 		if d.Total > 0 {
 			remaining := d.Total - d.Downloaded
 			etaSeconds := float64(remaining) / d.Speed
-			etaDuration := time.Duration(etaSeconds) * time.Second
-			etaStr = formatDurationForUI(etaDuration)
+			// Clamp ETA to 24 hours max to prevent bonkers values
+			const maxETASeconds = 24 * 60 * 60
+			if etaSeconds > maxETASeconds || etaSeconds < 0 {
+				etaStr = "∞"
+			} else {
+				etaDuration := time.Duration(etaSeconds) * time.Second
+				// EMA smooth ETA to prevent jitter from speed fluctuations
+				if d.lastETA > 0 {
+					const etaAlpha = 0.3
+					etaDuration = time.Duration(etaAlpha*float64(etaDuration) + (1-etaAlpha)*float64(d.lastETA))
+				}
+				d.lastETA = etaDuration
+				etaStr = formatDurationForUI(etaDuration)
+			}
 		} else {
 			etaStr = "∞"
 		}
