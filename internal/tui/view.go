@@ -16,6 +16,30 @@ const (
 	ListWidthRatio = 0.6 // List takes 60% width
 )
 
+const maxUIDuration = 30 * 24 * time.Hour
+
+func formatDurationForUI(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	if d >= maxUIDuration {
+		return "∞"
+	}
+
+	d = d.Round(time.Second)
+	if d >= 24*time.Hour {
+		totalSeconds := int64(d.Seconds())
+		days := totalSeconds / 86400
+		hours := (totalSeconds % 86400) / 3600
+		if hours > 0 {
+			return fmt.Sprintf("%dd %dh", days, hours)
+		}
+		return fmt.Sprintf("%dd", days)
+	}
+
+	return d.String()
+}
+
 // renderModalWithOverlay renders a modal centered on screen with a dark overlay effect
 func (m RootModel) renderModalWithOverlay(modal string) string {
 	// Place modal centered with dark gray background fill for overlay effect
@@ -741,6 +765,10 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 
 	// --- 4. Stats Grid Section ---
 	var speedStr, etaStr, sizeStr, timeStr string
+	elapsed := d.Elapsed
+	if elapsed < 0 {
+		elapsed = 0
+	}
 
 	// Size
 	if d.done {
@@ -751,8 +779,8 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 
 	// Speed & ETA
 	if d.done {
-		if d.Elapsed.Seconds() > 0 {
-			avgSpeed := float64(d.Total) / d.Elapsed.Seconds()
+		if elapsed.Seconds() > 0 {
+			avgSpeed := float64(d.Total) / elapsed.Seconds()
 			speedStr = fmt.Sprintf("%.2f MB/s (Avg)", avgSpeed/Megabyte)
 		} else {
 			speedStr = "N/A"
@@ -767,13 +795,13 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 			remaining := d.Total - d.Downloaded
 			etaSeconds := float64(remaining) / d.Speed
 			etaDuration := time.Duration(etaSeconds) * time.Second
-			etaStr = etaDuration.Round(time.Second).String()
+			etaStr = formatDurationForUI(etaDuration)
 		} else {
 			etaStr = "∞"
 		}
 	}
 
-	timeStr = d.Elapsed.Round(time.Second).String()
+	timeStr = formatDurationForUI(elapsed)
 
 	// Connections
 	var connStr string

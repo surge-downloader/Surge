@@ -38,6 +38,9 @@ func (r *ProgressReporter) PollCmd() tea.Cmd {
 			if r.state.SavedElapsed > 0 {
 				elapsed += r.state.SavedElapsed
 			}
+			if elapsed < 0 {
+				elapsed = 0
+			}
 			total := r.state.TotalSize
 			if total <= 0 {
 				total = r.state.Downloaded.Load()

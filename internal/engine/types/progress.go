@@ -110,7 +110,13 @@ func (ps *ProgressState) GetProgress() (downloaded int64, total int64, totalElap
 	ps.mu.Lock()
 	total = ps.TotalSize
 	sessionElapsed = time.Since(ps.StartTime)
+	if sessionElapsed < 0 {
+		sessionElapsed = 0
+	}
 	totalElapsed = ps.SavedElapsed + sessionElapsed
+	if totalElapsed < 0 {
+		totalElapsed = 0
+	}
 	sessionStartBytes = ps.SessionStartBytes
 	ps.mu.Unlock()
 	return
