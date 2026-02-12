@@ -373,8 +373,14 @@ func (m RootModel) View() string {
 	}
 
 	// Render logo and server panel in a shared column
-	gradientLogo := ApplyGradient(logoText, ColorNeonPink, ColorNeonPurple)
-	logoContent := lipgloss.NewStyle().Render(gradientLogo)
+	var logoContent string
+	if m.logoCache != "" {
+		logoContent = m.logoCache
+	} else {
+		gradientLogo := ApplyGradient(logoText, ColorNeonPink, ColorNeonPurple)
+		m.logoCache = lipgloss.NewStyle().Render(gradientLogo)
+		logoContent = m.logoCache
+	}
 
 	// Server info box (below logo, same width)
 	greenDot := lipgloss.NewStyle().Foreground(ColorStateDownloading).Render("●")

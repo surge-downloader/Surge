@@ -149,6 +149,8 @@ type RootModel struct {
 	CurrentVersion string              // Current version of Surge
 
 	InitialDarkBackground bool // Captured at startup for "System" theme
+
+	logoCache string // Cached logo with gradient applied
 }
 
 // NewDownloadModel creates a new download model
@@ -421,4 +423,5 @@ func (m *RootModel) ApplyTheme(mode int) {
 	case config.ThemeDark:
 		lipgloss.SetHasDarkBackground(true)
 	}
+	m.logoCache = "" // Invalidate logo cache
 }
