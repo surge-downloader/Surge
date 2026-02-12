@@ -32,6 +32,7 @@ func (s *LocalDownloadService) ReloadSettings() error {
 // LocalDownloadService implements DownloadService for the local embedded engine.
 type LocalDownloadService struct {
 	Pool    *download.WorkerPool
+	pool    workerPoolAPI
 	InputCh chan interface{}
 
 	// Broadcast fields
@@ -47,6 +48,16 @@ type LocalDownloadService struct {
 	// Settings Cache
 	settings   *config.Settings
 	settingsMu sync.RWMutex
+}
+
+type workerPoolAPI interface {
+	Add(cfg types.DownloadConfig)
+	Pause(downloadID string) bool
+	Resume(downloadID string) bool
+	Cancel(downloadID string)
+	GetAll() []types.DownloadConfig
+	GetStatus(id string) *types.DownloadStatus
+	GracefulShutdown()
 }
 
 const (
@@ -65,8 +76,13 @@ func NewLocalDownloadServiceWithInput(pool *download.WorkerPool, inputCh chan in
 	if inputCh == nil {
 		inputCh = make(chan interface{}, 100)
 	}
+	var poolAPI workerPoolAPI
+	if pool != nil {
+		poolAPI = pool
+	}
 	s := &LocalDownloadService{
 		Pool:      pool,
+		pool:      poolAPI,
 		InputCh:   inputCh,
 		listeners: make([]chan interface{}, 0),
 	}
@@ -91,6 +107,16 @@ func NewLocalDownloadServiceWithInput(pool *download.WorkerPool, inputCh chan in
 	}
 
 	return s
+}
+
+func (s *LocalDownloadService) workerPool() workerPoolAPI {
+	if s.pool != nil {
+		return s.pool
+	}
+	if s.Pool != nil {
+		return s.Pool
+	}
+	return nil
 }
 
 func (s *LocalDownloadService) broadcastLoop() {
@@ -141,11 +167,12 @@ func (s *LocalDownloadService) reportProgressLoop() {
 	lastChunkProgress := make(map[string]time.Time)
 
 	for range s.reportTicker.C {
-		if s.Pool == nil {
+		pool := s.workerPool()
+		if pool == nil {
 			continue
 		}
 
-		activeConfigs := s.Pool.GetAll()
+		activeConfigs := pool.GetAll()
 		for _, cfg := range activeConfigs {
 			if cfg.State == nil || cfg.State.IsPaused() || cfg.State.Done.Load() {
 				// Clean up speed history for inactive
@@ -262,8 +289,8 @@ func (s *LocalDownloadService) Shutdown() error {
 	if s.reportTicker != nil {
 		s.reportTicker.Stop()
 	}
-	if s.Pool != nil {
-		s.Pool.GracefulShutdown()
+	if pool := s.workerPool(); pool != nil {
+		pool.GracefulShutdown()
 	}
 
 	// Stop listeners and broadcaster
@@ -279,8 +306,8 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 	var statuses []types.DownloadStatus
 
 	// 1. Get active downloads from pool
-	if s.Pool != nil {
-		activeConfigs := s.Pool.GetAll()
+	if pool := s.workerPool(); pool != nil {
+		activeConfigs := pool.GetAll()
 		for _, cfg := range activeConfigs {
 			status := types.DownloadStatus{
 				ID:       cfg.ID,
@@ -379,7 +406,8 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 
 // Add queues a new download.
 func (s *LocalDownloadService) Add(url string, path string, filename string, mirrors []string, headers map[string]string) (string, error) {
-	if s.Pool == nil {
+	pool := s.workerPool()
+	if pool == nil {
 		return "", fmt.Errorf("worker pool not initialized")
 	}
 
@@ -417,18 +445,19 @@ func (s *LocalDownloadService) Add(url string, path string, filename string, mir
 		Headers:    headers,
 	}
 
-	s.Pool.Add(cfg)
+	pool.Add(cfg)
 
 	return id, nil
 }
 
 // Pause pauses an active download.
 func (s *LocalDownloadService) Pause(id string) error {
-	if s.Pool == nil {
+	pool := s.workerPool()
+	if pool == nil {
 		return fmt.Errorf("worker pool not initialized")
 	}
 
-	if s.Pool.Pause(id) {
+	if pool.Pause(id) {
 		return nil
 	}
 
@@ -451,12 +480,13 @@ func (s *LocalDownloadService) Pause(id string) error {
 
 // Resume resumes a paused download.
 func (s *LocalDownloadService) Resume(id string) error {
-	if s.Pool == nil {
+	pool := s.workerPool()
+	if pool == nil {
 		return fmt.Errorf("worker pool not initialized")
 	}
 
 	// Try pool resume first
-	if s.Pool.Resume(id) {
+	if pool.Resume(id) {
 		return nil
 	}
 
@@ -523,7 +553,7 @@ func (s *LocalDownloadService) Resume(id string) error {
 		Mirrors:    mirrorURLs,
 	}
 
-	s.Pool.Add(cfg)
+	pool.Add(cfg)
 	if s.InputCh != nil {
 		s.InputCh <- events.DownloadResumedMsg{
 			DownloadID: id,
@@ -537,7 +567,8 @@ func (s *LocalDownloadService) Resume(id string) error {
 func (s *LocalDownloadService) ResumeBatch(ids []string) []error {
 	errs := make([]error, len(ids))
 
-	if s.Pool == nil {
+	pool := s.workerPool()
+	if pool == nil {
 		for i := range errs {
 			errs[i] = fmt.Errorf("worker pool not initialized")
 		}
@@ -549,7 +580,7 @@ func (s *LocalDownloadService) ResumeBatch(ids []string) []error {
 	idMap := make(map[string]int)
 
 	for i, id := range ids {
-		if s.Pool.Resume(id) {
+		if pool.Resume(id) {
 			errs[i] = nil // Success
 		} else {
 			// Need cold resume
@@ -627,7 +658,7 @@ func (s *LocalDownloadService) ResumeBatch(ids []string) []error {
 			Mirrors:    mirrorURLs,
 		}
 
-		s.Pool.Add(cfg)
+		pool.Add(cfg)
 		errs[idx] = nil
 	}
 
@@ -636,13 +667,14 @@ func (s *LocalDownloadService) ResumeBatch(ids []string) []error {
 
 // Delete cancels and removes a download.
 func (s *LocalDownloadService) Delete(id string) error {
-	if s.Pool == nil {
+	pool := s.workerPool()
+	if pool == nil {
 		return fmt.Errorf("worker pool not initialized")
 	}
 
 	removedFilename := ""
 
-	s.Pool.Cancel(id)
+	pool.Cancel(id)
 
 	// Cleanup persisted state and partials if available
 	if entry, err := state.GetDownload(id); err == nil && entry != nil {
@@ -675,8 +707,8 @@ func (s *LocalDownloadService) GetStatus(id string) (*types.DownloadStatus, erro
 	}
 
 	// 1. Check active pool
-	if s.Pool != nil {
-		status := s.Pool.GetStatus(id)
+	if pool := s.workerPool(); pool != nil {
+		status := pool.GetStatus(id)
 		if status != nil {
 			return status, nil
 		}
