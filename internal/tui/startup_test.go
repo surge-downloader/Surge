@@ -65,6 +65,62 @@ func TestTUI_Startup_HandlesResume(t *testing.T) {
 	// We can't rely on pool immediate state as worker is async, but Model state reflects intent
 }
 
+func TestTUI_Startup_LoadsCompletedTiming(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "surge-tui-completed-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	setupTestEnv(t, tmpDir)
+
+	testID := "tui-completed-id"
+	testURL := "http://example.com/completed.zip"
+	testDest := filepath.Join(tmpDir, "completed.zip")
+	const totalSize = int64(5 * 1024 * 1024)
+	const timeTakenMs = int64(2500)
+	const avgSpeed = float64(2 * 1024 * 1024) // 2 MB/s
+
+	if err := state.AddToMasterList(types.DownloadEntry{
+		ID:         testID,
+		URL:        testURL,
+		URLHash:    state.URLHash(testURL),
+		DestPath:   testDest,
+		Filename:   filepath.Base(testDest),
+		Status:     "completed",
+		TotalSize:  totalSize,
+		Downloaded: totalSize,
+		TimeTaken:  timeTakenMs,
+		AvgSpeed:   avgSpeed,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	progressChan := make(chan any, 10)
+	pool := download.NewWorkerPool(progressChan, 3)
+	m := InitialRootModel(1700, "test-version", core.NewLocalDownloadServiceWithInput(pool, progressChan), false)
+
+	var found *DownloadModel
+	for _, d := range m.downloads {
+		if d.ID == testID {
+			found = d
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("TUI Model failed to load completed download")
+	}
+	if !found.done {
+		t.Error("Expected completed download to be marked done")
+	}
+	if found.Elapsed != time.Duration(timeTakenMs)*time.Millisecond {
+		t.Errorf("Elapsed = %v, want %v", found.Elapsed, time.Duration(timeTakenMs)*time.Millisecond)
+	}
+	if found.Speed != avgSpeed {
+		t.Errorf("Speed = %f, want %f", found.Speed, avgSpeed)
+	}
+}
+
 // Helper functions (duplicated from cmd/startup_test.go because packages differ)
 func setupTestEnv(t *testing.T, tmpDir string) {
 	originalXDG := os.Getenv("XDG_CONFIG_HOME")

@@ -65,4 +65,6 @@ type DownloadStatus struct {
 	ETA         int64   `json:"eta"`         // Estimated seconds remaining
 	Connections int     `json:"connections"` // Active connections
 	AddedAt     int64   `json:"added_at"`    // Unix timestamp when added
+	TimeTaken   int64   `json:"time_taken"`  // Duration in milliseconds (completed only)
+	AvgSpeed    float64 `json:"avg_speed"`   // Average speed in bytes/sec (completed only)
 }

@@ -806,7 +806,9 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 
 	// Speed & ETA
 	if d.done {
-		if elapsed.Seconds() > 0 {
+		if d.Speed > 0 {
+			speedStr = fmt.Sprintf("%.2f MB/s (Avg)", d.Speed/Megabyte)
+		} else if elapsed.Seconds() > 0 {
 			avgSpeed := float64(d.Total) / elapsed.Seconds()
 			speedStr = fmt.Sprintf("%.2f MB/s (Avg)", avgSpeed/Megabyte)
 		} else {

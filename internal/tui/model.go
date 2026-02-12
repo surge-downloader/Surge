@@ -260,6 +260,14 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 				if s.TotalSize > 0 {
 					dm.progress.SetPercent(s.Progress / 100.0)
 				}
+				if s.AvgSpeed > 0 {
+					dm.Speed = s.AvgSpeed
+				} else if s.Speed > 0 {
+					dm.Speed = s.Speed * Megabyte
+				}
+				if s.Status == "completed" && s.TimeTaken > 0 {
+					dm.Elapsed = time.Duration(s.TimeTaken) * time.Millisecond
+				}
 
 				downloads = append(downloads, dm)
 			}
