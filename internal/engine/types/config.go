@@ -22,6 +22,10 @@ const (
 	MinChunk     = 2 * MB // Minimum chunk size
 	AlignSize    = 4 * KB // Align chunks to 4KB for filesystem
 	WorkerBuffer = 512 * KB
+
+	// Batching constants for worker updates
+	WorkerBatchSize     = 1 * MB                 // Batch updates until 1MB is downloaded
+	WorkerBatchInterval = 200 * time.Millisecond // Or until 200ms passes
 )
 
 // Connection limits
