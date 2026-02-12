@@ -14,6 +14,7 @@ func TestAcquireLock(t *testing.T) {
 	// Setup isolation
 	tempDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tempDir)
+	t.Setenv("XDG_RUNTIME_DIR", tempDir) // Runtime dir for lock file
 
 	// Ensure dirs exist (mocking what root.go does)
 	err := config.EnsureDirs()
@@ -49,7 +50,7 @@ func TestAcquireLock(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify file exists
-	lockPath := filepath.Join(config.GetSurgeDir(), "surge.lock")
+	lockPath := filepath.Join(config.GetRuntimeDir(), "surge.lock")
 	_, err = os.Stat(lockPath)
 	assert.NoError(t, err, "Lock file should exist")
 }

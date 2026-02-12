@@ -136,21 +136,21 @@ func init() {
 
 func savePID() {
 	pid := os.Getpid()
-	pidFile := filepath.Join(config.GetSurgeDir(), "pid")
+	pidFile := filepath.Join(config.GetRuntimeDir(), "pid")
 	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", pid)), 0o644); err != nil {
 		utils.Debug("Error writing PID file: %v", err)
 	}
 }
 
 func removePID() {
-	pidFile := filepath.Join(config.GetSurgeDir(), "pid")
+	pidFile := filepath.Join(config.GetRuntimeDir(), "pid")
 	if err := os.Remove(pidFile); err != nil && !os.IsNotExist(err) {
 		utils.Debug("Error removing PID file: %v", err)
 	}
 }
 
 func readPID() int {
-	pidFile := filepath.Join(config.GetSurgeDir(), "pid")
+	pidFile := filepath.Join(config.GetRuntimeDir(), "pid")
 	data, err := os.ReadFile(pidFile)
 	if err != nil {
 		return 0

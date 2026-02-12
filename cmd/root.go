@@ -287,7 +287,7 @@ func bindServerListener(portFlag int) (int, net.Listener, error) {
 
 // saveActivePort writes the active port to ~/.surge/port for extension discovery
 func saveActivePort(port int) {
-	portFile := filepath.Join(config.GetSurgeDir(), "port")
+	portFile := filepath.Join(config.GetRuntimeDir(), "port")
 	if err := os.WriteFile(portFile, []byte(fmt.Sprintf("%d", port)), 0o644); err != nil {
 		utils.Debug("Error writing port file: %v", err)
 	}
@@ -296,7 +296,7 @@ func saveActivePort(port int) {
 
 // removeActivePort cleans up the port file on exit
 func removeActivePort() {
-	portFile := filepath.Join(config.GetSurgeDir(), "port")
+	portFile := filepath.Join(config.GetRuntimeDir(), "port")
 	if err := os.Remove(portFile); err != nil && !os.IsNotExist(err) {
 		utils.Debug("Error removing port file: %v", err)
 	}
@@ -577,7 +577,7 @@ func authMiddleware(token string, next http.Handler) http.Handler {
 }
 
 func ensureAuthToken() string {
-	tokenFile := filepath.Join(config.GetSurgeDir(), "token")
+	tokenFile := filepath.Join(config.GetStateDir(), "token")
 	data, err := os.ReadFile(tokenFile)
 	if err == nil {
 		return strings.TrimSpace(string(data))
@@ -919,6 +919,11 @@ func init() {
 
 // initializeGlobalState sets up the environment and configures the engine state and logging
 func initializeGlobalState() {
+	// Attempt migration first (Linux only)
+	if err := config.MigrateOldPaths(); err != nil {
+		fmt.Fprintf(os.Stderr, "Migration warning: %v\n", err)
+	}
+
 	stateDir := config.GetStateDir()
 	logsDir := config.GetLogsDir()
 

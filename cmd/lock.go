@@ -27,7 +27,7 @@ func AcquireLock() (bool, error) {
 		return false, fmt.Errorf("failed to ensure config dirs: %w", err)
 	}
 
-	lockPath := filepath.Join(config.GetSurgeDir(), "surge.lock")
+	lockPath := filepath.Join(config.GetRuntimeDir(), "surge.lock")
 	fileLock := flock.New(lockPath)
 
 	locked, err := fileLock.TryLock()

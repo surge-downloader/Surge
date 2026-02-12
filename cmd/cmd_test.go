@@ -98,6 +98,10 @@ func TestFindAvailablePort_AllPortsOccupied(t *testing.T) {
 // =============================================================================
 
 func TestSaveAndRemoveActivePort(t *testing.T) {
+	// Setup temp dir
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir) // For EnsureDirs to work happily
 	// Ensure config dirs exist
 	if err := config.EnsureDirs(); err != nil {
 		t.Fatalf("Failed to ensure dirs: %v", err)
@@ -108,7 +112,7 @@ func TestSaveAndRemoveActivePort(t *testing.T) {
 	saveActivePort(testPort)
 
 	// Verify file exists and contains correct port
-	portFile := filepath.Join(config.GetSurgeDir(), "port")
+	portFile := filepath.Join(config.GetRuntimeDir(), "port")
 	data, err := os.ReadFile(portFile)
 	if err != nil {
 		t.Fatalf("Failed to read port file: %v", err)
@@ -955,6 +959,11 @@ func TestCorsMiddleware_AllMethods(t *testing.T) {
 // =============================================================================
 
 func TestPortFileLifecycle(t *testing.T) {
+	// Setup temp dir
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
 	if err := config.EnsureDirs(); err != nil {
 		t.Fatalf("Failed to ensure dirs: %v", err)
 	}
@@ -962,7 +971,7 @@ func TestPortFileLifecycle(t *testing.T) {
 	// Clean up first
 	removeActivePort()
 
-	portFile := filepath.Join(config.GetSurgeDir(), "port")
+	portFile := filepath.Join(config.GetRuntimeDir(), "port")
 
 	// Verify no port file initially
 	if _, err := os.Stat(portFile); !os.IsNotExist(err) {
