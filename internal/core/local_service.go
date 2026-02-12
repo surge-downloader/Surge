@@ -145,6 +145,8 @@ func (s *LocalDownloadService) reportProgressLoop() {
 			continue
 		}
 
+		var batch events.BatchProgressMsg
+
 		activeConfigs := s.Pool.GetAll()
 		for _, cfg := range activeConfigs {
 			if cfg.State == nil || cfg.State.IsPaused() || cfg.State.Done.Load() {
@@ -197,9 +199,13 @@ func (s *LocalDownloadService) reportProgressLoop() {
 				}
 			}
 
-			// Send to InputCh (non-blocking)
+			batch = append(batch, msg)
+		}
+
+		// Send batch to InputCh (non-blocking) if not empty
+		if len(batch) > 0 {
 			select {
-			case s.InputCh <- msg:
+			case s.InputCh <- batch:
 			default:
 			}
 		}

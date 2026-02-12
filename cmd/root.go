@@ -92,26 +92,10 @@ var rootCmd = &cobra.Command{
 		noResume, _ := cmd.Flags().GetBool("no-resume")
 		exitWhenDone, _ := cmd.Flags().GetBool("exit-when-done")
 
-		var port int
-		var listener net.Listener
-		bindHost := getServerBindHost()
-
-		if portFlag > 0 {
-			// Strict port mode
-			port = portFlag
-			var err error
-			listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", bindHost, port))
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: could not bind to port %d: %v\n", port, err)
-				os.Exit(1)
-			}
-		} else {
-			// Auto-discovery mode
-			port, listener = findAvailablePort(1700)
-			if listener == nil {
-				fmt.Fprintf(os.Stderr, "Error: could not find available port\n")
-				os.Exit(1)
-			}
+		port, listener, err := bindServerListener(portFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
 		}
 
 		// Save port for browser extension AND CLI discovery
@@ -279,6 +263,22 @@ func findAvailablePort(start int) (int, net.Listener) {
 	return 0, nil
 }
 
+func bindServerListener(portFlag int) (int, net.Listener, error) {
+	bindHost := getServerBindHost()
+	if portFlag > 0 {
+		ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", bindHost, portFlag))
+		if err != nil {
+			return 0, nil, fmt.Errorf("could not bind to port %d: %w", portFlag, err)
+		}
+		return portFlag, ln, nil
+	}
+	port, ln := findAvailablePort(1700)
+	if ln == nil {
+		return 0, nil, fmt.Errorf("could not find available port")
+	}
+	return port, ln, nil
+}
+
 // saveActivePort writes the active port to ~/.surge/port for extension discovery
 func saveActivePort(port int) {
 	portFile := filepath.Join(config.GetSurgeDir(), "port")
@@ -379,6 +379,17 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service
 					eventType = "removed"
 				case events.DownloadRequestMsg:
 					eventType = "request"
+				case events.BatchProgressMsg:
+					// Unroll batch and send individual progress events
+					if batch, ok := msg.(events.BatchProgressMsg); ok {
+						for _, p := range batch {
+							data, _ := json.Marshal(p)
+							_, _ = fmt.Fprintf(w, "event: progress\n")
+							_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+						}
+					}
+					flusher.Flush()
+					continue // Skip default send
 				}
 
 				// SSE Format:
@@ -570,6 +581,7 @@ func ensureAuthToken() string {
 
 	// Generate new token
 	token := uuid.New().String()
+
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(tokenFile), 0755); err != nil {
 		utils.Debug("Failed to create token directory: %v", err)
@@ -897,7 +909,7 @@ func init() {
 	rootCmd.Flags().StringP("output", "o", "", "Default output directory")
 	rootCmd.Flags().Bool("no-resume", false, "Do not auto-resume paused downloads on startup")
 	rootCmd.Flags().Bool("exit-when-done", false, "Exit when all downloads complete")
-	rootCmd.SetVersionTemplate("Surge version {{.Version}}\n")
+	rootCmd.SetVersionTemplate("Surge v{{.Version}}\n")
 }
 
 // initializeGlobalState sets up the environment and configures the engine state and logging

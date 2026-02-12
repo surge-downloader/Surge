@@ -81,3 +81,44 @@ func TestLocalDownloadService_Delete_DBOnlyBroadcastsRemoved(t *testing.T) {
 		t.Fatalf("expected entry to be removed, got %+v", entry)
 	}
 }
+
+func TestLocalDownloadService_BatchProgress(t *testing.T) {
+	ch := make(chan interface{}, 20)
+	pool := download.NewWorkerPool(ch, 1)
+	svc := NewLocalDownloadServiceWithInput(pool, ch)
+	defer func() { _ = svc.Shutdown() }()
+
+	streamCh, cleanup, err := svc.StreamEvents(context.Background())
+	if err != nil {
+		t.Fatalf("failed to stream events: %v", err)
+	}
+	defer cleanup()
+
+	// Add a dummy download to the pool
+	id := "batch-test-id"
+	config := types.DownloadConfig{
+		ID:       id,
+		URL:      "http://example.com",
+		Filename: "test",
+		State:    types.NewProgressState(id, 1000),
+	}
+	// Simulate progress
+	config.State.Downloaded.Store(500)
+
+	pool.Add(config)
+
+	// Wait for a BatchProgressMsg
+	deadline := time.After(1 * time.Second)
+	gotBatch := false
+
+	for !gotBatch {
+		select {
+		case msg := <-streamCh:
+			if _, ok := msg.(events.BatchProgressMsg); ok {
+				gotBatch = true
+			}
+		case <-deadline:
+			t.Fatal("timeout waiting for BatchProgressMsg")
+		}
+	}
+}

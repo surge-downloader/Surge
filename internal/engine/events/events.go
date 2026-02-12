@@ -121,6 +121,9 @@ type DownloadRemovedMsg struct {
 	Filename   string
 }
 
+// BatchProgressMsg represents a batch of progress updates to reduce TUI render calls
+type BatchProgressMsg []ProgressMsg
+
 // DownloadRequestMsg signals a request to start a download (e.g. from extension)
 // that may need user confirmation or duplicate checking
 type DownloadRequestMsg struct {
