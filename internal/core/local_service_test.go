@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -83,7 +85,35 @@ func TestLocalDownloadService_Delete_DBOnlyBroadcastsRemoved(t *testing.T) {
 }
 
 func TestLocalDownloadService_BatchProgress(t *testing.T) {
+	// Start a local test server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 1. Probe request (HEAD or GET with Range: bytes=0-0)
+		if r.Method == "HEAD" || r.Header.Get("Range") == "bytes=0-0" {
+			w.Header().Set("Content-Length", "1000")
+			w.Header().Set("Accept-Ranges", "bytes")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// 2. Download request
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(http.StatusOK)
+
+		// Send some data
+		w.Write(make([]byte, 500))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		// Block to keep connection open so worker stays active
+		time.Sleep(2 * time.Second)
+	}))
+	defer ts.Close()
+
 	ch := make(chan interface{}, 20)
+	// Create temporary directory for downloads
+	tempDir := t.TempDir()
+
 	pool := download.NewWorkerPool(ch, 1)
 	svc := NewLocalDownloadServiceWithInput(pool, ch)
 	defer func() { _ = svc.Shutdown() }()
@@ -94,21 +124,15 @@ func TestLocalDownloadService_BatchProgress(t *testing.T) {
 	}
 	defer cleanup()
 
-	// Add a dummy download to the pool
-	id := "batch-test-id"
-	config := types.DownloadConfig{
-		ID:       id,
-		URL:      "http://example.com",
-		Filename: "test",
-		State:    types.NewProgressState(id, 1000),
+	// Add download using test server URL
+	_, err = svc.Add(ts.URL, tempDir, "test-file", nil, nil)
+	if err != nil {
+		t.Fatalf("failed to add download: %v", err)
 	}
-	// Simulate progress
-	config.State.Downloaded.Store(500)
-
-	pool.Add(config)
 
 	// Wait for a BatchProgressMsg
-	deadline := time.After(1 * time.Second)
+	// We need to wait enough time for the report loop to tick (150ms)
+	deadline := time.After(2 * time.Second)
 	gotBatch := false
 
 	for !gotBatch {
