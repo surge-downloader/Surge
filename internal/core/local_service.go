@@ -416,7 +416,6 @@ func (s *LocalDownloadService) Add(url string, path string, filename string, mir
 		OutputPath: outPath,
 		ID:         id,
 		Filename:   filename, // If empty, will be auto-detected
-		Verbose:    false,
 		ProgressCh: s.InputCh,
 		State:      state,
 		Runtime:    types.ConvertRuntimeConfig(settings.ToRuntimeConfig()),
@@ -520,7 +519,6 @@ func (s *LocalDownloadService) Resume(id string) error {
 		DestPath:   entry.DestPath,
 		ID:         id,
 		Filename:   entry.Filename,
-		Verbose:    false,
 		IsResume:   true,
 		ProgressCh: s.InputCh,
 		State:      dmState,
@@ -624,7 +622,6 @@ func (s *LocalDownloadService) ResumeBatch(ids []string) []error {
 			DestPath:   savedState.DestPath,
 			ID:         id,
 			Filename:   savedState.Filename,
-			Verbose:    false,
 			IsResume:   true,
 			ProgressCh: s.InputCh,
 			State:      dmState,

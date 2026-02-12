@@ -35,6 +35,9 @@ var (
 // activeDownloads tracks the number of currently running downloads in headless mode
 var activeDownloads int32
 
+// Command line flags
+var verbose bool
+
 // Globals for Unified Backend
 var (
 	GlobalPool       *download.WorkerPool
@@ -51,6 +54,9 @@ var rootCmd = &cobra.Command{
 	Version: Version,
 	Args:    cobra.ArbitraryArgs,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Set global verbose mode
+		utils.SetVerbose(verbose)
+
 		// Initialize Global Progress Channel
 		GlobalProgressCh = make(chan any, 100)
 
@@ -360,7 +366,7 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service
 				// Determine event type name based on struct
 				// Events are in internal/engine/events package
 				eventType := "unknown"
-				switch msg.(type) {
+				switch msg := msg.(type) {
 				case events.DownloadStartedMsg:
 					eventType = "started"
 				case events.DownloadCompleteMsg:
@@ -381,12 +387,10 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service
 					eventType = "request"
 				case events.BatchProgressMsg:
 					// Unroll batch and send individual progress events
-					if batch, ok := msg.(events.BatchProgressMsg); ok {
-						for _, p := range batch {
-							data, _ := json.Marshal(p)
-							_, _ = fmt.Fprintf(w, "event: progress\n")
-							_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
-						}
+					for _, p := range msg {
+						data, _ := json.Marshal(p)
+						_, _ = fmt.Fprintf(w, "event: progress\n")
+						_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 					}
 					flusher.Flush()
 					continue // Skip default send
@@ -904,6 +908,7 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
 	rootCmd.Flags().StringP("batch", "b", "", "File containing URLs to download (one per line)")
 	rootCmd.Flags().IntP("port", "p", 0, "Port to listen on (default: 8080 or first available)")
 	rootCmd.Flags().StringP("output", "o", "", "Default output directory")

@@ -156,7 +156,7 @@ func TestSingleDownloader_StreamingServer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "stream.bin", false)
+	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "stream.bin")
 	if err != nil {
 		t.Fatalf("Streaming download failed: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestSingleDownloader_FailAfterBytes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "failafter.bin", false)
+	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "failafter.bin")
 	// Should fail since SingleDownloader doesn't retry
 	if err == nil {
 		t.Error("Expected error when server fails mid-transfer")
@@ -229,7 +229,7 @@ func TestSingleDownloader_NilState(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "nilstate.bin", false)
+	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "nilstate.bin")
 	if err != nil {
 		t.Fatalf("Download with nil state failed: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestSingleDownloader_Download_Success(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err = downloader.Download(ctx, server.URL(), destPath, fileSize, "single_test.bin", false)
+	err = downloader.Download(ctx, server.URL(), destPath, fileSize, "single_test.bin")
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}
@@ -329,7 +329,7 @@ func TestSingleDownloader_Download_Cancellation(t *testing.T) {
 
 	done := make(chan error)
 	go func() {
-		done <- downloader.Download(ctx, server.URL(), destPath, fileSize, "cancel.bin", false)
+		done <- downloader.Download(ctx, server.URL(), destPath, fileSize, "cancel.bin")
 	}()
 
 	// Cancel after a short delay
@@ -368,7 +368,7 @@ func TestSingleDownloader_Download_ProgressTracking(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "progress.bin", false)
+	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "progress.bin")
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}
@@ -400,7 +400,7 @@ func TestSingleDownloader_Download_ServerError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, 1024, "error.bin", false)
+	err := downloader.Download(ctx, server.URL(), destPath, 1024, "error.bin")
 	if err == nil {
 		t.Error("Expected error from failed server")
 	}
@@ -428,7 +428,7 @@ func TestSingleDownloader_Download_WithLatency(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "latency.bin", false)
+	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "latency.bin")
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -465,7 +465,7 @@ func TestSingleDownloader_Download_ContentIntegrity(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "content.bin", false)
+	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "content.bin")
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}

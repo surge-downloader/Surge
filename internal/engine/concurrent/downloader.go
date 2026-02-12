@@ -246,7 +246,7 @@ func (d *ConcurrentDownloader) newConcurrentClient(numConns int) *http.Client {
 
 // Download downloads a file using multiple concurrent connections
 // Uses pre-probed metadata (file size already known)
-func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, candidateMirrors []string, activeMirrors []string, destPath string, fileSize int64, verbose bool) error {
+func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, candidateMirrors []string, activeMirrors []string, destPath string, fileSize int64) error {
 	utils.Debug("ConcurrentDownloader.Download: %s -> %s (size: %d, mirrors: %d)", rawurl, destPath, fileSize, len(activeMirrors))
 
 	// Store URL and path for pause/resume (final path without .surge)
@@ -297,7 +297,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	// Create tuned HTTP client for concurrent downloads
 	client := d.newConcurrentClient(numConns)
 
-	if verbose {
+	if utils.IsVerbose() {
 		fmt.Printf("File size: %s, connections: %d, chunk size: %s\n",
 			utils.ConvertBytesToHumanReadable(fileSize),
 			numConns,
@@ -465,7 +465,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			err := d.worker(downloadCtx, workerID, workerMirrors, outFile, queue, fileSize, startTime, verbose, client)
+			err := d.worker(downloadCtx, workerID, workerMirrors, outFile, queue, fileSize, startTime, client)
 			if err != nil && err != context.Canceled {
 				workerErrors <- err
 			}

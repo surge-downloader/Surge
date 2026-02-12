@@ -172,7 +172,6 @@ func TestDownloadConfig_Fields(t *testing.T) {
 		OutputPath: "/tmp/file.zip",
 		ID:         "download-123",
 		Filename:   "file.zip",
-		Verbose:    true,
 		ProgressCh: nil,
 		State:      state,
 		Runtime:    runtime,
@@ -186,9 +185,6 @@ func TestDownloadConfig_Fields(t *testing.T) {
 	}
 	if cfg.ID != "download-123" {
 		t.Error("ID not set correctly")
-	}
-	if !cfg.Verbose {
-		t.Error("Verbose not set correctly")
 	}
 	if cfg.State != state {
 		t.Error("State not set correctly")

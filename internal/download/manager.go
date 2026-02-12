@@ -206,13 +206,13 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 		d := concurrent.NewConcurrentDownloader(cfg.ID, cfg.ProgressCh, cfg.State, cfg.Runtime)
 		d.Headers = cfg.Headers // Forward custom headers from browser extension
 		utils.Debug("Calling Download with mirrors: %v", cfg.Mirrors)
-		downloadErr = d.Download(ctx, cfg.URL, cfg.Mirrors, activeMirrors, destPath, probe.FileSize, cfg.Verbose)
+		downloadErr = d.Download(ctx, cfg.URL, cfg.Mirrors, activeMirrors, destPath, probe.FileSize)
 	} else {
 		// Fallback to single-threaded downloader
 		utils.Debug("Using single-threaded downloader")
 		d := single.NewSingleDownloader(cfg.ID, cfg.ProgressCh, cfg.State, cfg.Runtime)
 		d.Headers = cfg.Headers // Forward custom headers from browser extension
-		downloadErr = d.Download(ctx, cfg.URL, destPath, probe.FileSize, probe.Filename, cfg.Verbose)
+		downloadErr = d.Download(ctx, cfg.URL, destPath, probe.FileSize, probe.Filename)
 	}
 
 	// Only send completion if NO error AND not paused
@@ -280,14 +280,19 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 }
 
 // Download is the CLI entry point (non-TUI) - convenience wrapper
-func Download(ctx context.Context, url, outPath string, verbose bool, progressCh chan<- any, id string) error {
+func Download(ctx context.Context, url string, outPath string, progressCh chan<- any, id string) error {
 	cfg := types.DownloadConfig{
 		URL:        url,
 		OutputPath: outPath,
 		ID:         id,
-		Verbose:    verbose,
 		ProgressCh: progressCh,
 		State:      nil,
+	}
+	// Default runtime config
+	cfg.Runtime = &types.RuntimeConfig{
+		MaxConnectionsPerHost: types.PerHostMax,
+		MinChunkSize:          types.MinChunk,
+		WorkerBufferSize:      types.WorkerBuffer,
 	}
 	return TUIDownload(ctx, &cfg)
 }

@@ -57,7 +57,6 @@ type DownloadConfig struct {
 	DestPath   string // Full destination path (for resume state lookup)
 	ID         string
 	Filename   string
-	Verbose    bool
 	IsResume   bool // True if this is explicitly a resume, not a fresh download
 	ProgressCh chan<- any
 	State      *ProgressState

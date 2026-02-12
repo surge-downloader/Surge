@@ -13,3 +13,4 @@ grab_bench*
 dist/
 build/
 .github_token
+.env

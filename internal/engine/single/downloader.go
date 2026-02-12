@@ -38,7 +38,7 @@ func NewSingleDownloader(id string, progressCh chan<- any, state *types.Progress
 // Download downloads a file using a single connection.
 // This is used for servers that don't support Range requests.
 // If interrupted, the download cannot be resumed and must restart from the beginning.
-func (d *SingleDownloader) Download(ctx context.Context, rawurl, destPath string, fileSize int64, filename string, verbose bool) error {
+func (d *SingleDownloader) Download(ctx context.Context, rawurl, destPath string, fileSize int64, filename string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawurl, nil)
 	if err != nil {
 		return err
@@ -137,7 +137,7 @@ func (d *SingleDownloader) Download(ctx context.Context, rawurl, destPath string
 	success = true // Mark successful so defer doesn't clean up
 
 	// Only print stats in verbose mode
-	if verbose {
+	if utils.IsVerbose() {
 		elapsed := time.Since(start)
 		speed := float64(written) / elapsed.Seconds()
 		fmt.Fprintf(os.Stderr, "\nDownloaded %s in %s (%s/s)\n",
