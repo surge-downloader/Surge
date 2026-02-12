@@ -114,8 +114,13 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 		destPath = filepath.Join(cfg.OutputPath, filename)
 	}
 
+	// Local mirrors slice to avoid modifying config (race condition)
+	mirrors := make([]string, len(cfg.Mirrors))
+	copy(mirrors, cfg.Mirrors)
+
 	// Check if this is a resume (explicitly marked by TUI)
 	var savedState *types.DownloadState
+
 	if cfg.IsResume && cfg.DestPath != "" {
 		if cfg.SavedState != nil {
 			savedState = cfg.SavedState
@@ -128,14 +133,14 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 		if savedState != nil && len(savedState.Mirrors) > 0 {
 			// Create map of existing mirrors to avoid duplicates
 			existing := make(map[string]bool)
-			for _, m := range cfg.Mirrors {
+			for _, m := range mirrors {
 				existing[m] = true
 			}
 
 			// Add restored mirrors
 			for _, m := range savedState.Mirrors {
 				if !existing[m] {
-					cfg.Mirrors = append(cfg.Mirrors, m)
+					mirrors = append(mirrors, m)
 					existing[m] = true
 				}
 			}
@@ -156,8 +161,13 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	utils.Debug("Destination path: %s", destPath)
 
 	// Update filename in config so caller (WorkerPool) sees it
-	cfg.Filename = finalFilename
-	cfg.DestPath = destPath // Save resolved path for resume logic (WorkerPool)
+	// cfg.Filename = finalFilename
+	// cfg.DestPath = destPath // Save resolved path for resume logic (WorkerPool)
+
+	if cfg.State != nil {
+		cfg.State.SetFilename(finalFilename)
+		cfg.State.SetDestPath(destPath)
+	}
 
 	// Send download started message
 	if cfg.ProgressCh != nil {
@@ -181,12 +191,12 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	if probe.SupportsRange && probe.FileSize > 0 {
 		utils.Debug("Using concurrent downloader")
 
-		// We probe all candidate mirrors (cfg.Mirrors) to filter out invalid ones
+		// We probe all candidate mirrors (mirrors) to filter out invalid ones
 		var activeMirrors []string
-		if len(cfg.Mirrors) > 0 {
-			utils.Debug("Probing %d mirrors", len(cfg.Mirrors))
+		if len(mirrors) > 0 {
+			utils.Debug("Probing %d mirrors", len(mirrors))
 			// Always check primary + mirrors to ensure we are using the best set
-			allToCheck := append([]string{cfg.URL}, cfg.Mirrors...)
+			allToCheck := append([]string{cfg.URL}, mirrors...)
 			valid, errs := engine.ProbeMirrors(ctx, allToCheck)
 
 			// Log errors
@@ -200,19 +210,19 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 					activeMirrors = append(activeMirrors, v)
 				}
 			}
-			utils.Debug("Found %d active mirrors from %d candidates", len(activeMirrors), len(cfg.Mirrors))
+			utils.Debug("Found %d active mirrors from %d candidates", len(activeMirrors), len(mirrors))
 		}
 
 		d := concurrent.NewConcurrentDownloader(cfg.ID, cfg.ProgressCh, cfg.State, cfg.Runtime)
 		d.Headers = cfg.Headers // Forward custom headers from browser extension
-		utils.Debug("Calling Download with mirrors: %v", cfg.Mirrors)
-		downloadErr = d.Download(ctx, cfg.URL, cfg.Mirrors, activeMirrors, destPath, probe.FileSize, cfg.Verbose)
+		utils.Debug("Calling Download with mirrors: %v", mirrors)
+		downloadErr = d.Download(ctx, cfg.URL, mirrors, activeMirrors, destPath, probe.FileSize)
 	} else {
 		// Fallback to single-threaded downloader
 		utils.Debug("Using single-threaded downloader")
 		d := single.NewSingleDownloader(cfg.ID, cfg.ProgressCh, cfg.State, cfg.Runtime)
 		d.Headers = cfg.Headers // Forward custom headers from browser extension
-		downloadErr = d.Download(ctx, cfg.URL, destPath, probe.FileSize, probe.Filename, cfg.Verbose)
+		downloadErr = d.Download(ctx, cfg.URL, destPath, probe.FileSize, probe.Filename)
 	}
 
 	// Only send completion if NO error AND not paused
@@ -280,14 +290,19 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 }
 
 // Download is the CLI entry point (non-TUI) - convenience wrapper
-func Download(ctx context.Context, url, outPath string, verbose bool, progressCh chan<- any, id string) error {
+func Download(ctx context.Context, url string, outPath string, progressCh chan<- any, id string) error {
 	cfg := types.DownloadConfig{
 		URL:        url,
 		OutputPath: outPath,
 		ID:         id,
-		Verbose:    verbose,
 		ProgressCh: progressCh,
 		State:      nil,
+	}
+	// Default runtime config
+	cfg.Runtime = &types.RuntimeConfig{
+		MaxConnectionsPerHost: types.PerHostMax,
+		MinChunkSize:          types.MinChunk,
+		WorkerBufferSize:      types.WorkerBuffer,
 	}
 	return TUIDownload(ctx, &cfg)
 }

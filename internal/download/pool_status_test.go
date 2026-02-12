@@ -23,6 +23,7 @@ func TestWorkerPool_GetStatus_Active(t *testing.T) {
 	id := "test-id"
 	state := types.NewProgressState(id, 1000)
 	state.Downloaded.Store(500)
+	state.VerifiedProgress.Store(500)
 
 	pool.mu.Lock()
 	pool.downloads[id] = &activeDownload{

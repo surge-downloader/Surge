@@ -144,6 +144,9 @@ func (s *LocalDownloadService) reportProgressLoop() {
 		if s.Pool == nil {
 			continue
 		}
+		alpha := s.getSpeedEmaAlpha()
+
+		var batch events.BatchProgressMsg
 
 		activeConfigs := s.Pool.GetAll()
 		for _, cfg := range activeConfigs {
@@ -168,7 +171,7 @@ func (s *LocalDownloadService) reportProgressLoop() {
 			if lastSpeed == 0 {
 				currentSpeed = instantSpeed
 			} else {
-				currentSpeed = SpeedSmoothingAlpha*instantSpeed + (1-SpeedSmoothingAlpha)*lastSpeed
+				currentSpeed = alpha*instantSpeed + (1-alpha)*lastSpeed
 			}
 			lastSpeeds[cfg.ID] = currentSpeed
 
@@ -197,13 +200,34 @@ func (s *LocalDownloadService) reportProgressLoop() {
 				}
 			}
 
-			// Send to InputCh (non-blocking)
+			batch = append(batch, msg)
+		}
+
+		// Send batch to InputCh (non-blocking) if not empty
+		if len(batch) > 0 {
 			select {
-			case s.InputCh <- msg:
+			case s.InputCh <- batch:
 			default:
 			}
 		}
 	}
+}
+
+func (s *LocalDownloadService) getSpeedEmaAlpha() float64 {
+	s.settingsMu.RLock()
+	settings := s.settings
+	s.settingsMu.RUnlock()
+
+	if settings == nil {
+		return SpeedSmoothingAlpha
+	}
+
+	alpha := settings.Performance.SpeedEmaAlpha
+	if alpha <= 0 || alpha > 1 {
+		return SpeedSmoothingAlpha
+	}
+
+	return alpha
 }
 
 // StreamEvents returns a channel that receives real-time download events.
@@ -290,10 +314,13 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 			}
 
 			if cfg.State != nil {
-				status.TotalSize = cfg.State.TotalSize
-				status.Downloaded = cfg.State.Downloaded.Load()
-				if cfg.State.DestPath != "" {
-					status.DestPath = cfg.State.DestPath
+				// Calculate progress and speed (thread-safe)
+				downloaded, totalSize, _, sessionElapsed, connections, sessionStart := cfg.State.GetProgress()
+
+				status.TotalSize = totalSize
+				status.Downloaded = downloaded
+				if dp := cfg.State.GetDestPath(); dp != "" {
+					status.DestPath = dp
 				}
 
 				if status.TotalSize > 0 {
@@ -301,7 +328,6 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 				}
 
 				// Calculate speed from progress
-				downloaded, _, _, sessionElapsed, connections, sessionStart := cfg.State.GetProgress()
 				sessionDownloaded := downloaded - sessionStart
 				if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
 					status.Speed = float64(sessionDownloaded) / sessionElapsed.Seconds() / (1024 * 1024)
@@ -410,7 +436,6 @@ func (s *LocalDownloadService) Add(url string, path string, filename string, mir
 		OutputPath: outPath,
 		ID:         id,
 		Filename:   filename, // If empty, will be auto-detected
-		Verbose:    false,
 		ProgressCh: s.InputCh,
 		State:      state,
 		Runtime:    types.ConvertRuntimeConfig(settings.ToRuntimeConfig()),
@@ -514,7 +539,6 @@ func (s *LocalDownloadService) Resume(id string) error {
 		DestPath:   entry.DestPath,
 		ID:         id,
 		Filename:   entry.Filename,
-		Verbose:    false,
 		IsResume:   true,
 		ProgressCh: s.InputCh,
 		State:      dmState,
@@ -618,7 +642,6 @@ func (s *LocalDownloadService) ResumeBatch(ids []string) []error {
 			DestPath:   savedState.DestPath,
 			ID:         id,
 			Filename:   savedState.Filename,
-			Verbose:    false,
 			IsResume:   true,
 			ProgressCh: s.InputCh,
 			State:      dmState,

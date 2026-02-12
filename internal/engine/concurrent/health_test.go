@@ -144,3 +144,39 @@ func TestHealth_GracePeriod(t *testing.T) {
 	default:
 	}
 }
+
+func TestHealth_StallDetection(t *testing.T) {
+	// A worker that has received no data for StallTimeout should be cancelled
+	// regardless of speed comparison
+	runtime := &types.RuntimeConfig{
+		SlowWorkerThreshold:   0.5,
+		SlowWorkerGracePeriod: 0,               // Instant check
+		StallTimeout:          1 * time.Second, // Short timeout for test
+	}
+	state := types.NewProgressState("test", 1000)
+	d := NewConcurrentDownloader("test", nil, state, runtime)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	now := time.Now()
+
+	// Worker with last activity 2 seconds ago (exceeds 1s StallTimeout)
+	stalledCtx, stalledCancel := context.WithCancel(ctx)
+	d.activeTasks[0] = &ActiveTask{
+		StartTime:    now.Add(-10 * time.Second),
+		LastActivity: now.Add(-2 * time.Second).UnixNano(), // Stalled for 2s
+		Speed:        5 * 1024 * 1024,                      // 5 MB/s (fast speed, but stalled)
+		Cancel:       stalledCancel,
+	}
+
+	d.checkWorkerHealth()
+
+	// Verify stalled worker was cancelled
+	select {
+	case <-stalledCtx.Done():
+		// Success: stall detected and cancelled
+	default:
+		t.Error("Stalled worker should have been cancelled")
+	}
+}

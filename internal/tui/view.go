@@ -16,6 +16,39 @@ const (
 	ListWidthRatio = 0.6 // List takes 60% width
 )
 
+const maxUIDuration = 30 * 24 * time.Hour
+
+// formatDurationForUI formats a duration as a human-readable clock string.
+// Returns "M:SS" for sub-hour durations, "H:MM:SS" for multi-hour, "Xd Yh" for days.
+func formatDurationForUI(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	if d >= maxUIDuration {
+		return "∞"
+	}
+
+	totalSec := int(d.Seconds())
+
+	if totalSec >= 86400 {
+		days := totalSec / 86400
+		hours := (totalSec % 86400) / 3600
+		if hours > 0 {
+			return fmt.Sprintf("%dd %dh", days, hours)
+		}
+		return fmt.Sprintf("%dd", days)
+	}
+
+	hours := totalSec / 3600
+	mins := (totalSec % 3600) / 60
+	secs := totalSec % 60
+
+	if hours > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", hours, mins, secs)
+	}
+	return fmt.Sprintf("%d:%02d", mins, secs)
+}
+
 // renderModalWithOverlay renders a modal centered on screen with a dark overlay effect
 func (m RootModel) renderModalWithOverlay(modal string) string {
 	// Place modal centered with dark gray background fill for overlay effect
@@ -238,36 +271,44 @@ func (m RootModel) View() string {
 	chunkMapNeeded := 0
 	showChunkMap := false
 
+	// Pre-fetch bitmap data if available
+	var bitmap []byte
+	var bitmapWidth int
+	var totalSize, chunkSize int64
+	var chunkProgress []int64
+
+	if selected != nil && selected.state != nil {
+		bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress = selected.state.GetBitmap()
+	}
+
 	if selected != nil && selected.state != nil {
 		// Show Chunk Map only if:
 		// 1. Not Done (Completed)
 		// 2. Has Chunks (Bitmap initialized)
 		// We prioritize showing the map if data is available, even if speed is 0 (connecting/queued)
 
-		bitmap, width, _, _, _ := selected.state.GetBitmap()
-		hasChunks := selected.state != nil && len(bitmap) > 0 && width > 0
+		hasChunks := len(bitmap) > 0 && bitmapWidth > 0
 
 		if !selected.done && hasChunks {
 			showChunkMap = true
 		}
 	}
 
-	if showChunkMap && selected != nil && selected.state != nil {
-		_, bitmapWidth, _, _, _ := selected.state.GetBitmap()
+	if showChunkMap {
 		// chunkMapWidth = rightWidth - 4 (box border) - 2 (inner padding) = rightWidth - 6
 		// Calculate available height for chunk map (remaining height minus graph minimum 9)
 		availableChunkHeight := remainingHeight - 9 - 4 // -9 for min graph, -4 for borders/padding
 		if availableChunkHeight < 1 {
 			availableChunkHeight = 1
 		}
-			contentLines := components.CalculateHeight(bitmapWidth, rightWidth-6, availableChunkHeight)
-			if contentLines > 0 {
-				// +2 for top/bottom borders
-				chunkMapNeeded = contentLines + 2
-			} else {
-				// Minimum for message "Chunk visualization not available"
-				chunkMapNeeded = 6
-			}
+		contentLines := components.CalculateHeight(bitmapWidth, rightWidth-6, availableChunkHeight)
+		if contentLines > 0 {
+			// +2 for top/bottom borders
+			chunkMapNeeded = contentLines + 2
+		} else {
+			// Minimum for message "Chunk visualization not available"
+			chunkMapNeeded = 6
+		}
 	}
 
 	// Define Minimum Graph Height
@@ -341,8 +382,14 @@ func (m RootModel) View() string {
 	}
 
 	// Render logo and server panel in a shared column
-	gradientLogo := ApplyGradient(logoText, ColorNeonPink, ColorNeonPurple)
-	logoContent := lipgloss.NewStyle().Render(gradientLogo)
+	var logoContent string
+	if m.logoCache != "" {
+		logoContent = m.logoCache
+	} else {
+		gradientLogo := ApplyGradient(logoText, ColorNeonPink, ColorNeonPurple)
+		m.logoCache = lipgloss.NewStyle().Render(gradientLogo)
+		logoContent = m.logoCache
+	}
 
 	// Server info box (below logo, same width)
 	greenDot := lipgloss.NewStyle().Foreground(ColorStateDownloading).Render("●")
@@ -504,39 +551,39 @@ func (m RootModel) View() string {
 	// Render the Graph
 	graphVisual := renderMultiLineGraph(graphData, graphAreaWidth, graphContentHeight, maxSpeed, ColorNeonPink, nil)
 
-		// Create Y-axis (right side of graph)
-		axisStyle := lipgloss.NewStyle().Width(axisWidth).Foreground(ColorNeonCyan).Align(lipgloss.Right)
-		label := func(v float64) string {
-			if v <= 0 {
-				return "0 MB/s"
-			}
-			return fmt.Sprintf("%.1f MB/s", v)
+	// Create Y-axis (right side of graph)
+	axisStyle := lipgloss.NewStyle().Width(axisWidth).Foreground(ColorNeonCyan).Align(lipgloss.Right)
+	label := func(v float64) string {
+		if v <= 0 {
+			return "0 MB/s"
 		}
+		return fmt.Sprintf("%.1f MB/s", v)
+	}
 
-		axisLines := make([]string, graphContentHeight)
-		for i := range axisLines {
-			axisLines[i] = axisStyle.Render("")
-		}
+	axisLines := make([]string, graphContentHeight)
+	for i := range axisLines {
+		axisLines[i] = axisStyle.Render("")
+	}
 
-		if graphContentHeight >= 9 {
-			axisLines[0] = axisStyle.Render(label(maxSpeed))
-			axisLines[graphContentHeight/4] = axisStyle.Render(label(maxSpeed * 0.75))
-			axisLines[graphContentHeight/2] = axisStyle.Render(label(maxSpeed * 0.5))
-			axisLines[(graphContentHeight*3)/4] = axisStyle.Render(label(maxSpeed * 0.25))
-			axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
-		} else if graphContentHeight >= 5 {
-			axisLines[0] = axisStyle.Render(label(maxSpeed))
-			axisLines[graphContentHeight/2] = axisStyle.Render(label(maxSpeed * 0.5))
-			axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
-		} else {
-			axisLines[0] = axisStyle.Render(label(maxSpeed))
-			axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
-		}
+	if graphContentHeight >= 9 {
+		axisLines[0] = axisStyle.Render(label(maxSpeed))
+		axisLines[graphContentHeight/4] = axisStyle.Render(label(maxSpeed * 0.75))
+		axisLines[graphContentHeight/2] = axisStyle.Render(label(maxSpeed * 0.5))
+		axisLines[(graphContentHeight*3)/4] = axisStyle.Render(label(maxSpeed * 0.25))
+		axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
+	} else if graphContentHeight >= 5 {
+		axisLines[0] = axisStyle.Render(label(maxSpeed))
+		axisLines[graphContentHeight/2] = axisStyle.Render(label(maxSpeed * 0.5))
+		axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
+	} else {
+		axisLines[0] = axisStyle.Render(label(maxSpeed))
+		axisLines[graphContentHeight-1] = axisStyle.Render("0 MB/s")
+	}
 
-		axisColumn := lipgloss.NewStyle().
-			Height(graphContentHeight).
-			Align(lipgloss.Right).
-			Render(strings.Join(axisLines, "\n"))
+	axisColumn := lipgloss.NewStyle().
+		Height(graphContentHeight).
+		Align(lipgloss.Right).
+		Render(strings.Join(axisLines, "\n"))
 
 	// Combine: stats box (left) | graph (middle) | axis (right)
 	graphWithAxis := lipgloss.JoinHorizontal(lipgloss.Top,
@@ -619,14 +666,14 @@ func (m RootModel) View() string {
 	var chunkBox string
 	if showChunkMap {
 		var chunkContent string
-		if selected != nil && selected.state != nil {
-				// New chunk map component
-				bitmap, bitmapWidth, totalSize, chunkSize, chunkProgress := selected.state.GetBitmap()
-				// Calculate target rows based on available height (minus borders)
-				targetRows := chunkMapHeight - 2
-				if targetRows < 3 {
-					targetRows = 3 // Minimum 3 rows
-				}
+		// Bitmap data already fetched above
+		if len(bitmap) > 0 {
+			// New chunk map component
+			// Calculate target rows based on available height (minus borders)
+			targetRows := chunkMapHeight - 2
+			if targetRows < 3 {
+				targetRows = 3 // Minimum 3 rows
+			}
 			if targetRows > 5 {
 				targetRows = 5 // Maximum 5 rows for compact look
 			}
@@ -741,6 +788,14 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 
 	// --- 4. Stats Grid Section ---
 	var speedStr, etaStr, sizeStr, timeStr string
+	// TUI owns elapsed time: compute from StartTime for active downloads,
+	// use frozen d.Elapsed for completed downloads.
+	var elapsed time.Duration
+	if d.done {
+		elapsed = d.Elapsed
+	} else if !d.StartTime.IsZero() {
+		elapsed = time.Since(d.StartTime)
+	}
 
 	// Size
 	if d.done {
@@ -751,8 +806,8 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 
 	// Speed & ETA
 	if d.done {
-		if d.Elapsed.Seconds() > 0 {
-			avgSpeed := float64(d.Total) / d.Elapsed.Seconds()
+		if elapsed.Seconds() > 0 {
+			avgSpeed := float64(d.Total) / elapsed.Seconds()
 			speedStr = fmt.Sprintf("%.2f MB/s (Avg)", avgSpeed/Megabyte)
 		} else {
 			speedStr = "N/A"
@@ -766,14 +821,26 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 		if d.Total > 0 {
 			remaining := d.Total - d.Downloaded
 			etaSeconds := float64(remaining) / d.Speed
-			etaDuration := time.Duration(etaSeconds) * time.Second
-			etaStr = etaDuration.Round(time.Second).String()
+			// Clamp ETA to 24 hours max to prevent bonkers values
+			const maxETASeconds = 24 * 60 * 60
+			if etaSeconds > maxETASeconds || etaSeconds < 0 {
+				etaStr = "∞"
+			} else {
+				etaDuration := time.Duration(etaSeconds) * time.Second
+				// EMA smooth ETA to prevent jitter from speed fluctuations
+				if d.lastETA > 0 {
+					const etaAlpha = 0.3
+					etaDuration = time.Duration(etaAlpha*float64(etaDuration) + (1-etaAlpha)*float64(d.lastETA))
+				}
+				d.lastETA = etaDuration
+				etaStr = formatDurationForUI(etaDuration)
+			}
 		} else {
 			etaStr = "∞"
 		}
 	}
 
-	timeStr = d.Elapsed.Round(time.Second).String()
+	timeStr = formatDurationForUI(elapsed)
 
 	// Connections
 	var connStr string

@@ -25,6 +25,9 @@ type ActiveTask struct {
 	// Sliding window for recent speed tracking
 	WindowStart time.Time // When current measurement window started
 	WindowBytes int64     // Bytes downloaded in current window (atomic)
+
+	// Hedged request tracking
+	Hedged int32 // Atomic: 1 if an idle worker is already racing this task
 }
 
 // RemainingBytes returns the number of bytes left for this task

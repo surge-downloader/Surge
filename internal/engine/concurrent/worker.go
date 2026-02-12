@@ -14,7 +14,7 @@ import (
 )
 
 // worker downloads tasks from the queue
-func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []string, file *os.File, queue *TaskQueue, totalSize int64, startTime time.Time, verbose bool, client *http.Client) error {
+func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []string, file *os.File, queue *TaskQueue, totalSize int64, startTime time.Time, client *http.Client) error {
 	// Get pooled buffer
 	bufPtr := d.bufPool.Get().(*[]byte)
 	defer d.bufPool.Put(bufPtr)
@@ -84,7 +84,7 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 			}
 
 			taskStart := time.Now()
-			lastErr = d.downloadTask(taskCtx, currentURL, file, activeTask, buf, verbose, client, totalSize)
+			lastErr = d.downloadTask(taskCtx, currentURL, file, activeTask, buf, client, totalSize)
 
 			// CRITICAL: Capture external cancellation state BEFORE calling taskCancel()
 			// If we call taskCancel() first, taskCtx.Err() will always be non-nil
@@ -174,7 +174,7 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 }
 
 // downloadTask downloads a single byte range and writes to file at offset
-func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, file *os.File, activeTask *ActiveTask, buf []byte, verbose bool, client *http.Client, totalSize int64) error {
+func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, file *os.File, activeTask *ActiveTask, buf []byte, client *http.Client, totalSize int64) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawurl, nil)
 	if err != nil {
 		return err
@@ -227,8 +227,8 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 	var pendingBytes int64
 	var pendingStart int64 = -1
 	lastUpdate := time.Now()
-	const batchSizeThreshold = 256 * 1024 // 256KB
-	const batchTimeThreshold = 100 * time.Millisecond
+	batchSizeThreshold := int64(types.WorkerBatchSize)
+	batchTimeThreshold := types.WorkerBatchInterval
 
 	// Helper to flush pending updates to global state
 	flushUpdates := func() {
@@ -425,6 +425,63 @@ func (d *ConcurrentDownloader) StealWork(queue *TaskQueue) bool {
 	queue.Push(stolenTask)
 	utils.Debug("Balancer: stole %s from worker %d (new range: %d-%d)",
 		utils.ConvertBytesToHumanReadable(stolenTask.Length), bestID, stolenTask.Offset, stolenTask.Offset+stolenTask.Length)
+
+	return true
+}
+
+// HedgeWork creates a duplicate task when stealing isn't possible (chunks too small).
+// An idle worker picks up the duplicate and races the original on a fresh HTTP connection.
+// Both workers write identical data to the same file offsets (WriteAt is idempotent),
+// so the file is always correct. Whichever finishes first wins; the other exits
+// naturally when the queue closes or its next read returns data already counted.
+func (d *ConcurrentDownloader) HedgeWork(queue *TaskQueue) bool {
+	d.activeMu.Lock()
+	defer d.activeMu.Unlock()
+
+	if len(d.activeTasks) == 0 {
+		return false
+	}
+
+	// Find the active task with the most remaining work that hasn't been hedged yet
+	var bestActive *ActiveTask
+	var maxRemaining int64
+
+	for _, active := range d.activeTasks {
+		// Skip tasks already being raced
+		if atomic.LoadInt32(&active.Hedged) != 0 {
+			continue
+		}
+		remaining := active.RemainingBytes()
+		if remaining > 0 && remaining > maxRemaining {
+			maxRemaining = remaining
+			bestActive = active
+		}
+	}
+
+	if bestActive == nil || maxRemaining == 0 {
+		return false
+	}
+
+	// Mark as hedged so we don't create multiple duplicates
+	if !atomic.CompareAndSwapInt32(&bestActive.Hedged, 0, 1) {
+		return false // Another goroutine hedged it first
+	}
+
+	// Create a duplicate task for the remaining byte range
+	current := atomic.LoadInt64(&bestActive.CurrentOffset)
+	stopAt := atomic.LoadInt64(&bestActive.StopAt)
+	if current >= stopAt {
+		return false
+	}
+
+	hedgedTask := types.Task{
+		Offset: current,
+		Length: stopAt - current,
+	}
+
+	queue.Push(hedgedTask)
+	utils.Debug("Balancer: hedged %s (range: %d-%d) — idle worker will race on fresh connection",
+		utils.ConvertBytesToHumanReadable(hedgedTask.Length), hedgedTask.Offset, hedgedTask.Offset+hedgedTask.Length)
 
 	return true
 }

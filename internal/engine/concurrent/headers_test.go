@@ -75,7 +75,7 @@ func TestConcurrentDownloader_CustomHeaders(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL, nil, nil, destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL, nil, nil, destPath, fileSize)
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestConcurrentDownloader_DefaultUserAgent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL, nil, nil, destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL, nil, nil, destPath, fileSize)
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestConcurrentDownloader_RangeHeaderNotOverridden(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, server.URL, nil, nil, destPath, fileSize, false)
+	err := downloader.Download(ctx, server.URL, nil, nil, destPath, fileSize)
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestConcurrentDownloader_HeadersForwardedOnRedirect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := downloader.Download(ctx, redirectServer.URL, nil, nil, destPath, fileSize, false)
+	err := downloader.Download(ctx, redirectServer.URL, nil, nil, destPath, fileSize)
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}

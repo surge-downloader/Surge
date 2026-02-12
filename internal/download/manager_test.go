@@ -548,7 +548,7 @@ func TestDownload_BuildsConfig(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	err := Download(ctx, "http://example.com/file", "/tmp/output", false, nil, "test-id")
+	err := Download(ctx, "http://example.com/file", "/tmp/output", nil, "test-id")
 
 	// Should fail because context is cancelled
 	if err == nil {

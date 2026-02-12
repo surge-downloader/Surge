@@ -34,6 +34,14 @@ type ConcurrentDownloader struct {
 
 // NewConcurrentDownloader creates a new concurrent downloader with all required parameters
 func NewConcurrentDownloader(id string, progressCh chan<- any, progState *types.ProgressState, runtime *types.RuntimeConfig) *ConcurrentDownloader {
+	if runtime == nil {
+		runtime = &types.RuntimeConfig{
+			MaxConnectionsPerHost: types.PerHostMax,
+			MinChunkSize:          types.MinChunk,
+			WorkerBufferSize:      types.WorkerBuffer,
+		}
+	}
+
 	return &ConcurrentDownloader{
 		ID:           id,
 		ProgressChan: progressCh,
@@ -246,7 +254,7 @@ func (d *ConcurrentDownloader) newConcurrentClient(numConns int) *http.Client {
 
 // Download downloads a file using multiple concurrent connections
 // Uses pre-probed metadata (file size already known)
-func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, candidateMirrors []string, activeMirrors []string, destPath string, fileSize int64, verbose bool) error {
+func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, candidateMirrors []string, activeMirrors []string, destPath string, fileSize int64) error {
 	utils.Debug("ConcurrentDownloader.Download: %s -> %s (size: %d, mirrors: %d)", rawurl, destPath, fileSize, len(activeMirrors))
 
 	// Store URL and path for pause/resume (final path without .surge)
@@ -284,9 +292,15 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 
 	// Create cancellable context for pause support
 	downloadCtx, cancel := context.WithCancel(ctx)
+
+	// Helper synchronization
+	var wgHelpers sync.WaitGroup
+	// Ensure we wait for helpers to finish; run wait AFTER cancel (LIFO: cancel runs first)
+	defer wgHelpers.Wait()
 	defer cancel()
+
 	if d.State != nil {
-		d.State.CancelFunc = cancel
+		d.State.SetCancelFunc(cancel)
 	}
 
 	// Determine connections and chunk size
@@ -296,13 +310,6 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 
 	// Create tuned HTTP client for concurrent downloads
 	client := d.newConcurrentClient(numConns)
-
-	if verbose {
-		fmt.Printf("File size: %s, connections: %d, chunk size: %s\n",
-			utils.ConvertBytesToHumanReadable(fileSize),
-			numConns,
-			utils.ConvertBytesToHumanReadable(chunkSize))
-	}
 
 	// Initialize chunk visualization
 	if d.State != nil {
@@ -368,7 +375,9 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	balancerCtx, cancelBalancer := context.WithCancel(downloadCtx)
 	defer cancelBalancer()
 
+	wgHelpers.Add(1)
 	go func() {
+		defer wgHelpers.Done()
 		ticker := time.NewTicker(200 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -388,7 +397,15 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 						}
 					}
 
-					// If we couldn't split or steal anything, stop trying for this tick
+					// If stealing failed (chunks too small), try hedged request:
+					// Duplicate a task so an idle worker races on a fresh connection
+					if !didWork && queue.Len() == 0 {
+						if d.HedgeWork(queue) {
+							didWork = true
+						}
+					}
+
+					// If we couldn't split, steal, or hedge anything, stop trying for this tick
 					if !didWork {
 						break
 					}
@@ -398,7 +415,9 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	}()
 
 	// Monitor for completion
+	wgHelpers.Add(1)
 	go func() {
+		defer wgHelpers.Done()
 		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -422,7 +441,9 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	}()
 
 	// Health monitor: detect slow workers
+	wgHelpers.Add(1)
 	go func() {
+		defer wgHelpers.Done()
 		ticker := time.NewTicker(types.HealthCheckInterval) // Fixed: using types constant
 		defer ticker.Stop()
 
@@ -465,7 +486,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			err := d.worker(downloadCtx, workerID, workerMirrors, outFile, queue, fileSize, startTime, verbose, client)
+			err := d.worker(downloadCtx, workerID, workerMirrors, outFile, queue, fileSize, startTime, client)
 			if err != nil && err != context.Canceled {
 				workerErrors <- err
 			}

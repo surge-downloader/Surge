@@ -23,10 +23,13 @@ func NewTaskQueue() *TaskQueue {
 	return tq
 }
 
+// Push adds a task and wakes ALL waiting workers via Broadcast.
+// This ensures idle workers compete for re-queued/hedged tasks,
+// preventing the same slow worker from monopolizing work.
 func (q *TaskQueue) Push(t types.Task) {
 	q.mu.Lock()
 	q.tasks = append(q.tasks, t)
-	q.cond.Signal()
+	q.cond.Broadcast()
 	q.mu.Unlock()
 }
 

@@ -8,37 +8,53 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 var (
 	debugFile *os.File
 	debugOnce sync.Once
-	logsDir   string
-	mu        sync.RWMutex
+	logsDir   atomic.Value // string
+	verbose   atomic.Bool
 )
 
 // ConfigureDebug sets the directory for debug logs
 func ConfigureDebug(dir string) {
-	mu.Lock()
-	defer mu.Unlock()
-	logsDir = dir
+	logsDir.Store(dir)
+}
+
+// SetVerbose enables or disables verbose logging
+func SetVerbose(enabled bool) {
+	verbose.Store(enabled)
+}
+
+// IsVerbose returns true if verbose logging is enabled
+func IsVerbose() bool {
+	return verbose.Load()
 }
 
 // Debug writes a message to debug.log file in the configured directory
 func Debug(format string, args ...any) {
-	// add timestamp to each debug message
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	// Fast path: check verbose flag first
+	if !verbose.Load() {
+		return
+	}
 
-	mu.RLock()
-	dir := logsDir
-	mu.RUnlock()
-
-	// If no logs directory is configured, do nothing (or could log to stderr)
+	// Internal fast path check without lock
+	val := logsDir.Load()
+	if val == nil {
+		return
+	}
+	dir := val.(string)
 	if dir == "" {
 		return
 	}
 
+	// Calculate timestamp only if we are actually logging
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+
+	// Ensure file is open (still needs once, but fast after first time)
 	debugOnce.Do(func() {
 		_ = os.MkdirAll(dir, 0o755)
 		debugFile, _ = os.Create(filepath.Join(dir, fmt.Sprintf("debug-%s.log", time.Now().Format("20060102-150405"))))
@@ -55,9 +71,11 @@ func CleanupLogs(retentionCount int) {
 		return // Keep all logs
 	}
 
-	mu.RLock()
-	dir := logsDir
-	mu.RUnlock()
+	val := logsDir.Load()
+	if val == nil {
+		return
+	}
+	dir := val.(string)
 
 	if dir == "" {
 		return

@@ -80,7 +80,7 @@ func TestConcurrentDownloader_ProxySupport(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err = downloader.Download(ctx, targetServer.URL(), nil, nil, destPath, 1024, false)
+	err = downloader.Download(ctx, targetServer.URL(), nil, nil, destPath, 1024)
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestConcurrentDownloader_InvalidProxy(t *testing.T) {
 	// This should hopefully succeed by ignoring the invalid proxy, or fail with a network error
 	// The key is that it shouldn't panic.
 	// Since we log error and fallback, it should succeed if direct connection works.
-	err := downloader.Download(ctx, targetServer.URL(), nil, nil, destPath, 1024, false)
+	err := downloader.Download(ctx, targetServer.URL(), nil, nil, destPath, 1024)
 	if err != nil {
 		t.Logf("Download failed as expected or unexpected: %v", err)
 	}
