@@ -34,6 +34,14 @@ type ConcurrentDownloader struct {
 
 // NewConcurrentDownloader creates a new concurrent downloader with all required parameters
 func NewConcurrentDownloader(id string, progressCh chan<- any, progState *types.ProgressState, runtime *types.RuntimeConfig) *ConcurrentDownloader {
+	if runtime == nil {
+		runtime = &types.RuntimeConfig{
+			MaxConnectionsPerHost: types.PerHostMax,
+			MinChunkSize:          types.MinChunk,
+			WorkerBufferSize:      types.WorkerBuffer,
+		}
+	}
+
 	return &ConcurrentDownloader{
 		ID:           id,
 		ProgressChan: progressCh,
