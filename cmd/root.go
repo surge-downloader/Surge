@@ -71,6 +71,14 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		initializeGlobalState()
 
+		// Validate integrity of paused downloads before resuming
+		// Removes entries whose .surge files are missing or tampered with
+		if removed, err := state.ValidateIntegrity(); err != nil {
+			utils.Debug("Integrity check failed: %v", err)
+		} else if removed > 0 {
+			utils.Debug("Integrity check: removed %d corrupted/orphaned downloads", removed)
+		}
+
 		// Attempt to acquire lock
 		isMaster, err := AcquireLock()
 		if err != nil {

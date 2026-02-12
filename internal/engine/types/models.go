@@ -24,6 +24,9 @@ type DownloadState struct {
 	// Bitmap state
 	ChunkBitmap     []byte `json:"chunk_bitmap,omitempty"`
 	ActualChunkSize int64  `json:"actual_chunk_size,omitempty"`
+
+	// Integrity verification
+	FileHash string `json:"file_hash,omitempty"` // SHA-256 hash of the .surge file at pause time
 }
 
 // DownloadEntry represents a download in the master list
@@ -38,6 +41,7 @@ type DownloadEntry struct {
 	Downloaded  int64    `json:"downloaded"`   // Bytes downloaded
 	CompletedAt int64    `json:"completed_at"` // Unix timestamp when completed
 	TimeTaken   int64    `json:"time_taken"`   // Duration in milliseconds (for completed)
+	AvgSpeed    float64  `json:"avg_speed"`    // Average speed in bytes/sec (for completed)
 	Mirrors     []string `json:"mirrors,omitempty"`
 }
 

@@ -83,6 +83,12 @@ func initDB() error {
 	_, _ = db.Exec("ALTER TABLE downloads ADD COLUMN chunk_bitmap BLOB")
 	_, _ = db.Exec("ALTER TABLE downloads ADD COLUMN actual_chunk_size INTEGER")
 
+	// Migration: Add avg_speed for completed download stats
+	_, _ = db.Exec("ALTER TABLE downloads ADD COLUMN avg_speed REAL")
+
+	// Migration: Add file_hash for integrity verification of paused downloads
+	_, _ = db.Exec("ALTER TABLE downloads ADD COLUMN file_hash TEXT")
+
 	return nil
 }
 
