@@ -530,6 +530,7 @@ func (s *LocalDownloadService) Resume(id string) error {
 	if stateErr == nil && savedState != nil {
 		dmState = types.NewProgressState(id, savedState.TotalSize)
 		dmState.Downloaded.Store(savedState.Downloaded)
+		dmState.VerifiedProgress.Store(savedState.Downloaded)
 		if savedState.Elapsed > 0 {
 			dmState.SetSavedElapsed(time.Duration(savedState.Elapsed))
 		}
@@ -542,10 +543,13 @@ func (s *LocalDownloadService) Resume(id string) error {
 			dmState.SetMirrors(mirrors)
 		}
 		dmState.DestPath = entry.DestPath
+		dmState.SyncSessionStart()
 	} else {
 		dmState = types.NewProgressState(id, entry.TotalSize)
 		dmState.Downloaded.Store(entry.Downloaded)
+		dmState.VerifiedProgress.Store(entry.Downloaded)
 		dmState.DestPath = entry.DestPath
+		dmState.SyncSessionStart()
 		mirrorURLs = []string{entry.URL}
 	}
 
@@ -639,6 +643,7 @@ func (s *LocalDownloadService) ResumeBatch(ids []string) []error {
 
 		dmState = types.NewProgressState(id, savedState.TotalSize)
 		dmState.Downloaded.Store(savedState.Downloaded)
+		dmState.VerifiedProgress.Store(savedState.Downloaded)
 		if savedState.Elapsed > 0 {
 			dmState.SetSavedElapsed(time.Duration(savedState.Elapsed))
 		}
@@ -651,6 +656,7 @@ func (s *LocalDownloadService) ResumeBatch(ids []string) []error {
 			dmState.SetMirrors(mirrors)
 		}
 		dmState.DestPath = savedState.DestPath
+		dmState.SyncSessionStart()
 
 		cfg := types.DownloadConfig{
 			URL:        savedState.URL,

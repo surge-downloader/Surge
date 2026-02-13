@@ -32,27 +32,29 @@ func TestNewProgressState(t *testing.T) {
 func TestProgressState_SetTotalSize(t *testing.T) {
 	ps := NewProgressState("test", 100)
 	ps.Downloaded.Store(50)
+	ps.VerifiedProgress.Store(40)
 
 	ps.SetTotalSize(200)
 
 	if ps.TotalSize != 200 {
 		t.Errorf("TotalSize = %d, want 200", ps.TotalSize)
 	}
-	if ps.SessionStartBytes != 50 {
-		t.Errorf("SessionStartBytes = %d, want 50", ps.SessionStartBytes)
+	if ps.SessionStartBytes != 40 {
+		t.Errorf("SessionStartBytes = %d, want 40", ps.SessionStartBytes)
 	}
 }
 
 func TestProgressState_SyncSessionStart(t *testing.T) {
 	ps := NewProgressState("test", 100)
 	ps.Downloaded.Store(75)
+	ps.VerifiedProgress.Store(60)
 
 	beforeSync := time.Now()
 	ps.SyncSessionStart()
 	afterSync := time.Now()
 
-	if ps.SessionStartBytes != 75 {
-		t.Errorf("SessionStartBytes = %d, want 75", ps.SessionStartBytes)
+	if ps.SessionStartBytes != 60 {
+		t.Errorf("SessionStartBytes = %d, want 60", ps.SessionStartBytes)
 	}
 	if ps.StartTime.Before(beforeSync) || ps.StartTime.After(afterSync) {
 		t.Error("StartTime should be updated to current time")

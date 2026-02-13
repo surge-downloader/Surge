@@ -81,14 +81,14 @@ func (ps *ProgressState) SetTotalSize(size int64) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	ps.TotalSize = size
-	ps.SessionStartBytes = ps.Downloaded.Load()
+	ps.SessionStartBytes = ps.VerifiedProgress.Load()
 	ps.StartTime = time.Now()
 }
 
 func (ps *ProgressState) SyncSessionStart() {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	ps.SessionStartBytes = ps.Downloaded.Load()
+	ps.SessionStartBytes = ps.VerifiedProgress.Load()
 	ps.StartTime = time.Now()
 }
 
