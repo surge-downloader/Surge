@@ -13,7 +13,7 @@ type Manager struct {
 
 	maxPeers int
 	mu       sync.Mutex
-	active   map[string]*Session
+	active   map[string]*Conn
 }
 
 func NewManager(infoHash [20]byte, peerID [20]byte, maxPeers int) *Manager {
@@ -24,7 +24,7 @@ func NewManager(infoHash [20]byte, peerID [20]byte, maxPeers int) *Manager {
 		infoHash: infoHash,
 		peerID:   peerID,
 		maxPeers: maxPeers,
-		active:   make(map[string]*Session),
+		active:   make(map[string]*Conn),
 	}
 }
 
@@ -66,8 +66,11 @@ func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 		return
 	}
 
+	conn := NewConn(sess, addr)
+	conn.Start(ctx)
+
 	m.mu.Lock()
-	m.active[key] = sess
+	m.active[key] = conn
 	m.mu.Unlock()
 }
 
@@ -75,7 +78,7 @@ func (m *Manager) CloseAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for k, s := range m.active {
-		_ = s.Close()
+		_ = s.sess.Close()
 		delete(m.active, k)
 	}
 }
