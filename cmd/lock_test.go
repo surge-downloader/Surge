@@ -14,6 +14,7 @@ func TestAcquireLock(t *testing.T) {
 	// Setup isolation
 	tempDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tempDir)
+	t.Setenv("APPDATA", tempDir)
 
 	// Ensure dirs exist (mocking what root.go does)
 	err := config.EnsureDirs()
