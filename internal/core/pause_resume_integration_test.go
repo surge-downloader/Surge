@@ -467,9 +467,18 @@ func TestIntegration_PauseResume_ResumeBatchRejectsPausing(t *testing.T) {
 	})
 
 	// Ensure the pool has tracked it before we hit ResumeBatch.
-	waitForDownloadStatus(t, svc, id, 5*time.Second, func(st *types.DownloadStatus) bool {
+	st0 := waitForDownloadStatus(t, svc, id, 5*time.Second, func(st *types.DownloadStatus) bool {
 		return st.Status == "pausing" || st.Status == "paused"
 	})
+	// This test targets ResumeBatch's pausing guard specifically.
+	// If worker scheduling already transitioned to "paused", force the
+	// intermediate flag back to pausing for deterministic coverage.
+	if st0.Status != "pausing" {
+		ps.SetPausing(true)
+		waitForDownloadStatus(t, svc, id, 2*time.Second, func(st *types.DownloadStatus) bool {
+			return st.Status == "pausing"
+		})
+	}
 
 	errs := svc.ResumeBatch([]string{id})
 	if len(errs) != 1 {
