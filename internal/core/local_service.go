@@ -43,6 +43,9 @@ type LocalDownloadService struct {
 	// Lifecycle
 	ctx    context.Context
 	cancel context.CancelFunc
+	// shutdownOnce guarantees Shutdown is safe to call multiple times.
+	shutdownOnce sync.Once
+	shutdownErr  error
 
 	// Settings Cache
 	settings   *config.Settings
@@ -259,19 +262,23 @@ func (s *LocalDownloadService) Publish(msg interface{}) error {
 
 // Shutdown stops the service.
 func (s *LocalDownloadService) Shutdown() error {
-	if s.reportTicker != nil {
-		s.reportTicker.Stop()
-	}
-	if s.Pool != nil {
-		s.Pool.GracefulShutdown()
-	}
+	s.shutdownOnce.Do(func() {
+		if s.reportTicker != nil {
+			s.reportTicker.Stop()
+		}
+		if s.Pool != nil {
+			s.Pool.GracefulShutdown()
+		}
 
-	// Stop listeners and broadcaster
-	s.cancel()
+		// Stop listeners and broadcaster
+		s.cancel()
 
-	// Close input channel to stop broadcaster
-	close(s.InputCh)
-	return nil
+		// Close input channel to stop broadcaster
+		if s.InputCh != nil {
+			close(s.InputCh)
+		}
+	})
+	return s.shutdownErr
 }
 
 // List returns the status of all active and completed downloads.
