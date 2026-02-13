@@ -13,13 +13,25 @@ type Conn struct {
 	mu       sync.Mutex
 	choked   bool
 	bitfield []byte
+	picker   Picker
+	pl       PieceLayout
 }
 
-func NewConn(sess *Session, addr net.TCPAddr) *Conn {
+type Picker interface {
+	Next() (int, bool)
+}
+
+type PieceLayout interface {
+	PieceSize(pieceIndex int64) int64
+}
+
+func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout) *Conn {
 	return &Conn{
 		sess:   sess,
 		addr:   addr,
 		choked: true,
+		picker: picker,
+		pl:     pl,
 	}
 }
 
@@ -52,12 +64,33 @@ func (c *Conn) handle(msg *Message) {
 		c.choked = true
 	case MsgUnchoke:
 		c.choked = false
+		c.maybeRequest()
 	case MsgBitfield:
 		c.bitfield = append([]byte(nil), msg.Payload...)
 	case MsgHave:
 		// TODO: update bitfield (needs piece index parse)
 	default:
 	}
+}
+
+func (c *Conn) maybeRequest() {
+	if c.picker == nil || c.pl == nil {
+		return
+	}
+	if c.choked {
+		return
+	}
+	piece, ok := c.picker.Next()
+	if !ok {
+		return
+	}
+	size := c.pl.PieceSize(int64(piece))
+	if size <= 0 {
+		return
+	}
+	// Single request per piece for now (no block pipeline yet).
+	msg := MakeRequest(uint32(piece), 0, uint32(size))
+	_ = WriteMessage(c.sess.conn, msg)
 }
 
 func (c *Conn) IsChoked() bool {

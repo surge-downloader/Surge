@@ -10,19 +10,23 @@ import (
 type Manager struct {
 	infoHash [20]byte
 	peerID   [20]byte
+	picker   Picker
+	layout   PieceLayout
 
 	maxPeers int
 	mu       sync.Mutex
 	active   map[string]*Conn
 }
 
-func NewManager(infoHash [20]byte, peerID [20]byte, maxPeers int) *Manager {
+func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceLayout, maxPeers int) *Manager {
 	if maxPeers <= 0 {
 		maxPeers = 32
 	}
 	return &Manager{
 		infoHash: infoHash,
 		peerID:   peerID,
+		picker:   picker,
+		layout:   layout,
 		maxPeers: maxPeers,
 		active:   make(map[string]*Conn),
 	}
@@ -66,7 +70,7 @@ func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 		return
 	}
 
-	conn := NewConn(sess, addr)
+	conn := NewConn(sess, addr, m.picker, m.layout)
 	conn.Start(ctx)
 
 	m.mu.Lock()
