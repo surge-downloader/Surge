@@ -132,9 +132,10 @@ func MigrateOldPaths() error {
 					fmt.Printf("Migrated %s to %s\n", filename, newPath)
 				}
 			} else {
-				// Destination exists, maybe just remove old? Or keep as backup?
-				// For now, let's just log and keep old
-				fmt.Printf("Target %s already exists, skipping migration of %s\n", newPath, filename)
+				// remove old files
+				if err := os.Remove(oldPath); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to remove redundant file %s: %v\n", filename, err)
+				}
 			}
 		}
 	}
