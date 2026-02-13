@@ -121,6 +121,7 @@ func TestWorkerPool_Pause_ActiveDownload(t *testing.T) {
 	// Create a progress state
 	state := types.NewProgressState("test-id", 1000)
 	state.Downloaded.Store(500)
+	state.VerifiedProgress.Store(700)
 
 	// Manually add an active download
 	pool.mu.Lock()
@@ -149,8 +150,8 @@ func TestWorkerPool_Pause_ActiveDownload(t *testing.T) {
 		if pausedMsg.DownloadID != "test-id" {
 			t.Errorf("Expected download ID 'test-id', got '%s'", pausedMsg.DownloadID)
 		}
-		if pausedMsg.Downloaded != 500 {
-			t.Errorf("Expected Downloaded=500, got %d", pausedMsg.Downloaded)
+		if pausedMsg.Downloaded != 700 {
+			t.Errorf("Expected Downloaded=700, got %d", pausedMsg.Downloaded)
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Error("Expected pause message to be sent")

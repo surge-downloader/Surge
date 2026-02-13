@@ -155,7 +155,7 @@ func (p *WorkerPool) Pause(downloadID string) bool {
 	if p.progressCh != nil {
 		downloaded := int64(0)
 		if ad.config.State != nil {
-			downloaded = ad.config.State.Downloaded.Load()
+			downloaded = ad.config.State.VerifiedProgress.Load()
 		}
 		p.progressCh <- events.DownloadPausedMsg{
 			DownloadID: downloadID,
