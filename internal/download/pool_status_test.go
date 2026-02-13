@@ -64,6 +64,8 @@ func TestWorkerPool_GetStatus_Paused(t *testing.T) {
 
 	id := "test-id"
 	state := types.NewProgressState(id, 1000)
+	state.VerifiedProgress.Store(500)
+	state.SessionStartBytes = 100
 	state.Pause()
 
 	pool.mu.Lock()
@@ -79,6 +81,9 @@ func TestWorkerPool_GetStatus_Paused(t *testing.T) {
 
 	if status.Status != "paused" {
 		t.Errorf("Expected status 'paused', got '%s'", status.Status)
+	}
+	if status.Speed != 0 {
+		t.Errorf("Expected paused speed 0, got %.6f", status.Speed)
 	}
 }
 

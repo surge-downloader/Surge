@@ -206,6 +206,7 @@ func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile
 	}
 
 	if exitWhenDone {
+		exitWhenDoneCh := make(chan struct{}, 1)
 		go func() {
 			time.Sleep(2 * time.Second)
 			ticker := time.NewTicker(2 * time.Second)
@@ -213,24 +214,36 @@ func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile
 			for range ticker.C {
 				if atomic.LoadInt32(&activeDownloads) == 0 {
 					if GlobalPool != nil && GlobalPool.ActiveCount() == 0 {
-						fmt.Println("All downloads finished. Exiting...")
-						// Clean up PID before force exit is nice, but defer won't run on os.Exit
-						// Manual cleanup
-						removePID()
-						removeActivePort()
-						os.Exit(0)
+						select {
+						case exitWhenDoneCh <- struct{}{}:
+						default:
+						}
+						return
 					}
 				}
 			}
 		}()
+
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		defer signal.Stop(sigChan)
+
+		select {
+		case sig := <-sigChan:
+			fmt.Printf("\nReceived %s. Shutting down...\n", sig)
+			_ = executeGlobalShutdown(fmt.Sprintf("server signal: %s", sig))
+		case <-exitWhenDoneCh:
+			fmt.Println("All downloads finished. Exiting...")
+			_ = executeGlobalShutdown("server: exit when done")
+		}
+		return
 	}
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	<-sigChan
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(sigChan)
+	sig := <-sigChan
 
-	fmt.Println("\nShutting down...")
-	if GlobalPool != nil {
-		GlobalPool.GracefulShutdown()
-	}
+	fmt.Printf("\nReceived %s. Shutting down...\n", sig)
+	_ = executeGlobalShutdown(fmt.Sprintf("server signal: %s", sig))
 }

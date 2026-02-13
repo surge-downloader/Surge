@@ -8,9 +8,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
@@ -161,6 +163,7 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 	// Get event stream from service
 	events, cleanup, err := GlobalService.StreamEvents(context.Background())
 	if err != nil {
+		_ = executeGlobalShutdown("tui: stream init failed")
 		fmt.Printf("Error getting event stream: %v\n", err)
 		os.Exit(1)
 	}
@@ -190,11 +193,30 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 		}()
 	}
 
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(sigChan)
+
+	stopSignalListener := make(chan struct{})
+	defer close(stopSignalListener)
+
+	go func() {
+		select {
+		case sig := <-sigChan:
+			_ = executeGlobalShutdown(fmt.Sprintf("tui signal: %s", sig))
+			p.Send(tea.Quit())
+		case <-stopSignalListener:
+			return
+		}
+	}()
+
 	// Run TUI
 	if _, err := p.Run(); err != nil {
+		_ = executeGlobalShutdown("tui: p.Run failed")
 		fmt.Printf("Error running program: %v\n", err)
 		os.Exit(1)
 	}
+	_ = executeGlobalShutdown("tui: program exited")
 }
 
 func getServerBindHost() string {

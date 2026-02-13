@@ -16,6 +16,7 @@ func (m *RootModel) processProgressMsg(msg events.ProgressMsg) {
 			d.Downloaded = msg.Downloaded
 			d.Total = msg.Total
 			d.Speed = msg.Speed
+			d.Elapsed = msg.Elapsed
 			d.Connections = msg.ActiveConnections
 
 			// Update Chunk State if provided

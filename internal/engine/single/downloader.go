@@ -101,6 +101,7 @@ func (d *SingleDownloader) Download(ctx context.Context, rawurl, destPath string
 				written += int64(nw)
 				if d.State != nil {
 					d.State.Downloaded.Store(written)
+					d.State.VerifiedProgress.Store(written)
 				}
 			}
 			if writeErr != nil {

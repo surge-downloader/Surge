@@ -793,6 +793,8 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 	var elapsed time.Duration
 	if d.done {
 		elapsed = d.Elapsed
+	} else if d.Elapsed > 0 {
+		elapsed = d.Elapsed
 	} else if !d.StartTime.IsZero() {
 		elapsed = time.Since(d.StartTime)
 	}

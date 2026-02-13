@@ -45,12 +45,11 @@ func TestCLI_NewEndpoints(t *testing.T) {
 
 	// Add a dummy download to the pool to test against
 	id := "test-id"
+	progState := types.NewProgressState(id, 0)
 	GlobalPool.Add(types.DownloadConfig{
-		ID:  id,
-		URL: "http://example.com/test",
-		State: &types.ProgressState{
-			ID: id,
-		},
+		ID:    id,
+		URL:   "http://example.com/test",
+		State: progState,
 	})
 	// Wait a tiny bit for the worker to pick it up (though Add queues it)
 	time.Sleep(10 * time.Millisecond)
@@ -93,6 +92,10 @@ func TestCLI_NewEndpoints(t *testing.T) {
 	})
 
 	t.Run("Resume Endpoint", func(t *testing.T) {
+		// In this synthetic test there is no real worker lifecycle, so clear the
+		// transition flag to emulate a fully-paused state before resume.
+		progState.SetPausing(false)
+
 		resp, err := doRequest(http.MethodPost, baseURL+"/resume?id="+id)
 		if err != nil {
 			t.Fatalf("Failed to request resume: %v", err)

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -319,6 +320,27 @@ func TestUpdate_DownloadRemoved_NoOpWhenUnknownID(t *testing.T) {
 
 	if len(m2.downloads) != 1 {
 		t.Fatalf("expected unknown remove to keep entries, got %d", len(m2.downloads))
+	}
+}
+
+func TestProcessProgressMsg_UpdatesElapsed(t *testing.T) {
+	dm := NewDownloadModel("id-1", "http://example.com/file", "file", 1000)
+	m := RootModel{
+		downloads: []*DownloadModel{dm},
+		list:      NewDownloadList(80, 20),
+	}
+
+	elapsed := 12 * time.Second
+	m.processProgressMsg(events.ProgressMsg{
+		DownloadID: "id-1",
+		Downloaded: 400,
+		Total:      1000,
+		Speed:      1024,
+		Elapsed:    elapsed,
+	})
+
+	if dm.Elapsed != elapsed {
+		t.Fatalf("elapsed = %v, want %v", dm.Elapsed, elapsed)
 	}
 }
 

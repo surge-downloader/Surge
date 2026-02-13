@@ -338,6 +338,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		tasks = savedState.Tasks
 		if d.State != nil {
 			d.State.Downloaded.Store(savedState.Downloaded)
+			d.State.VerifiedProgress.Store(savedState.Downloaded)
 			// Restore elapsed time from previous sessions
 			d.State.SetSavedElapsed(time.Duration(savedState.Elapsed))
 			// Fix speed spike: sync session start so we don't count previous bytes as new speed
@@ -349,6 +350,9 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 
 				// Reconstruct internal progress from remaining tasks to ensure partial chunks are handled correctly
 				d.State.RecalculateProgress(savedState.Tasks)
+				// Keep counters aligned after reconstruction to avoid session speed spikes.
+				d.State.Downloaded.Store(d.State.VerifiedProgress.Load())
+				d.State.SyncSessionStart()
 
 				utils.Debug("Restored chunk map: size %d", savedState.ActualChunkSize)
 			}
@@ -537,11 +541,13 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		var actualChunkSize int64
 
 		if d.State != nil {
-			totalElapsed = d.State.SavedElapsed + time.Since(startTime)
+			totalElapsed = d.State.GetSavedElapsed() + time.Since(startTime)
 			// Get persisted bitmap data
 			bitmap, _, _, chunkSize, _ := d.State.GetBitmap()
 			chunkBitmap = bitmap
 			actualChunkSize = chunkSize
+			// Keep in-memory state aligned with the persisted snapshot.
+			d.State.FinalizePause(computedDownloaded, totalElapsed)
 		} else {
 			totalElapsed = time.Since(startTime)
 		}

@@ -168,7 +168,7 @@ func (p *WorkerPool) Pause(downloadID string) bool {
 	if p.progressCh != nil {
 		downloaded := int64(0)
 		if ad.config.State != nil {
-			downloaded = ad.config.State.Downloaded.Load()
+			downloaded = ad.config.State.VerifiedProgress.Load()
 		}
 		p.progressCh <- events.DownloadPausedMsg{
 			DownloadID: downloadID,
@@ -247,7 +247,7 @@ func (p *WorkerPool) Resume(downloadID string) bool {
 	// Prevent race: Don't resume if still pausing
 	if ad.config.State != nil && ad.config.State.IsPausing() {
 		utils.Debug("Resume ignored: download %s is still pausing", downloadID)
-		return true // Considered "handled" even if ignored temporarily
+		return false
 	}
 
 	// Idempotency: If already running (not paused), do nothing
@@ -260,6 +260,15 @@ func (p *WorkerPool) Resume(downloadID string) bool {
 	if ad.config.State != nil {
 		ad.config.State.Resume()
 		ad.config.State.SyncSessionStart()
+
+		// Hot-resume needs the resolved path from the first run, otherwise
+		// TUIDownload cannot load persisted state and may start a fresh file.
+		if destPath := ad.config.State.GetDestPath(); destPath != "" {
+			ad.config.DestPath = destPath
+		}
+		if filename := ad.config.State.GetFilename(); filename != "" {
+			ad.config.Filename = filename
+		}
 	}
 
 	// Re-queue the download
@@ -404,11 +413,13 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 		status.Progress = float64(status.Downloaded) * 100 / float64(status.TotalSize)
 	}
 
-	// Calculate speed (MB/s)
-	sessionDownloaded := downloaded - sessionStart
-	if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
-		bytesPerSec := float64(sessionDownloaded) / sessionElapsed.Seconds()
-		status.Speed = bytesPerSec / (1024 * 1024)
+	// Calculate speed (MB/s) only for active downloads.
+	if status.Status == "downloading" {
+		sessionDownloaded := downloaded - sessionStart
+		if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
+			bytesPerSec := float64(sessionDownloaded) / sessionElapsed.Seconds()
+			status.Speed = bytesPerSec / (1024 * 1024)
+		}
 	}
 
 	return status
