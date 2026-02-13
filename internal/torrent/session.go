@@ -23,6 +23,7 @@ type Session struct {
 	infoHash [20]byte
 	trackers []string
 	cfg      SessionConfig
+	peerID   [20]byte
 }
 
 func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Session {
@@ -33,6 +34,7 @@ func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Sessio
 		infoHash: infoHash,
 		trackers: trackers,
 		cfg:      cfg,
+		peerID:   tracker.DefaultPeerID(),
 	}
 }
 
@@ -44,7 +46,6 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 	go func() {
 		defer close(out)
 		seen := make(map[string]bool)
-		peerID := tracker.DefaultPeerID()
 		tick := time.NewTicker(s.cfg.TrackerInterval)
 		defer tick.Stop()
 
@@ -52,7 +53,7 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 			for _, tr := range s.trackers {
 				resp, err := tracker.Announce(tr, tracker.AnnounceRequest{
 					InfoHash: s.infoHash,
-					PeerID:   peerID,
+					PeerID:   s.peerID,
 					Port:     6881,
 					Left:     1,
 					NumWant:  50,
