@@ -20,6 +20,7 @@ type Node struct {
 	addr    *net.UDPAddr
 	conn    *net.UDPConn
 	cfg     Config
+	rt      *routingTable
 	mu      sync.Mutex
 	pending map[string]chan *Message
 	closed  chan struct{}
@@ -53,6 +54,7 @@ func New(cfg Config) (*Node, error) {
 		addr:    conn.LocalAddr().(*net.UDPAddr),
 		conn:    conn,
 		cfg:     cfg,
+		rt:      newRoutingTable(id),
 		pending: make(map[string]chan *Message),
 		closed:  make(chan struct{}),
 	}
@@ -82,7 +84,13 @@ func (n *Node) Bootstrap() error {
 		if err != nil {
 			continue
 		}
-		_, _ = n.Ping(addr)
+		if resp, err := n.Ping(addr); err == nil {
+			if id, ok := resp.R["id"].([]byte); ok && len(id) == 20 {
+				var nid NodeID
+				copy(nid[:], id)
+				n.rt.add(Node{id: nid, addr: addr})
+			}
+		}
 	}
 	return nil
 }
@@ -170,6 +178,51 @@ func (n *Node) exchange(addr *net.UDPAddr, msg *Message) (*Message, error) {
 	case <-time.After(n.cfg.ReadTimeout):
 		return nil, errors.New("dht timeout")
 	}
+}
+
+// GetPeersIterative performs a simple iterative get_peers search.
+func (n *Node) GetPeersIterative(infoHash [20]byte, maxNodes int) ([]Peer, error) {
+	target := NodeID(infoHash)
+	queried := make(map[string]bool)
+	queue := n.rt.nearest(target, maxNodes)
+	var peers []Peer
+
+	for len(queue) > 0 && len(queried) < maxNodes {
+		cur := queue[0]
+		queue = queue[1:]
+		key := cur.addr.String()
+		if queried[key] {
+			continue
+		}
+		queried[key] = true
+
+		resp, err := n.GetPeers(cur.addr, infoHash)
+		if err != nil {
+			continue
+		}
+
+		// token is ignored in this phase (no announce)
+		if nodesRaw, ok := resp.R["nodes"].([]byte); ok {
+			nodes, err := ParseCompactNodes(nodesRaw)
+			if err == nil {
+				for _, nd := range nodes {
+					n.rt.add(nd)
+					queue = append(queue, nd)
+				}
+			}
+		}
+		if vals, ok := resp.R["values"].([]any); ok {
+			for _, v := range vals {
+				if b, ok := v.([]byte); ok {
+					if ps, err := ParseCompactPeers(b); err == nil {
+						peers = append(peers, ps...)
+					}
+				}
+			}
+		}
+	}
+
+	return peers, nil
 }
 
 func (n *Node) readLoop() {
