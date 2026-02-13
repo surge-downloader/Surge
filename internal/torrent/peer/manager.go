@@ -12,13 +12,14 @@ type Manager struct {
 	peerID   [20]byte
 	picker   Picker
 	layout   PieceLayout
+	store    Storage
 
 	maxPeers int
 	mu       sync.Mutex
 	active   map[string]*Conn
 }
 
-func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceLayout, maxPeers int) *Manager {
+func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceLayout, store Storage, maxPeers int) *Manager {
 	if maxPeers <= 0 {
 		maxPeers = 32
 	}
@@ -27,6 +28,7 @@ func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceL
 		peerID:   peerID,
 		picker:   picker,
 		layout:   layout,
+		store:    store,
 		maxPeers: maxPeers,
 		active:   make(map[string]*Conn),
 	}
@@ -70,7 +72,14 @@ func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 		return
 	}
 
-	conn := NewConn(sess, addr, m.picker, m.layout)
+	var pipe Pipeline
+	if m.layout != nil {
+		piece, ok := m.picker.Next()
+		if ok {
+			pipe = newSimplePipeline(m.layout.PieceSize(int64(piece)))
+		}
+	}
+	conn := NewConn(sess, addr, m.picker, m.layout, m.store, pipe)
 	conn.Start(ctx)
 
 	m.mu.Lock()
