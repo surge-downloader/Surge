@@ -553,6 +553,63 @@ func TestWorkerPool_Resume_ClearsPausedFlag(t *testing.T) {
 	}
 }
 
+func TestWorkerPool_Resume_UsesResolvedStatePathAndFilename(t *testing.T) {
+	ch := make(chan any, 10)
+	pool := &WorkerPool{
+		taskChan:   make(chan types.DownloadConfig, 10),
+		progressCh: ch,
+		downloads:  make(map[string]*activeDownload),
+		queued:     make(map[string]types.DownloadConfig),
+	}
+
+	state := types.NewProgressState("test-id", 1000)
+	state.Paused.Store(true)
+	state.SetDestPath("/tmp/final-name.bin")
+	state.SetFilename("final-name.bin")
+
+	pool.mu.Lock()
+	pool.downloads["test-id"] = &activeDownload{
+		config: types.DownloadConfig{
+			ID:       "test-id",
+			URL:      "http://example.com/file.zip",
+			Filename: "stale-name.bin",
+			DestPath: "",
+			State:    state,
+		},
+	}
+	pool.mu.Unlock()
+
+	ok := pool.Resume("test-id")
+	if !ok {
+		t.Fatal("expected resume to succeed")
+	}
+
+	pool.mu.RLock()
+	ad := pool.downloads["test-id"]
+	pool.mu.RUnlock()
+	if ad == nil {
+		t.Fatal("expected active download to remain tracked")
+	}
+	if ad.config.DestPath != "/tmp/final-name.bin" {
+		t.Fatalf("DestPath not propagated from state: got=%q", ad.config.DestPath)
+	}
+	if ad.config.Filename != "final-name.bin" {
+		t.Fatalf("Filename not propagated from state: got=%q", ad.config.Filename)
+	}
+
+	select {
+	case queued := <-pool.taskChan:
+		if queued.DestPath != "/tmp/final-name.bin" {
+			t.Fatalf("queued DestPath mismatch: got=%q", queued.DestPath)
+		}
+		if queued.Filename != "final-name.bin" {
+			t.Fatalf("queued Filename mismatch: got=%q", queued.Filename)
+		}
+	default:
+		t.Fatal("expected resumed config to be queued")
+	}
+}
+
 func TestWorkerPool_Resume_SendsResumedMessage(t *testing.T) {
 	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)

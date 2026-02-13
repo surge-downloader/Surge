@@ -247,6 +247,15 @@ func (p *WorkerPool) Resume(downloadID string) bool {
 	if ad.config.State != nil {
 		ad.config.State.Resume()
 		ad.config.State.SyncSessionStart()
+
+		// Hot-resume needs the resolved path from the first run, otherwise
+		// TUIDownload cannot load persisted state and may start a fresh file.
+		if destPath := ad.config.State.GetDestPath(); destPath != "" {
+			ad.config.DestPath = destPath
+		}
+		if filename := ad.config.State.GetFilename(); filename != "" {
+			ad.config.Filename = filename
+		}
 	}
 
 	// Re-queue the download

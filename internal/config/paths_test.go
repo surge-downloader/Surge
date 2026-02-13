@@ -191,3 +191,89 @@ func TestMigrateOldPaths(t *testing.T) {
 		t.Error("Old logs dir still exists")
 	}
 }
+
+func TestMigrateOldPaths_ConflictingDBKept(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Migration only runs on Linux")
+	}
+
+	tmpDir := t.TempDir()
+	mockConfig := filepath.Join(tmpDir, "config")
+	mockState := filepath.Join(tmpDir, "state")
+	t.Setenv("XDG_CONFIG_HOME", mockConfig)
+	t.Setenv("XDG_STATE_HOME", mockState)
+
+	oldSurgeDir := filepath.Join(mockConfig, "surge")
+	newStateDir := filepath.Join(mockState, "surge")
+	if err := os.MkdirAll(oldSurgeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(newStateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	oldDB := filepath.Join(oldSurgeDir, "surge.db")
+	newDB := filepath.Join(newStateDir, "surge.db")
+	if err := os.WriteFile(oldDB, []byte("old-db"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newDB, []byte("new-db"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MigrateOldPaths(); err != nil {
+		t.Fatalf("Migration failed: %v", err)
+	}
+
+	if _, err := os.Stat(oldDB); err != nil {
+		t.Fatalf("expected old conflicting db to be kept, stat err: %v", err)
+	}
+	got, err := os.ReadFile(newDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "new-db" {
+		t.Fatalf("new db content changed unexpectedly: got=%q", string(got))
+	}
+}
+
+func TestMigrateOldPaths_DuplicateTokenRemoved(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Migration only runs on Linux")
+	}
+
+	tmpDir := t.TempDir()
+	mockConfig := filepath.Join(tmpDir, "config")
+	mockState := filepath.Join(tmpDir, "state")
+	t.Setenv("XDG_CONFIG_HOME", mockConfig)
+	t.Setenv("XDG_STATE_HOME", mockState)
+
+	oldSurgeDir := filepath.Join(mockConfig, "surge")
+	newStateDir := filepath.Join(mockState, "surge")
+	if err := os.MkdirAll(oldSurgeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(newStateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	oldToken := filepath.Join(oldSurgeDir, "token")
+	newToken := filepath.Join(newStateDir, "token")
+	if err := os.WriteFile(oldToken, []byte("same-token"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newToken, []byte("same-token"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MigrateOldPaths(); err != nil {
+		t.Fatalf("Migration failed: %v", err)
+	}
+
+	if _, err := os.Stat(oldToken); err == nil {
+		t.Fatal("expected duplicate old token to be removed")
+	}
+	if _, err := os.Stat(newToken); err != nil {
+		t.Fatalf("expected new token to remain, stat err: %v", err)
+	}
+}

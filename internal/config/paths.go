@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -132,10 +133,22 @@ func MigrateOldPaths() error {
 					fmt.Printf("Migrated %s to %s\n", filename, newPath)
 				}
 			} else {
-				// remove old files
-				if err := os.Remove(oldPath); err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to remove redundant file %s: %v\n", filename, err)
+				// Never delete potentially newer data (e.g. surge.db) when both
+				// locations contain a file. Only remove known duplicates safely.
+				if filename == "token" {
+					equal, cmpErr := filesEqual(oldPath, newPath)
+					if cmpErr != nil {
+						fmt.Fprintf(os.Stderr, "Failed to compare token files (%s vs %s): %v\n", oldPath, newPath, cmpErr)
+						continue
+					}
+					if equal {
+						if err := os.Remove(oldPath); err != nil {
+							fmt.Fprintf(os.Stderr, "Failed to remove redundant file %s: %v\n", filename, err)
+						}
+						continue
+					}
 				}
+				fmt.Fprintf(os.Stderr, "Skipped migrating %s: both old and new files exist (%s, %s)\n", filename, oldPath, newPath)
 			}
 		}
 	}
@@ -183,4 +196,63 @@ func MigrateOldPaths() error {
 	}
 
 	return nil
+}
+
+func filesEqual(pathA, pathB string) (bool, error) {
+	infoA, err := os.Stat(pathA)
+	if err != nil {
+		return false, err
+	}
+	infoB, err := os.Stat(pathB)
+	if err != nil {
+		return false, err
+	}
+	if infoA.Size() != infoB.Size() {
+		return false, nil
+	}
+
+	fA, err := os.Open(pathA)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = fA.Close() }()
+
+	fB, err := os.Open(pathB)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = fB.Close() }()
+
+	const chunk = 32 * 1024
+	bufA := make([]byte, chunk)
+	bufB := make([]byte, chunk)
+
+	for {
+		nA, errA := fA.Read(bufA)
+		nB, errB := fB.Read(bufB)
+
+		if nA != nB {
+			return false, nil
+		}
+		if nA > 0 {
+			for i := 0; i < nA; i++ {
+				if bufA[i] != bufB[i] {
+					return false, nil
+				}
+			}
+		}
+
+		if errA == io.EOF && errB == io.EOF {
+			return true, nil
+		}
+		if errA != nil && errA != io.EOF {
+			return false, errA
+		}
+		if errB != nil && errB != io.EOF {
+			return false, errB
+		}
+		if (errA == io.EOF) != (errB == io.EOF) {
+			return false, nil
+		}
+	}
 }
