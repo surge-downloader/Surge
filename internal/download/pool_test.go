@@ -497,6 +497,39 @@ func TestWorkerPool_Resume_NonExistentDownload(t *testing.T) {
 	}
 }
 
+func TestWorkerPool_Resume_WhilePausing(t *testing.T) {
+	ch := make(chan any, 10)
+	pool := NewWorkerPool(ch, 3)
+
+	state := types.NewProgressState("test-id", 1000)
+	state.Paused.Store(true)
+	state.SetPausing(true)
+
+	pool.mu.Lock()
+	pool.downloads["test-id"] = &activeDownload{
+		config: types.DownloadConfig{
+			ID:    "test-id",
+			State: state,
+		},
+	}
+	pool.mu.Unlock()
+
+	ok := pool.Resume("test-id")
+	if ok {
+		t.Fatal("Expected resume to be rejected while pausing")
+	}
+
+	select {
+	case msg := <-ch:
+		t.Fatalf("Did not expect any resume message while pausing, got %T", msg)
+	default:
+	}
+
+	if !state.IsPaused() {
+		t.Error("Expected state to remain paused while still pausing")
+	}
+}
+
 func TestWorkerPool_Resume_ClearsPausedFlag(t *testing.T) {
 	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)

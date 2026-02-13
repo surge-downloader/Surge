@@ -541,11 +541,13 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		var actualChunkSize int64
 
 		if d.State != nil {
-			totalElapsed = d.State.SavedElapsed + time.Since(startTime)
+			totalElapsed = d.State.GetSavedElapsed() + time.Since(startTime)
 			// Get persisted bitmap data
 			bitmap, _, _, chunkSize, _ := d.State.GetBitmap()
 			chunkBitmap = bitmap
 			actualChunkSize = chunkSize
+			// Keep in-memory state aligned with the persisted snapshot.
+			d.State.FinalizePause(computedDownloaded, totalElapsed)
 		} else {
 			totalElapsed = time.Since(startTime)
 		}

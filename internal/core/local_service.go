@@ -347,19 +347,6 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 					status.Progress = float64(status.Downloaded) * 100 / float64(status.TotalSize)
 				}
 
-				// Calculate speed from progress
-				sessionDownloaded := downloaded - sessionStart
-				if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
-					status.Speed = float64(sessionDownloaded) / sessionElapsed.Seconds() / (1024 * 1024)
-
-					// Calculate ETA (seconds remaining)
-					remaining := status.TotalSize - status.Downloaded
-					if remaining > 0 && status.Speed > 0 {
-						speedBytes := status.Speed * 1024 * 1024
-						status.ETA = int64(float64(remaining) / speedBytes)
-					}
-				}
-
 				// Get active connections count
 				status.Connections = int(connections)
 
@@ -370,6 +357,21 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 					status.Status = "paused"
 				} else if cfg.State.Done.Load() {
 					status.Status = "completed"
+				}
+
+				// Calculate speed from progress only while actively downloading.
+				if status.Status == "downloading" {
+					sessionDownloaded := downloaded - sessionStart
+					if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
+						status.Speed = float64(sessionDownloaded) / sessionElapsed.Seconds() / (1024 * 1024)
+
+						// Calculate ETA (seconds remaining)
+						remaining := status.TotalSize - status.Downloaded
+						if remaining > 0 && status.Speed > 0 {
+							speedBytes := status.Speed * 1024 * 1024
+							status.ETA = int64(float64(remaining) / speedBytes)
+						}
+					}
 				}
 			}
 
@@ -496,6 +498,10 @@ func (s *LocalDownloadService) Resume(id string) error {
 		return fmt.Errorf("worker pool not initialized")
 	}
 
+	if st := s.Pool.GetStatus(id); st != nil && st.Status == "pausing" {
+		return fmt.Errorf("download is still pausing, try again in a moment")
+	}
+
 	// Try pool resume first
 	if s.Pool.Resume(id) {
 		return nil
@@ -593,6 +599,11 @@ func (s *LocalDownloadService) ResumeBatch(ids []string) []error {
 	idMap := make(map[string]int)
 
 	for i, id := range ids {
+		if st := s.Pool.GetStatus(id); st != nil && st.Status == "pausing" {
+			errs[i] = fmt.Errorf("download is still pausing, try again in a moment")
+			continue
+		}
+
 		if s.Pool.Resume(id) {
 			errs[i] = nil // Success
 		} else {

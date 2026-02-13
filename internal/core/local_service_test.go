@@ -259,3 +259,52 @@ func TestLocalDownloadService_BatchProgress(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalDownloadService_ResumeRejectedWhilePausing(t *testing.T) {
+	tempDir := t.TempDir()
+	state.CloseDB()
+	state.Configure(filepath.Join(tempDir, "surge.db"))
+	defer state.CloseDB()
+
+	ch := make(chan interface{}, 100)
+	pool := download.NewWorkerPool(ch, 1)
+	svc := NewLocalDownloadServiceWithInput(pool, ch)
+	defer func() { _ = svc.Shutdown() }()
+
+	server := testutil.NewStreamingMockServerT(t,
+		500*1024*1024,
+		testutil.WithRangeSupport(true),
+		testutil.WithLatency(10*time.Millisecond),
+	)
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	id, err := svc.Add(server.URL(), outputDir, "resume-race.bin", nil, nil)
+	if err != nil {
+		t.Fatalf("failed to add download: %v", err)
+	}
+
+	// Wait until download starts moving.
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		st, _ := svc.GetStatus(id)
+		if st != nil && st.Downloaded > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if err := svc.Pause(id); err != nil {
+		t.Fatalf("pause failed: %v", err)
+	}
+
+	// If pause finalized too fast on this machine, skip this race-specific assertion.
+	st, _ := svc.GetStatus(id)
+	if st == nil || st.Status != "pausing" {
+		t.Skip("download transitioned out of pausing before resume-race assertion")
+	}
+
+	if err := svc.Resume(id); err == nil {
+		t.Fatal("expected resume to fail while download is still pausing")
+	}
+}

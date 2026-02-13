@@ -194,3 +194,20 @@ func TestProgressState_ElapsedCalculation(t *testing.T) {
 		t.Errorf("TotalElapsed = %v, want ~7s", totalElapsed)
 	}
 }
+
+func TestProgressState_GetProgress_PausedFreezesElapsed(t *testing.T) {
+	ps := NewProgressState("test-paused-elapsed", 100)
+	ps.VerifiedProgress.Store(50)
+	ps.SetSavedElapsed(5 * time.Second)
+	ps.StartTime = time.Now().Add(-3 * time.Second)
+	ps.Pause()
+
+	_, _, totalElapsed, sessionElapsed, _, _ := ps.GetProgress()
+
+	if sessionElapsed != 0 {
+		t.Errorf("SessionElapsed = %v, want 0 while paused", sessionElapsed)
+	}
+	if totalElapsed < 5*time.Second || totalElapsed > 6*time.Second {
+		t.Errorf("TotalElapsed = %v, want ~5s while paused", totalElapsed)
+	}
+}
