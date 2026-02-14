@@ -18,6 +18,12 @@ func (m *RootModel) processProgressMsg(msg events.ProgressMsg) {
 			d.Speed = msg.Speed
 			d.Elapsed = msg.Elapsed
 			d.Connections = msg.ActiveConnections
+			d.PeerDiscovered = msg.PeerDiscovered
+			d.PeerPending = msg.PeerPending
+			d.PeerDialAttempts = msg.PeerDialAttempts
+			d.PeerDialSuccess = msg.PeerDialSuccess
+			d.PeerDialFailures = msg.PeerDialFailures
+			d.PeerInbound = msg.PeerInbound
 
 			// Update Chunk State if provided
 			if msg.BitmapWidth > 0 && len(msg.ChunkBitmap) > 0 {

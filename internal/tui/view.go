@@ -866,6 +866,10 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 			connStr = fmt.Sprintf("%d", d.Connections)
 		}
 		leftColItems = append(leftColItems, lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Conns:"), StatsValueStyle.Render(connStr)))
+		if d.PeerDiscovered > 0 || d.PeerPending > 0 || d.PeerDialAttempts > 0 || d.PeerDialSuccess > 0 || d.PeerDialFailures > 0 || d.PeerInbound > 0 {
+			peerStr := fmt.Sprintf("D:%d P:%d Try:%d Ok:%d Fail:%d In:%d", d.PeerDiscovered, d.PeerPending, d.PeerDialAttempts, d.PeerDialSuccess, d.PeerDialFailures, d.PeerInbound)
+			leftColItems = append(leftColItems, lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Peers:"), StatsValueStyle.Render(peerStr)))
+		}
 	}
 	leftCol := lipgloss.JoinVertical(lipgloss.Left, leftColItems...)
 	rightCol := lipgloss.JoinVertical(lipgloss.Left,

@@ -395,6 +395,13 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 		Downloaded: downloaded,
 		Status:     "downloading",
 	}
+	peerStats := state.GetTorrentPeerCounters()
+	status.PeerDiscovered = peerStats.Discovered
+	status.PeerPending = peerStats.Pending
+	status.PeerDialAttempts = peerStats.DialAttempts
+	status.PeerDialSuccess = peerStats.DialSuccess
+	status.PeerDialFailures = peerStats.DialFailures
+	status.PeerInbound = peerStats.InboundAccepted
 
 	if ad.config.State.IsPausing() {
 		status.Status = "pausing"

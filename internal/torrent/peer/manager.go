@@ -21,11 +21,26 @@ type Manager struct {
 	requestPipeline int
 	mu              sync.Mutex
 	active          map[string]*Conn
+	discovered      map[string]bool
 	pending         map[string]bool
 	uploading       map[string]bool
 	unchoked        int
 	listener        net.Listener
 	dialSem         chan struct{}
+	dialAttempts    int
+	dialSuccess     int
+	dialFailures    int
+	inboundAccepted int
+}
+
+type Stats struct {
+	Discovered      int
+	Pending         int
+	Active          int
+	DialAttempts    int
+	DialSuccess     int
+	DialFailures    int
+	InboundAccepted int
 }
 
 func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceLayout, store Storage, maxPeers int, uploadSlots int, requestPipeline int) *Manager {
@@ -55,6 +70,7 @@ func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceL
 		uploadSlots:     uploadSlots,
 		requestPipeline: requestPipeline,
 		active:          make(map[string]*Conn),
+		discovered:      make(map[string]bool),
 		pending:         make(map[string]bool),
 		uploading:       make(map[string]bool),
 		dialSem:         make(chan struct{}, dialWorkers),
@@ -73,10 +89,19 @@ func (m *Manager) Start(ctx context.Context, peers <-chan net.TCPAddr) {
 					m.CloseAll()
 					return
 				}
+				m.markDiscovered(addr.String())
 				m.tryDialAsync(ctx, addr)
 			}
 		}
 	}()
+}
+
+func (m *Manager) markDiscovered(key string) {
+	m.mu.Lock()
+	if key != "" {
+		m.discovered[key] = true
+	}
+	m.mu.Unlock()
 }
 
 func (m *Manager) tryDialAsync(ctx context.Context, addr net.TCPAddr) {
@@ -175,14 +200,21 @@ func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 		m.mu.Unlock()
 		return
 	}
+	m.dialAttempts++
 	m.mu.Unlock()
 
 	dialCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
 	sess, err := Dial(dialCtx, addr, m.infoHash, m.peerID)
 	if err != nil {
+		m.mu.Lock()
+		m.dialFailures++
+		m.mu.Unlock()
 		return
 	}
+	m.mu.Lock()
+	m.dialSuccess++
+	m.mu.Unlock()
 
 	var pipe Pipeline
 	conn := NewConn(sess, addr, m.picker, m.layout, m.store, pipe, m.requestPipeline, func() {
@@ -240,6 +272,7 @@ func (m *Manager) acceptInboundConn(ctx context.Context, raw net.Conn) {
 		_ = raw.Close()
 		return
 	}
+	m.inboundAccepted++
 	m.mu.Unlock()
 
 	var pipe Pipeline
@@ -278,6 +311,20 @@ func (m *Manager) CloseAll() {
 	}
 	clear(m.pending)
 	m.unchoked = 0
+}
+
+func (m *Manager) Stats() Stats {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return Stats{
+		Discovered:      len(m.discovered),
+		Pending:         len(m.pending),
+		Active:          len(m.active),
+		DialAttempts:    m.dialAttempts,
+		DialSuccess:     m.dialSuccess,
+		DialFailures:    m.dialFailures,
+		InboundAccepted: m.inboundAccepted,
+	}
 }
 
 func (m *Manager) Count() int {

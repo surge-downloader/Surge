@@ -192,6 +192,7 @@ func (s *LocalDownloadService) reportProgressLoop() {
 			lastSpeeds[cfg.ID] = currentSpeed
 
 			// Create Message
+			peers := cfg.State.GetTorrentPeerCounters()
 			msg := events.ProgressMsg{
 				DownloadID:        cfg.ID,
 				Downloaded:        downloaded,
@@ -199,6 +200,12 @@ func (s *LocalDownloadService) reportProgressLoop() {
 				Speed:             currentSpeed,
 				Elapsed:           totalElapsed,
 				ActiveConnections: int(connections),
+				PeerDiscovered:    peers.Discovered,
+				PeerPending:       peers.Pending,
+				PeerDialAttempts:  peers.DialAttempts,
+				PeerDialSuccess:   peers.DialSuccess,
+				PeerDialFailures:  peers.DialFailures,
+				PeerInbound:       peers.InboundAccepted,
 			}
 
 			// Add Chunk Bitmap for visualization (if initialized)
@@ -350,6 +357,13 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 
 				// Get active connections count
 				status.Connections = int(connections)
+				peerStats := cfg.State.GetTorrentPeerCounters()
+				status.PeerDiscovered = peerStats.Discovered
+				status.PeerPending = peerStats.Pending
+				status.PeerDialAttempts = peerStats.DialAttempts
+				status.PeerDialSuccess = peerStats.DialSuccess
+				status.PeerDialFailures = peerStats.DialFailures
+				status.PeerInbound = peerStats.InboundAccepted
 
 				// Update status based on state
 				if cfg.State.IsPausing() {

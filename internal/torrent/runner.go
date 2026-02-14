@@ -98,3 +98,10 @@ func (r *Runner) ActivePeerCount() int {
 	}
 	return r.peers.Count()
 }
+
+func (r *Runner) PeerStats() peer.Stats {
+	if r == nil || r.peers == nil {
+		return peer.Stats{}
+	}
+	return r.peers.Stats()
+}

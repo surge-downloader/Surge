@@ -145,6 +145,16 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 		case <-ticker.C:
 			if cfg.State != nil {
 				cfg.State.ActiveWorkers.Store(int32(runner.ActivePeerCount()))
+				ps := runner.PeerStats()
+				cfg.State.SetTorrentPeerCounters(types.TorrentPeerCounters{
+					Discovered:      ps.Discovered,
+					Pending:         ps.Pending,
+					Active:          ps.Active,
+					DialAttempts:    ps.DialAttempts,
+					DialSuccess:     ps.DialSuccess,
+					DialFailures:    ps.DialFailures,
+					InboundAccepted: ps.InboundAccepted,
+				})
 				downloaded := cfg.State.VerifiedProgress.Load()
 				if downloaded >= meta.Info.TotalLength() {
 					persistTorrentEntry(cfg, destPath, name, meta.Info.TotalLength(), start, "completed")

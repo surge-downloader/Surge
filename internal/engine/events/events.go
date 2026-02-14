@@ -16,6 +16,12 @@ type ProgressMsg struct {
 	Speed             float64 // bytes per second
 	Elapsed           time.Duration
 	ActiveConnections int
+	PeerDiscovered    int
+	PeerPending       int
+	PeerDialAttempts  int
+	PeerDialSuccess   int
+	PeerDialFailures  int
+	PeerInbound       int
 	ChunkBitmap       []byte
 	BitmapWidth       int
 	ActualChunkSize   int64

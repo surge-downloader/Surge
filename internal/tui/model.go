@@ -45,15 +45,21 @@ const (
 )
 
 type DownloadModel struct {
-	ID            string
-	URL           string
-	Filename      string
-	FilenameLower string
-	Destination   string // Full path to the destination file
-	Total         int64
-	Downloaded    int64
-	Speed         float64
-	Connections   int
+	ID               string
+	URL              string
+	Filename         string
+	FilenameLower    string
+	Destination      string // Full path to the destination file
+	Total            int64
+	Downloaded       int64
+	Speed            float64
+	Connections      int
+	PeerDiscovered   int
+	PeerPending      int
+	PeerDialAttempts int
+	PeerDialSuccess  int
+	PeerDialFailures int
+	PeerInbound      int
 
 	StartTime time.Time
 	Elapsed   time.Duration
@@ -261,6 +267,13 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 				if s.TotalSize > 0 {
 					dm.progress.SetPercent(s.Progress / 100.0)
 				}
+				dm.Connections = s.Connections
+				dm.PeerDiscovered = s.PeerDiscovered
+				dm.PeerPending = s.PeerPending
+				dm.PeerDialAttempts = s.PeerDialAttempts
+				dm.PeerDialSuccess = s.PeerDialSuccess
+				dm.PeerDialFailures = s.PeerDialFailures
+				dm.PeerInbound = s.PeerInbound
 				if s.AvgSpeed > 0 {
 					dm.Speed = s.AvgSpeed
 				} else if s.Speed > 0 {

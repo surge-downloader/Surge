@@ -35,14 +35,25 @@ type ProgressState struct {
 	ChunkProgress   []int64 // Bytes downloaded per chunk (runtime only, not persisted)
 	ActualChunkSize int64   // Size of each actual chunk in bytes
 	BitmapWidth     int     // Number of chunks tracked
+	TorrentPeers    TorrentPeerCounters
 
-	mu sync.Mutex // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed, Mirrors
+	mu sync.Mutex // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed, Mirrors, TorrentPeers
 }
 
 type MirrorStatus struct {
 	URL    string
 	Active bool
 	Error  bool
+}
+
+type TorrentPeerCounters struct {
+	Discovered      int
+	Pending         int
+	Active          int
+	DialAttempts    int
+	DialSuccess     int
+	DialFailures    int
+	InboundAccepted int
 }
 
 func (ps *ProgressState) SetDestPath(path string) {
@@ -213,6 +224,18 @@ func (ps *ProgressState) GetMirrors() []MirrorStatus {
 	mirrors := make([]MirrorStatus, len(ps.Mirrors))
 	copy(mirrors, ps.Mirrors)
 	return mirrors
+}
+
+func (ps *ProgressState) SetTorrentPeerCounters(c TorrentPeerCounters) {
+	ps.mu.Lock()
+	ps.TorrentPeers = c
+	ps.mu.Unlock()
+}
+
+func (ps *ProgressState) GetTorrentPeerCounters() TorrentPeerCounters {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	return ps.TorrentPeers
 }
 
 // ChunkStatus represents the status of a visualization chunk
