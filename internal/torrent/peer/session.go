@@ -11,6 +11,10 @@ type Session struct {
 	conn net.Conn
 }
 
+func NewFromConn(conn net.Conn) *Session {
+	return &Session{conn: conn}
+}
+
 func Dial(ctx context.Context, addr net.TCPAddr, infoHash [20]byte, peerID [20]byte) (*Session, error) {
 	dialer := net.Dialer{Timeout: 5 * time.Second}
 	conn, err := dialer.DialContext(ctx, "tcp", addr.String())

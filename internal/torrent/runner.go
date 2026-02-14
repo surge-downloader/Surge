@@ -11,11 +11,12 @@ import (
 )
 
 type Runner struct {
-	meta    *TorrentMeta
-	layout  *FileLayout
-	picker  *PiecePicker
-	session *Session
-	peers   *peer.Manager
+	meta       *TorrentMeta
+	layout     *FileLayout
+	picker     *PiecePicker
+	session    *Session
+	peers      *peer.Manager
+	listenAddr *net.TCPAddr
 }
 
 func NewRunner(meta *TorrentMeta, baseDir string, cfg SessionConfig, state *types.ProgressState) (*Runner, error) {
@@ -49,6 +50,12 @@ func NewRunner(meta *TorrentMeta, baseDir string, cfg SessionConfig, state *type
 }
 
 func (r *Runner) Start(ctx context.Context) {
+	if r.peers != nil && r.session != nil {
+		if addr, err := r.peers.StartInbound(ctx, r.session.cfg.ListenAddr); err == nil && addr != nil {
+			r.listenAddr = addr
+			r.session.SetListenPort(addr.Port)
+		}
+	}
 	peerCh := r.session.DiscoverPeers(ctx)
 	r.peers.Start(ctx, peerCh)
 }
@@ -75,8 +82,10 @@ func (r *Runner) Wait(ctx context.Context) error {
 }
 
 func (r *Runner) ListenAddr() *net.TCPAddr {
-	// placeholder for future incoming peers
-	return nil
+	if r == nil || r.listenAddr == nil {
+		return nil
+	}
+	return r.listenAddr
 }
 
 func (r *Runner) ActivePeerCount() int {

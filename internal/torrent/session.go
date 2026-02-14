@@ -3,6 +3,8 @@ package torrent
 import (
 	"context"
 	"net"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/surge-downloader/surge/internal/torrent/dht"
@@ -24,10 +26,12 @@ type PeerSource interface {
 }
 
 type Session struct {
-	infoHash [20]byte
-	trackers []string
-	cfg      SessionConfig
-	peerID   [20]byte
+	infoHash   [20]byte
+	trackers   []string
+	cfg        SessionConfig
+	peerID     [20]byte
+	mu         sync.Mutex
+	listenPort int
 }
 
 func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Session {
@@ -37,12 +41,18 @@ func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Sessio
 	if cfg.TotalLength <= 0 {
 		cfg.TotalLength = 1
 	}
-	return &Session{
+	s := &Session{
 		infoHash: infoHash,
 		trackers: trackers,
 		cfg:      cfg,
 		peerID:   tracker.DefaultPeerID(),
 	}
+	if _, p, err := net.SplitHostPort(cfg.ListenAddr); err == nil {
+		if pi, err := strconv.Atoi(p); err == nil && pi > 0 {
+			s.listenPort = pi
+		}
+	}
+	return s
 }
 
 // DiscoverPeers merges tracker and DHT peer streams.
@@ -62,7 +72,7 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 				resp, err := tracker.Announce(tr, tracker.AnnounceRequest{
 					InfoHash: s.infoHash,
 					PeerID:   s.peerID,
-					Port:     6881,
+					Port:     s.announcePort(),
 					Left:     s.cfg.TotalLength,
 					Event:    startedEvent(started),
 					NumWant:  50,
@@ -120,6 +130,24 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 	}()
 
 	return out
+}
+
+func (s *Session) SetListenPort(port int) {
+	if port <= 0 {
+		return
+	}
+	s.mu.Lock()
+	s.listenPort = port
+	s.mu.Unlock()
+}
+
+func (s *Session) announcePort() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.listenPort > 0 {
+		return s.listenPort
+	}
+	return 6881
 }
 
 func startedEvent(initial bool) string {

@@ -2,6 +2,8 @@ package peer
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -21,6 +23,7 @@ type Manager struct {
 	active          map[string]*Conn
 	uploading       map[string]bool
 	unchoked        int
+	listener        net.Listener
 }
 
 func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceLayout, store Storage, maxPeers int, uploadSlots int, requestPipeline int) *Manager {
@@ -65,6 +68,53 @@ func (m *Manager) Start(ctx context.Context, peers <-chan net.TCPAddr) {
 	}()
 }
 
+func (m *Manager) StartInbound(ctx context.Context, listenAddr string) (*net.TCPAddr, error) {
+	if listenAddr == "" {
+		listenAddr = "0.0.0.0:0"
+	}
+	ln, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	addr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = ln.Close()
+		return nil, fmt.Errorf("unexpected listener addr type %T", ln.Addr())
+	}
+
+	m.mu.Lock()
+	if m.listener != nil {
+		_ = m.listener.Close()
+	}
+	m.listener = ln
+	m.mu.Unlock()
+
+	go func() {
+		<-ctx.Done()
+		_ = ln.Close()
+	}()
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					return
+				}
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				return
+			}
+			go m.acceptInboundConn(ctx, conn)
+		}
+	}()
+
+	return addr, nil
+}
+
 func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 	key := addr.String()
 	m.mu.Lock()
@@ -106,9 +156,72 @@ func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 	}
 }
 
+func (m *Manager) acceptInboundConn(ctx context.Context, raw net.Conn) {
+	_ = raw.SetDeadline(time.Now().Add(8 * time.Second))
+	hs, err := ReadHandshake(raw)
+	if err != nil {
+		_ = raw.Close()
+		return
+	}
+	if hs.InfoHash != m.infoHash {
+		_ = raw.Close()
+		return
+	}
+	if err := WriteHandshake(raw, Handshake{InfoHash: m.infoHash, PeerID: m.peerID}); err != nil {
+		_ = raw.Close()
+		return
+	}
+	_ = raw.SetDeadline(time.Time{})
+
+	addr, ok := raw.RemoteAddr().(*net.TCPAddr)
+	if !ok {
+		_ = raw.Close()
+		return
+	}
+	key := addr.String()
+
+	m.mu.Lock()
+	if len(m.active) >= m.maxPeers {
+		m.mu.Unlock()
+		_ = raw.Close()
+		return
+	}
+	if _, exists := m.active[key]; exists {
+		m.mu.Unlock()
+		_ = raw.Close()
+		return
+	}
+	m.mu.Unlock()
+
+	var pipe Pipeline
+	sess := NewFromConn(raw)
+	conn := NewConn(sess, *addr, m.picker, m.layout, m.store, pipe, m.requestPipeline, func() {
+		m.onClose(key)
+	})
+	conn.Start(ctx)
+
+	allowUpload := false
+	m.mu.Lock()
+	m.active[key] = conn
+	if m.uploadSlots > 0 && m.unchoked < m.uploadSlots {
+		m.unchoked++
+		m.uploading[key] = true
+		allowUpload = true
+	}
+	m.mu.Unlock()
+
+	if allowUpload {
+		conn.SetChoke(false)
+	}
+}
+
 func (m *Manager) CloseAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.listener != nil {
+		_ = m.listener.Close()
+		m.listener = nil
+	}
 	for k, s := range m.active {
 		_ = s.sess.Close()
 		delete(m.active, k)
