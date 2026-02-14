@@ -56,6 +56,9 @@ type LocalDownloadService struct {
 	// Lifecycle
 	ctx    context.Context
 	cancel context.CancelFunc
+	// shutdownOnce guarantees Shutdown is safe to call multiple times.
+	shutdownOnce sync.Once
+	shutdownErr  error
 
 	// Settings Cache
 	settings   *config.Settings
@@ -296,19 +299,23 @@ func (s *LocalDownloadService) Publish(msg interface{}) error {
 
 // Shutdown stops the service.
 func (s *LocalDownloadService) Shutdown() error {
-	if s.reportTicker != nil {
-		s.reportTicker.Stop()
-	}
-	if s.Pool != nil {
-		s.Pool.GracefulShutdown()
-	}
+	s.shutdownOnce.Do(func() {
+		if s.reportTicker != nil {
+			s.reportTicker.Stop()
+		}
+		if s.Pool != nil {
+			s.Pool.GracefulShutdown()
+		}
 
-	// Stop listeners and broadcaster
-	s.cancel()
+		// Stop listeners and broadcaster
+		s.cancel()
 
-	// Close input channel to stop broadcaster
-	close(s.InputCh)
-	return nil
+		// Close input channel to stop broadcaster
+		if s.InputCh != nil {
+			close(s.InputCh)
+		}
+	})
+	return s.shutdownErr
 }
 
 // List returns the status of all active and completed downloads.
@@ -340,19 +347,6 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 					status.Progress = float64(status.Downloaded) * 100 / float64(status.TotalSize)
 				}
 
-				// Calculate speed from progress
-				sessionDownloaded := downloaded - sessionStart
-				if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
-					status.Speed = float64(sessionDownloaded) / sessionElapsed.Seconds() / (1024 * 1024)
-
-					// Calculate ETA (seconds remaining)
-					remaining := status.TotalSize - status.Downloaded
-					if remaining > 0 && status.Speed > 0 {
-						speedBytes := status.Speed * 1024 * 1024
-						status.ETA = int64(float64(remaining) / speedBytes)
-					}
-				}
-
 				// Get active connections count
 				status.Connections = int(connections)
 
@@ -363,6 +357,21 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 					status.Status = "paused"
 				} else if cfg.State.Done.Load() {
 					status.Status = "completed"
+				}
+
+				// Calculate speed from progress only while actively downloading.
+				if status.Status == "downloading" {
+					sessionDownloaded := downloaded - sessionStart
+					if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
+						status.Speed = float64(sessionDownloaded) / sessionElapsed.Seconds() / (1024 * 1024)
+
+						// Calculate ETA (seconds remaining)
+						remaining := status.TotalSize - status.Downloaded
+						if remaining > 0 && status.Speed > 0 {
+							speedBytes := status.Speed * 1024 * 1024
+							status.ETA = int64(float64(remaining) / speedBytes)
+						}
+					}
 				}
 			}
 
@@ -489,6 +498,10 @@ func (s *LocalDownloadService) Resume(id string) error {
 		return fmt.Errorf("worker pool not initialized")
 	}
 
+	if st := s.Pool.GetStatus(id); st != nil && st.Status == "pausing" {
+		return fmt.Errorf("download is still pausing, try again in a moment")
+	}
+
 	// Try pool resume first
 	if s.Pool.Resume(id) {
 		return nil
@@ -523,6 +536,7 @@ func (s *LocalDownloadService) Resume(id string) error {
 	if stateErr == nil && savedState != nil {
 		dmState = types.NewProgressState(id, savedState.TotalSize)
 		dmState.Downloaded.Store(savedState.Downloaded)
+		dmState.VerifiedProgress.Store(savedState.Downloaded)
 		if savedState.Elapsed > 0 {
 			dmState.SetSavedElapsed(time.Duration(savedState.Elapsed))
 		}
@@ -535,10 +549,13 @@ func (s *LocalDownloadService) Resume(id string) error {
 			dmState.SetMirrors(mirrors)
 		}
 		dmState.DestPath = entry.DestPath
+		dmState.SyncSessionStart()
 	} else {
 		dmState = types.NewProgressState(id, entry.TotalSize)
 		dmState.Downloaded.Store(entry.Downloaded)
+		dmState.VerifiedProgress.Store(entry.Downloaded)
 		dmState.DestPath = entry.DestPath
+		dmState.SyncSessionStart()
 		mirrorURLs = []string{entry.URL}
 	}
 
@@ -582,6 +599,11 @@ func (s *LocalDownloadService) ResumeBatch(ids []string) []error {
 	idMap := make(map[string]int)
 
 	for i, id := range ids {
+		if st := s.Pool.GetStatus(id); st != nil && st.Status == "pausing" {
+			errs[i] = fmt.Errorf("download is still pausing, try again in a moment")
+			continue
+		}
+
 		if s.Pool.Resume(id) {
 			errs[i] = nil // Success
 		} else {
@@ -632,6 +654,7 @@ func (s *LocalDownloadService) ResumeBatch(ids []string) []error {
 
 		dmState = types.NewProgressState(id, savedState.TotalSize)
 		dmState.Downloaded.Store(savedState.Downloaded)
+		dmState.VerifiedProgress.Store(savedState.Downloaded)
 		if savedState.Elapsed > 0 {
 			dmState.SetSavedElapsed(time.Duration(savedState.Elapsed))
 		}
@@ -644,6 +667,7 @@ func (s *LocalDownloadService) ResumeBatch(ids []string) []error {
 			dmState.SetMirrors(mirrors)
 		}
 		dmState.DestPath = savedState.DestPath
+		dmState.SyncSessionStart()
 
 		cfg := types.DownloadConfig{
 			URL:        savedState.URL,

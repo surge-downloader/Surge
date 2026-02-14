@@ -81,14 +81,14 @@ func (ps *ProgressState) SetTotalSize(size int64) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	ps.TotalSize = size
-	ps.SessionStartBytes = ps.Downloaded.Load()
+	ps.SessionStartBytes = ps.VerifiedProgress.Load()
 	ps.StartTime = time.Now()
 }
 
 func (ps *ProgressState) SyncSessionStart() {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	ps.SessionStartBytes = ps.Downloaded.Load()
+	ps.SessionStartBytes = ps.VerifiedProgress.Load()
 	ps.StartTime = time.Now()
 }
 
@@ -106,19 +106,30 @@ func (ps *ProgressState) GetError() error {
 func (ps *ProgressState) GetProgress() (downloaded int64, total int64, totalElapsed time.Duration, sessionElapsed time.Duration, connections int32, sessionStartBytes int64) {
 	downloaded = ps.VerifiedProgress.Load()
 	connections = ps.ActiveWorkers.Load()
+	paused := ps.Paused.Load()
 
 	ps.mu.Lock()
 	total = ps.TotalSize
-	sessionElapsed = time.Since(ps.StartTime)
-	if sessionElapsed < 0 {
+	savedElapsed := ps.SavedElapsed
+	startTime := ps.StartTime
+	sessionStartBytes = ps.SessionStartBytes
+	ps.mu.Unlock()
+
+	// Elapsed time excludes paused duration.
+	if paused {
 		sessionElapsed = 0
+		totalElapsed = savedElapsed
+	} else {
+		sessionElapsed = time.Since(startTime)
+		if sessionElapsed < 0 {
+			sessionElapsed = 0
+		}
+		totalElapsed = savedElapsed + sessionElapsed
 	}
-	totalElapsed = ps.SavedElapsed + sessionElapsed
 	if totalElapsed < 0 {
 		totalElapsed = 0
 	}
-	sessionStartBytes = ps.SessionStartBytes
-	ps.mu.Unlock()
+
 	return
 }
 
@@ -157,6 +168,31 @@ func (ps *ProgressState) SetSavedElapsed(d time.Duration) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	ps.SavedElapsed = d
+}
+
+func (ps *ProgressState) GetSavedElapsed() time.Duration {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	return ps.SavedElapsed
+}
+
+// FinalizePause stores a stable pause snapshot so UI/API values don't drift while paused.
+func (ps *ProgressState) FinalizePause(downloaded int64, elapsed time.Duration) {
+	if downloaded < 0 {
+		downloaded = 0
+	}
+	if elapsed < 0 {
+		elapsed = 0
+	}
+
+	ps.Downloaded.Store(downloaded)
+	ps.VerifiedProgress.Store(downloaded)
+
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	ps.SavedElapsed = elapsed
+	ps.SessionStartBytes = downloaded
+	ps.StartTime = time.Now()
 }
 
 func (ps *ProgressState) SetMirrors(mirrors []MirrorStatus) {

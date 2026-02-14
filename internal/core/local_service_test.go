@@ -13,6 +13,7 @@ import (
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/testutil"
 )
 
 func TestLocalDownloadService_Delete_DBOnlyBroadcastsRemoved(t *testing.T) {
@@ -84,6 +85,116 @@ func TestLocalDownloadService_Delete_DBOnlyBroadcastsRemoved(t *testing.T) {
 	}
 }
 
+func TestLocalDownloadService_Shutdown_Idempotent(t *testing.T) {
+	ch := make(chan interface{}, 1)
+	svc := NewLocalDownloadServiceWithInput(nil, ch)
+
+	if err := svc.Shutdown(); err != nil {
+		t.Fatalf("first shutdown failed: %v", err)
+	}
+
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Fatal("expected input channel to be closed after shutdown")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for input channel to close")
+	}
+
+	if err := svc.Shutdown(); err != nil {
+		t.Fatalf("second shutdown failed: %v", err)
+	}
+}
+
+func TestLocalDownloadService_Shutdown_PersistsPausedState(t *testing.T) {
+	tempDir := t.TempDir()
+	state.CloseDB()
+	state.Configure(filepath.Join(tempDir, "surge.db"))
+	defer state.CloseDB()
+
+	ch := make(chan interface{}, 100)
+	pool := download.NewWorkerPool(ch, 1)
+	svc := NewLocalDownloadServiceWithInput(pool, ch)
+	defer func() { _ = svc.Shutdown() }()
+
+	server := testutil.NewStreamingMockServerT(t,
+		500*1024*1024,
+		testutil.WithRangeSupport(true),
+		testutil.WithLatency(10*time.Millisecond),
+	)
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	const filename = "persist.bin"
+	id, err := svc.Add(server.URL(), outputDir, filename, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to add download: %v", err)
+	}
+
+	deadline := time.Now().Add(8 * time.Second)
+	progressed := false
+	for time.Now().Before(deadline) {
+		st, err := svc.GetStatus(id)
+		if err == nil && st != nil && st.Downloaded > 0 {
+			progressed = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !progressed {
+		t.Fatal("download did not make progress before shutdown")
+	}
+
+	if err := svc.Shutdown(); err != nil {
+		t.Fatalf("shutdown failed: %v", err)
+	}
+
+	entry, err := state.GetDownload(id)
+	if err != nil {
+		t.Fatalf("failed to fetch persisted download: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("expected persisted download entry after shutdown")
+	}
+	if entry.Status != "paused" {
+		t.Fatalf("status = %q, want paused", entry.Status)
+	}
+	if entry.Downloaded == 0 {
+		t.Fatal("expected persisted paused download to have non-zero progress")
+	}
+
+	statuses, err := svc.List()
+	if err != nil {
+		t.Fatalf("failed to list downloads after shutdown: %v", err)
+	}
+	foundInList := false
+	for _, st := range statuses {
+		if st.ID == id {
+			foundInList = true
+			if st.Status != "paused" && st.Status != "pausing" {
+				t.Fatalf("list status = %q, want paused/pausing", st.Status)
+			}
+			break
+		}
+	}
+	if !foundInList {
+		t.Fatal("expected paused download to remain visible in list after shutdown")
+	}
+
+	destPath := filepath.Join(outputDir, filename)
+	saved, err := state.LoadState(server.URL(), destPath)
+	if err != nil {
+		t.Fatalf("failed to load saved state: %v", err)
+	}
+	if saved.ID != id {
+		t.Fatalf("saved state id = %q, want %q", saved.ID, id)
+	}
+	if len(saved.Tasks) == 0 {
+		t.Fatal("expected saved state to include remaining tasks")
+	}
+}
+
 func TestLocalDownloadService_BatchProgress(t *testing.T) {
 	// Start a local test server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -146,5 +257,54 @@ func TestLocalDownloadService_BatchProgress(t *testing.T) {
 		case <-deadline:
 			t.Fatal("timeout waiting for BatchProgressMsg")
 		}
+	}
+}
+
+func TestLocalDownloadService_ResumeRejectedWhilePausing(t *testing.T) {
+	tempDir := t.TempDir()
+	state.CloseDB()
+	state.Configure(filepath.Join(tempDir, "surge.db"))
+	defer state.CloseDB()
+
+	ch := make(chan interface{}, 100)
+	pool := download.NewWorkerPool(ch, 1)
+	svc := NewLocalDownloadServiceWithInput(pool, ch)
+	defer func() { _ = svc.Shutdown() }()
+
+	server := testutil.NewStreamingMockServerT(t,
+		500*1024*1024,
+		testutil.WithRangeSupport(true),
+		testutil.WithLatency(10*time.Millisecond),
+	)
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	id, err := svc.Add(server.URL(), outputDir, "resume-race.bin", nil, nil)
+	if err != nil {
+		t.Fatalf("failed to add download: %v", err)
+	}
+
+	// Wait until download starts moving.
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		st, _ := svc.GetStatus(id)
+		if st != nil && st.Downloaded > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if err := svc.Pause(id); err != nil {
+		t.Fatalf("pause failed: %v", err)
+	}
+
+	// If pause finalized too fast on this machine, skip this race-specific assertion.
+	st, _ := svc.GetStatus(id)
+	if st == nil || st.Status != "pausing" {
+		t.Skip("download transitioned out of pausing before resume-race assertion")
+	}
+
+	if err := svc.Resume(id); err == nil {
+		t.Fatal("expected resume to fail while download is still pausing")
 	}
 }

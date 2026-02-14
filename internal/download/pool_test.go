@@ -121,6 +121,7 @@ func TestWorkerPool_Pause_ActiveDownload(t *testing.T) {
 	// Create a progress state
 	state := types.NewProgressState("test-id", 1000)
 	state.Downloaded.Store(500)
+	state.VerifiedProgress.Store(700)
 
 	// Manually add an active download
 	pool.mu.Lock()
@@ -149,8 +150,8 @@ func TestWorkerPool_Pause_ActiveDownload(t *testing.T) {
 		if pausedMsg.DownloadID != "test-id" {
 			t.Errorf("Expected download ID 'test-id', got '%s'", pausedMsg.DownloadID)
 		}
-		if pausedMsg.Downloaded != 500 {
-			t.Errorf("Expected Downloaded=500, got %d", pausedMsg.Downloaded)
+		if pausedMsg.Downloaded != 700 {
+			t.Errorf("Expected Downloaded=700, got %d", pausedMsg.Downloaded)
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Error("Expected pause message to be sent")
@@ -496,6 +497,39 @@ func TestWorkerPool_Resume_NonExistentDownload(t *testing.T) {
 	}
 }
 
+func TestWorkerPool_Resume_WhilePausing(t *testing.T) {
+	ch := make(chan any, 10)
+	pool := NewWorkerPool(ch, 3)
+
+	state := types.NewProgressState("test-id", 1000)
+	state.Paused.Store(true)
+	state.SetPausing(true)
+
+	pool.mu.Lock()
+	pool.downloads["test-id"] = &activeDownload{
+		config: types.DownloadConfig{
+			ID:    "test-id",
+			State: state,
+		},
+	}
+	pool.mu.Unlock()
+
+	ok := pool.Resume("test-id")
+	if ok {
+		t.Fatal("Expected resume to be rejected while pausing")
+	}
+
+	select {
+	case msg := <-ch:
+		t.Fatalf("Did not expect any resume message while pausing, got %T", msg)
+	default:
+	}
+
+	if !state.IsPaused() {
+		t.Error("Expected state to remain paused while still pausing")
+	}
+}
+
 func TestWorkerPool_Resume_ClearsPausedFlag(t *testing.T) {
 	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
@@ -516,6 +550,63 @@ func TestWorkerPool_Resume_ClearsPausedFlag(t *testing.T) {
 
 	if state.IsPaused() {
 		t.Error("Expected paused flag to be cleared after resume")
+	}
+}
+
+func TestWorkerPool_Resume_UsesResolvedStatePathAndFilename(t *testing.T) {
+	ch := make(chan any, 10)
+	pool := &WorkerPool{
+		taskChan:   make(chan types.DownloadConfig, 10),
+		progressCh: ch,
+		downloads:  make(map[string]*activeDownload),
+		queued:     make(map[string]types.DownloadConfig),
+	}
+
+	state := types.NewProgressState("test-id", 1000)
+	state.Paused.Store(true)
+	state.SetDestPath("/tmp/final-name.bin")
+	state.SetFilename("final-name.bin")
+
+	pool.mu.Lock()
+	pool.downloads["test-id"] = &activeDownload{
+		config: types.DownloadConfig{
+			ID:       "test-id",
+			URL:      "http://example.com/file.zip",
+			Filename: "stale-name.bin",
+			DestPath: "",
+			State:    state,
+		},
+	}
+	pool.mu.Unlock()
+
+	ok := pool.Resume("test-id")
+	if !ok {
+		t.Fatal("expected resume to succeed")
+	}
+
+	pool.mu.RLock()
+	ad := pool.downloads["test-id"]
+	pool.mu.RUnlock()
+	if ad == nil {
+		t.Fatal("expected active download to remain tracked")
+	}
+	if ad.config.DestPath != "/tmp/final-name.bin" {
+		t.Fatalf("DestPath not propagated from state: got=%q", ad.config.DestPath)
+	}
+	if ad.config.Filename != "final-name.bin" {
+		t.Fatalf("Filename not propagated from state: got=%q", ad.config.Filename)
+	}
+
+	select {
+	case queued := <-pool.taskChan:
+		if queued.DestPath != "/tmp/final-name.bin" {
+			t.Fatalf("queued DestPath mismatch: got=%q", queued.DestPath)
+		}
+		if queued.Filename != "final-name.bin" {
+			t.Fatalf("queued Filename mismatch: got=%q", queued.Filename)
+		}
+	default:
+		t.Fatal("expected resumed config to be queued")
 	}
 }
 

@@ -1,15 +1,15 @@
 <div align="center">
 
 # Surge
+**Blazing fast TUI download manager built in Go for power users**
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/surge-downloader/surge)
 [![Release](https://img.shields.io/github/v/release/surge-downloader/surge?style=flat-square&color=blue)](https://github.com/surge-downloader/surge/releases)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/surge-downloader/surge?style=flat-square&color=cyan)](go.mod)
 [![License](https://img.shields.io/badge/License-MIT-grey.svg?style=flat-square)](LICENSE)
-[![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/SurgeDownloader?style=social)](https://x.com/SurgeDownloader)
+[![BuyMeACoffee](https://raw.githubusercontent.com/pachadotdev/buymeacoffee-badges/main/bmc-violet.svg)](https://www.buymeacoffee.com/surge.downloader)
 [![Stars](https://img.shields.io/github/stars/surge-downloader/surge?style=social)](https://github.com/surge-downloader/surge/stargazers)
 
-**Blazing fast, open-source TUI download manager built in Go.**
 
 [Installation](#installation) • [Usage](#usage) • [Benchmarks](#benchmarks) • [Extension](#browser-extension)
 
@@ -23,6 +23,8 @@ Surge is designed for power users who prefer a keyboard-driven workflow. It feat
 
 ![Surge Demo](assets/demo.gif)
 
+---
+
 ## Why use Surge?
 
 Most browsers open a single connection for a download. Surge opens multiple (up to 32), splits the file, and downloads chunks in parallel. But we take it a step further:
@@ -34,6 +36,22 @@ Most browsers open a single connection for a download. Surge opens multiple (up 
 - **Beautiful TUI:** Built with Bubble Tea & Lipgloss, it looks good while it works.
 
 For a deep dive into how we make downloads faster (like work stealing and slow worker handling), check out our **[Optimization Guide](docs/OPTIMIZATIONS.md)**.
+
+---
+
+## Support the Project
+
+We are just two CS students building Surge in between classes and exams. We love working on this, but maintaining a project of this scale takes time and resources. That's where you come in!
+
+If Surge saves you time, consider supporting the development! Donations go directly toward:
+
+- **Publishing the Extension:** Paying the Chrome Web Store fee so you can finally install the extension officially (no more sideloading!).
+- **Dev Tools:** Licenses for tools like **GoReleaser Pro** to help us automate our builds.
+- **Debrid Integration:** Covering subscription costs so we can test and build native Debrid support.
+
+[**☕ Buy us a coffee**](https://www.buymeacoffee.com/surge.downloader)
+
+*Totally optional—your stars, issues, and contributions already mean the world to us! :)*
 
 ---
 
@@ -128,7 +146,7 @@ We tested Surge against standard tools. Because of our connection optimization l
 
 > _Test details: 1GB file, Windows 11, Ryzen 5 5600X, 360 Mbps Network. Results averaged over 5 runs._
 
-We would love to see you benchmark surge on your system!
+We would love to see you benchmark Surge on your system!
 
 ---
 

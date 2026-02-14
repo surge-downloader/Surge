@@ -378,6 +378,9 @@ func TestSingleDownloader_Download_ProgressTracking(t *testing.T) {
 	if finalProgress != fileSize {
 		t.Errorf("Final progress %d != file size %d", finalProgress, fileSize)
 	}
+	if state.VerifiedProgress.Load() != fileSize {
+		t.Errorf("Verified progress %d != file size %d", state.VerifiedProgress.Load(), fileSize)
+	}
 }
 
 func TestSingleDownloader_Download_ServerError(t *testing.T) {
