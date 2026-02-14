@@ -62,6 +62,8 @@ func (r *Runner) Start(ctx context.Context) {
 	}
 	peerCh := r.session.DiscoverPeers(ctx)
 	r.peers.Start(ctx, peerCh)
+	r.session.SetLowPeerMode(true)
+	go r.monitorPeerPressure(ctx)
 }
 
 func flattenTrackers(meta *TorrentMeta) []string {
@@ -104,4 +106,21 @@ func (r *Runner) PeerStats() peer.Stats {
 		return peer.Stats{}
 	}
 	return r.peers.Stats()
+}
+
+func (r *Runner) monitorPeerPressure(ctx context.Context) {
+	if r == nil || r.peers == nil || r.session == nil {
+		return
+	}
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			active := r.peers.Count()
+			r.session.SetLowPeerMode(active < 8)
+		}
+	}
 }

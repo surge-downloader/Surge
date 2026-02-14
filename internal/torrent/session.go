@@ -8,6 +8,7 @@ import (
 
 	"github.com/surge-downloader/surge/internal/torrent/dht"
 	"github.com/surge-downloader/surge/internal/torrent/tracker"
+	"github.com/surge-downloader/surge/internal/utils"
 )
 
 type SessionConfig struct {
@@ -25,12 +26,13 @@ type PeerSource interface {
 }
 
 type Session struct {
-	infoHash   [20]byte
-	trackers   []string
-	cfg        SessionConfig
-	peerID     [20]byte
-	mu         sync.Mutex
-	listenPort int
+	infoHash    [20]byte
+	trackers    []string
+	cfg         SessionConfig
+	peerID      [20]byte
+	mu          sync.Mutex
+	listenPort  int
+	lowPeerMode bool
 }
 
 func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Session {
@@ -56,12 +58,26 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 	go func() {
 		defer close(out)
 		seen := make(map[string]bool)
-		tick := time.NewTicker(s.cfg.TrackerInterval)
-		defer tick.Stop()
+		type trackerRetryState struct {
+			next    time.Time
+			backoff time.Duration
+		}
+		retry := make(map[string]trackerRetryState)
 		started := true
 
 		for {
+			now := time.Now()
+			minNext := now.Add(s.currentTrackerInterval())
+
 			for _, tr := range s.trackers {
+				st := retry[tr]
+				if !st.next.IsZero() && now.Before(st.next) {
+					if st.next.Before(minNext) {
+						minNext = st.next
+					}
+					continue
+				}
+
 				resp, err := tracker.Announce(tr, tracker.AnnounceRequest{
 					InfoHash: s.infoHash,
 					PeerID:   s.peerID,
@@ -70,27 +86,71 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 					Event:    startedEvent(started),
 					NumWant:  50,
 				})
-				if err == nil && resp != nil {
-					for _, p := range resp.Peers {
-						addr := net.TCPAddr{IP: p.IP, Port: p.Port}
-						key := addr.String()
-						if seen[key] {
-							continue
+				if err != nil {
+					if st.backoff <= 0 {
+						st.backoff = 2 * time.Second
+					} else {
+						st.backoff *= 2
+						if st.backoff > 2*time.Minute {
+							st.backoff = 2 * time.Minute
 						}
-						seen[key] = true
-						select {
-						case out <- addr:
-						case <-ctx.Done():
-							return
-						}
+					}
+					st.next = now.Add(st.backoff)
+					retry[tr] = st
+					if st.next.Before(minNext) {
+						minNext = st.next
+					}
+					utils.Debug("Tracker announce failed (%s): %v (next retry in %s)", tr, err, st.backoff)
+					continue
+				}
+
+				st.backoff = 0
+				next := s.currentTrackerInterval()
+				if resp != nil && resp.Interval > 0 {
+					trackerNext := time.Duration(resp.Interval) * time.Second
+					if trackerNext < 5*time.Second {
+						trackerNext = 5 * time.Second
+					}
+					if trackerNext > 10*time.Minute {
+						trackerNext = 10 * time.Minute
+					}
+					if !s.isLowPeerMode() {
+						next = trackerNext
+					}
+				}
+				st.next = now.Add(next)
+				retry[tr] = st
+				if st.next.Before(minNext) {
+					minNext = st.next
+				}
+
+				if resp == nil {
+					continue
+				}
+				for _, p := range resp.Peers {
+					addr := net.TCPAddr{IP: p.IP, Port: p.Port}
+					key := addr.String()
+					if seen[key] {
+						continue
+					}
+					seen[key] = true
+					select {
+					case out <- addr:
+					case <-ctx.Done():
+						return
 					}
 				}
 			}
+
 			started = false
+			wait := time.Until(minNext)
+			if wait < 1*time.Second {
+				wait = 1 * time.Second
+			}
 			select {
 			case <-ctx.Done():
 				return
-			case <-tick.C:
+			case <-time.After(wait):
 			}
 		}
 	}()
@@ -141,6 +201,36 @@ func (s *Session) announcePort() int {
 		return s.listenPort
 	}
 	return 6881
+}
+
+func (s *Session) SetLowPeerMode(low bool) {
+	s.mu.Lock()
+	s.lowPeerMode = low
+	s.mu.Unlock()
+}
+
+func (s *Session) isLowPeerMode() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lowPeerMode
+}
+
+func (s *Session) currentTrackerInterval() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	base := s.cfg.TrackerInterval
+	if base <= 0 {
+		base = 10 * time.Second
+	}
+	if s.lowPeerMode {
+		if base > 15*time.Second {
+			return 15 * time.Second
+		}
+		if base < 5*time.Second {
+			return 5 * time.Second
+		}
+	}
+	return base
 }
 
 func startedEvent(initial bool) string {
