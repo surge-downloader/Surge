@@ -17,6 +17,7 @@ type Conn struct {
 	pl       PieceLayout
 	store    Storage
 	pipeline Pipeline
+	piece    int
 }
 
 type Picker interface {
@@ -41,6 +42,7 @@ func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, sto
 		pl:       pl,
 		store:    store,
 		pipeline: pipeline,
+		piece:    -1,
 	}
 }
 
@@ -85,6 +87,7 @@ func (c *Conn) handle(msg *Message) {
 			c.pipeline.OnBlock(int64(begin), int64(len(block)))
 			if c.pipeline.Completed() {
 				_, _ = c.store.VerifyPiece(int64(index))
+				c.advancePiece()
 			}
 		}
 	default:
@@ -98,19 +101,34 @@ func (c *Conn) maybeRequest() {
 	if c.choked {
 		return
 	}
-	piece, ok := c.picker.Next()
-	if !ok {
-		return
-	}
 	if c.pipeline == nil {
-		return
+		if !c.advancePiece() {
+			return
+		}
 	}
 	begin, length, ok := c.pipeline.NextRequest()
 	if !ok {
 		return
 	}
-	msg := MakeRequest(uint32(piece), uint32(begin), uint32(length))
+	msg := MakeRequest(uint32(c.piece), uint32(begin), uint32(length))
 	_ = WriteMessage(c.sess.conn, msg)
+}
+
+func (c *Conn) advancePiece() bool {
+	if c.picker == nil || c.pl == nil {
+		return false
+	}
+	piece, ok := c.picker.Next()
+	if !ok {
+		return false
+	}
+	size := c.pl.PieceSize(int64(piece))
+	if size <= 0 {
+		return false
+	}
+	c.piece = piece
+	c.pipeline = newSimplePipeline(size)
+	return true
 }
 
 func (c *Conn) IsChoked() bool {

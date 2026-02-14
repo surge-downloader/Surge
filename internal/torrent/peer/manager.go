@@ -73,12 +73,6 @@ func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 	}
 
 	var pipe Pipeline
-	if m.layout != nil {
-		piece, ok := m.picker.Next()
-		if ok {
-			pipe = newSimplePipeline(m.layout.PieceSize(int64(piece)))
-		}
-	}
 	conn := NewConn(sess, addr, m.picker, m.layout, m.store, pipe)
 	conn.Start(ctx)
 
