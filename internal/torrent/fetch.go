@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 func FetchTorrent(ctx context.Context, url string, headers map[string]string) (*TorrentMeta, error) {
+	client := &http.Client{
+		Timeout: 20 * time.Second,
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -16,7 +20,7 @@ func FetchTorrent(ctx context.Context, url string, headers map[string]string) (*
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

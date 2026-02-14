@@ -293,7 +293,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.UpdateListItems()
-		m.addLogEntry(LogStyleStarted.Render("⬇ Started: " + msg.Filename))
+		if !found {
+			m.addLogEntry(LogStyleStarted.Render("⬇ Started: " + msg.Filename))
+		}
 		return m, tea.Batch(cmds...)
 
 	case events.ProgressMsg:

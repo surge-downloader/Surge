@@ -3,7 +3,9 @@ package download
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"time"
 
@@ -33,6 +35,36 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	defer cancel()
 	if cfg.State != nil {
 		cfg.State.SetCancelFunc(cancel)
+	}
+
+	placeholderName := cfg.Filename
+	if placeholderName == "" {
+		if parsed, err := url.Parse(cfg.URL); err == nil && parsed.Path != "" {
+			base := path.Base(parsed.Path)
+			if base != "" && base != "/" && base != "." {
+				placeholderName = base
+			}
+		}
+		if placeholderName == "" {
+			placeholderName = "torrent"
+		}
+	}
+	placeholderDest := filepath.Join(outPath, placeholderName)
+	cfg.Filename = placeholderName
+	cfg.DestPath = placeholderDest
+	if cfg.State != nil {
+		cfg.State.SetFilename(placeholderName)
+		cfg.State.SetDestPath(placeholderDest)
+	}
+	if cfg.ProgressCh != nil {
+		cfg.ProgressCh <- events.DownloadStartedMsg{
+			DownloadID: cfg.ID,
+			URL:        cfg.URL,
+			Filename:   placeholderName,
+			Total:      0,
+			DestPath:   placeholderDest,
+			State:      cfg.State,
+		}
 	}
 
 	var meta *torrent.TorrentMeta
