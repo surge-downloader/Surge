@@ -207,6 +207,7 @@ func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile
 		if exitCheckInterval <= 0 {
 			exitCheckInterval = 2 * time.Second
 		}
+		exitWhenDoneCh := make(chan struct{}, 1)
 		go func() {
 			ticker := time.NewTicker(exitCheckInterval)
 			defer ticker.Stop()
