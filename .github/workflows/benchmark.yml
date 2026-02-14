@@ -90,8 +90,8 @@ jobs:
           BENCH_WARMUPS: ${{ github.event.inputs.warmups || '1' }}
           BENCH_CONNECTIONS: ${{ github.event.inputs.connections || '16' }}
           BENCH_SURGE_EXIT_CHECK_INTERVAL: ${{ github.event.inputs.surge_exit_check_interval || '100ms' }}
-          # Default to 'y' for PRs to see regressions, 'n' for simple pushes
-          BASELINE_COMPARE: ${{ github.event.inputs.baseline || 'y' }}
+          # Default to 'n' unless explicitly requested (avoids mixed-binary flag incompatibility on PRs)
+          BASELINE_COMPARE: ${{ github.event.inputs.baseline || 'n' }}
           BENCH_SPEEDTEST: ${{ github.event.inputs.speedtest || 'n' }}
 
         run: |
