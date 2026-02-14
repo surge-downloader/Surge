@@ -25,6 +25,10 @@ on:
         description: 'Shared connection count for Surge and aria2'
         required: true
         default: '16'
+      surge_exit_check_interval:
+        description: 'Surge --exit-check-interval for benchmark runs (e.g. 100ms)'
+        required: true
+        default: '100ms'
       baseline:
         description: 'Compare against baseline (main branch)? [y/n]'
         required: true
@@ -85,6 +89,7 @@ jobs:
           BENCH_ITERATIONS: ${{ github.event.inputs.iterations || '10' }}
           BENCH_WARMUPS: ${{ github.event.inputs.warmups || '1' }}
           BENCH_CONNECTIONS: ${{ github.event.inputs.connections || '16' }}
+          BENCH_SURGE_EXIT_CHECK_INTERVAL: ${{ github.event.inputs.surge_exit_check_interval || '100ms' }}
           # Default to 'y' for PRs to see regressions, 'n' for simple pushes
           BASELINE_COMPARE: ${{ github.event.inputs.baseline || 'y' }}
           BENCH_SPEEDTEST: ${{ github.event.inputs.speedtest || 'n' }}
@@ -99,6 +104,7 @@ jobs:
             "--warmups" "$BENCH_WARMUPS"
             "--connections" "$BENCH_CONNECTIONS"
             "--surge-timing" "external"
+            "--surge-exit-check-interval" "$BENCH_SURGE_EXIT_CHECK_INTERVAL"
             "--isolate-surge"
             "--aria2-no-conf"
             "--strict-size"
@@ -131,6 +137,7 @@ jobs:
           echo "**Iterations:** $BENCH_ITERATIONS" >> $GITHUB_STEP_SUMMARY
           echo "**Warmups:** $BENCH_WARMUPS" >> $GITHUB_STEP_SUMMARY
           echo "**Connections:** $BENCH_CONNECTIONS" >> $GITHUB_STEP_SUMMARY
+          echo "**Surge exit-check-interval:** $BENCH_SURGE_EXIT_CHECK_INTERVAL" >> $GITHUB_STEP_SUMMARY
           echo "**Tools:** surge, aria2" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           cat benchmark_output.txt >> $GITHUB_STEP_SUMMARY

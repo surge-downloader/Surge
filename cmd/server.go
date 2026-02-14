@@ -46,11 +46,12 @@ var serverStartCmd = &cobra.Command{
 			}
 		}()
 
-		portFlag, _ := cmd.Flags().GetInt("port")
-		batchFile, _ := cmd.Flags().GetString("batch")
-		outputDir, _ := cmd.Flags().GetString("output")
-		exitWhenDone, _ := cmd.Flags().GetBool("exit-when-done")
-		noResume, _ := cmd.Flags().GetBool("no-resume")
+	portFlag, _ := cmd.Flags().GetInt("port")
+	batchFile, _ := cmd.Flags().GetString("batch")
+	outputDir, _ := cmd.Flags().GetString("output")
+	exitWhenDone, _ := cmd.Flags().GetBool("exit-when-done")
+	exitCheckInterval, _ := cmd.Flags().GetDuration("exit-check-interval")
+	noResume, _ := cmd.Flags().GetBool("no-resume")
 
 		// Save current PID to file
 		savePID()
@@ -60,7 +61,7 @@ var serverStartCmd = &cobra.Command{
 		// Determine Port
 		// Logic moved to startServerLogic, or we need to pass flags.
 		// Use startServerLogic
-		startServerLogic(cmd, args, portFlag, batchFile, outputDir, exitWhenDone, noResume)
+	startServerLogic(cmd, args, portFlag, batchFile, outputDir, exitWhenDone, exitCheckInterval, noResume)
 	},
 }
 
@@ -131,6 +132,7 @@ func init() {
 	serverStartCmd.Flags().IntP("port", "p", 0, "Port to listen on")
 	serverStartCmd.Flags().StringP("output", "o", "", "Default output directory")
 	serverStartCmd.Flags().Bool("exit-when-done", false, "Exit when all downloads complete")
+	serverStartCmd.Flags().Duration("exit-check-interval", 2*time.Second, "Polling interval used with --exit-when-done (e.g. 100ms, 1s)")
 	serverStartCmd.Flags().Bool("no-resume", false, "Do not auto-resume paused downloads on startup")
 }
 
@@ -159,7 +161,7 @@ func readPID() int {
 	return pid
 }
 
-func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile string, outputDir string, exitWhenDone bool, noResume bool) {
+func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile string, outputDir string, exitWhenDone bool, exitCheckInterval time.Duration, noResume bool) {
 	port, listener, err := bindServerListener(portFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -174,24 +176,20 @@ func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile
 
 	go startHTTPServer(listener, port, outputDir, GlobalService)
 
-	// Queue initial downloads
-	go func() {
-		var urls []string
-		urls = append(urls, args...)
-
-		if batchFile != "" {
-			fileUrls, err := readURLsFromFile(batchFile)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error reading batch file: %v\n", err)
-			} else {
-				urls = append(urls, fileUrls...)
-			}
+	// Queue initial downloads synchronously so --exit-when-done checks don't race startup.
+	var urls []string
+	urls = append(urls, args...)
+	if batchFile != "" {
+		fileUrls, err := readURLsFromFile(batchFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading batch file: %v\n", err)
+		} else {
+			urls = append(urls, fileUrls...)
 		}
-
-		if len(urls) > 0 {
-			processDownloads(urls, outputDir, 0)
-		}
-	}()
+	}
+	if len(urls) > 0 {
+		processDownloads(urls, outputDir, 0)
+	}
 
 	fmt.Printf("Surge %s running in server mode.\n", Version)
 	host := getServerBindHost()
@@ -206,9 +204,11 @@ func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile
 	}
 
 	if exitWhenDone {
+		if exitCheckInterval <= 0 {
+			exitCheckInterval = 2 * time.Second
+		}
 		go func() {
-			time.Sleep(2 * time.Second)
-			ticker := time.NewTicker(2 * time.Second)
+			ticker := time.NewTicker(exitCheckInterval)
 			defer ticker.Stop()
 			for range ticker.C {
 				if atomic.LoadInt32(&activeDownloads) == 0 {

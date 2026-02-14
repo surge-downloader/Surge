@@ -167,6 +167,16 @@ def make_isolated_surge_env(base_dir: Path, max_connections: int, min_chunk_size
     settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     return env
 
+
+def supports_server_flag(executable: Path, flag_name: str) -> bool:
+    """Check whether a Surge binary supports a given `server start` flag."""
+    if not executable.exists():
+        return False
+    success, out = run_command([str(executable), "server", "start", "--help"], timeout=20)
+    # Some CLIs can return non-zero for help output; inspect text either way.
+    _ = success
+    return flag_name in out
+
 def print_box_header(title: str, width: int = 60):
     print(f"┌{'─' * (width - 2)}┐")
     print(f"│ {title:<{width - 4}} │")
@@ -204,6 +214,7 @@ def benchmark_surge(
     label: str = "surge",
     timing_mode: str = "external",
     env: Optional[dict] = None,
+    exit_check_interval: Optional[str] = None,
 ) -> BenchmarkResult:
     """Specialized benchmark for Surge to parse internal duration."""
     if not executable.exists():
@@ -215,11 +226,15 @@ def benchmark_surge(
             cleanup_file(f)
 
     start = time.perf_counter()
-    success, output = run_command([
+    cmd = [
         str(executable), "server", "start", url,
         "--output", str(output_dir),
         "--exit-when-done"
-    ], timeout=3600, env=env)
+    ]
+    if exit_check_interval:
+        cmd.extend(["--exit-check-interval", exit_check_interval])
+
+    success, output = run_command(cmd, timeout=3600, env=env)
     elapsed = time.perf_counter() - start
     
     # Parse internal time if available
@@ -441,6 +456,8 @@ def main():
     parser.add_argument("--surge-min-chunk-mb", type=int, default=2, help="Surge min chunk size in MB for isolated config")
     parser.add_argument("--surge-timing", choices=["external", "internal"], default="external",
                         help="How to time Surge runs (external wall-clock is fair/default)")
+    parser.add_argument("--surge-exit-check-interval", default=None,
+                        help="Pass-through for 'surge server start --exit-check-interval' (e.g. 100ms).")
     parser.add_argument("--isolate-surge", action=argparse.BooleanOptionalAction, default=True,
                         help="Use isolated Surge config during benchmark")
     parser.add_argument("--aria2-connections", type=int, help="Override aria2 split/connection count")
@@ -517,6 +534,17 @@ def main():
         ("curl", "curl", cmd_curl)
     ]
 
+    effective_exit_check_interval = args.surge_exit_check_interval
+    if effective_exit_check_interval:
+        bins_to_check = []
+        if surge_bin:
+            bins_to_check.append(surge_bin)
+        if args.surge_baseline and args.surge_baseline.exists():
+            bins_to_check.append(args.surge_baseline.resolve())
+        if bins_to_check and not all(supports_server_flag(b, "--exit-check-interval") for b in bins_to_check):
+            print("  [!] --surge-exit-check-interval not supported by all Surge binaries; disabling for fairness.")
+            effective_exit_check_interval = None
+
     # Mirror Suite Logic
     if args.mirror_suite:
         urls = [
@@ -525,11 +553,11 @@ def main():
             "https://mirror.bharatdatacenter.com/ubuntu-releases/noble/ubuntu-24.04.3-desktop-amd64.iso",
         ]
         if surge_bin:
-            tasks.append(("Surge (3 Mirrors)", lambda: benchmark_surge(surge_bin, ",".join(urls), download_dir, "Surge (3 Mirrors)", args.surge_timing, surge_env)))
-            tasks.append(("Surge (2 Mirrors)", lambda: benchmark_surge(surge_bin, ",".join(urls[:2]), download_dir, "Surge (2 Mirrors)", args.surge_timing, surge_env)))
-            tasks.append(("Surge (1 Mirror)", lambda: benchmark_surge(surge_bin, urls[0], download_dir, "Surge (1 Mirror)", args.surge_timing, surge_env)))
+            tasks.append(("Surge (3 Mirrors)", lambda: benchmark_surge(surge_bin, ",".join(urls), download_dir, "Surge (3 Mirrors)", args.surge_timing, surge_env, effective_exit_check_interval)))
+            tasks.append(("Surge (2 Mirrors)", lambda: benchmark_surge(surge_bin, ",".join(urls[:2]), download_dir, "Surge (2 Mirrors)", args.surge_timing, surge_env, effective_exit_check_interval)))
+            tasks.append(("Surge (1 Mirror)", lambda: benchmark_surge(surge_bin, urls[0], download_dir, "Surge (1 Mirror)", args.surge_timing, surge_env, effective_exit_check_interval)))
         if args.surge_baseline and args.surge_baseline.exists():
-             tasks.append(("Surge Baseline", lambda: benchmark_surge(args.surge_baseline, urls[0], download_dir, "Surge Baseline", args.surge_timing, surge_env)))
+             tasks.append(("Surge Baseline", lambda: benchmark_surge(args.surge_baseline, urls[0], download_dir, "Surge Baseline", args.surge_timing, surge_env, effective_exit_check_interval)))
 
     else:
         # Standard Single URL Logic
@@ -538,10 +566,10 @@ def main():
 
         # Surge tasks
         if (run_all or args.surge) and surge_bin:
-            tasks.append(("Surge (Current)", lambda: benchmark_surge(surge_bin, args.url, download_dir, "Surge (Current)", args.surge_timing, surge_env)))
+            tasks.append(("Surge (Current)", lambda: benchmark_surge(surge_bin, args.url, download_dir, "Surge (Current)", args.surge_timing, surge_env, effective_exit_check_interval)))
         
         if args.surge_baseline and args.surge_baseline.exists():
-            tasks.append(("Surge (Baseline)", lambda: benchmark_surge(args.surge_baseline, args.url, download_dir, "Surge (Baseline)", args.surge_timing, surge_env)))
+            tasks.append(("Surge (Baseline)", lambda: benchmark_surge(args.surge_baseline, args.url, download_dir, "Surge (Baseline)", args.surge_timing, surge_env, effective_exit_check_interval)))
 
         # Standard tool tasks
         for name, bin_name, func in standard_tools:
