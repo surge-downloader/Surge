@@ -21,9 +21,11 @@ type Manager struct {
 	requestPipeline int
 	mu              sync.Mutex
 	active          map[string]*Conn
+	pending         map[string]bool
 	uploading       map[string]bool
 	unchoked        int
 	listener        net.Listener
+	dialSem         chan struct{}
 }
 
 func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceLayout, store Storage, maxPeers int, uploadSlots int, requestPipeline int) *Manager {
@@ -36,6 +38,13 @@ func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceL
 	if requestPipeline <= 0 {
 		requestPipeline = 8
 	}
+	dialWorkers := maxPeers
+	if dialWorkers < 8 {
+		dialWorkers = 8
+	}
+	if dialWorkers > 64 {
+		dialWorkers = 64
+	}
 	return &Manager{
 		infoHash:        infoHash,
 		peerID:          peerID,
@@ -46,7 +55,9 @@ func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceL
 		uploadSlots:     uploadSlots,
 		requestPipeline: requestPipeline,
 		active:          make(map[string]*Conn),
+		pending:         make(map[string]bool),
 		uploading:       make(map[string]bool),
+		dialSem:         make(chan struct{}, dialWorkers),
 	}
 }
 
@@ -62,9 +73,47 @@ func (m *Manager) Start(ctx context.Context, peers <-chan net.TCPAddr) {
 					m.CloseAll()
 					return
 				}
-				m.tryDial(ctx, addr)
+				m.tryDialAsync(ctx, addr)
 			}
 		}
+	}()
+}
+
+func (m *Manager) tryDialAsync(ctx context.Context, addr net.TCPAddr) {
+	key := addr.String()
+	m.mu.Lock()
+	if len(m.active) >= m.maxPeers {
+		m.mu.Unlock()
+		return
+	}
+	if _, ok := m.active[key]; ok {
+		m.mu.Unlock()
+		return
+	}
+	if m.pending[key] {
+		m.mu.Unlock()
+		return
+	}
+	m.pending[key] = true
+	m.mu.Unlock()
+
+	select {
+	case m.dialSem <- struct{}{}:
+	case <-ctx.Done():
+		m.mu.Lock()
+		delete(m.pending, key)
+		m.mu.Unlock()
+		return
+	}
+
+	go func() {
+		defer func() {
+			<-m.dialSem
+			m.mu.Lock()
+			delete(m.pending, key)
+			m.mu.Unlock()
+		}()
+		m.tryDial(ctx, addr)
 	}()
 }
 
@@ -227,6 +276,7 @@ func (m *Manager) CloseAll() {
 		delete(m.active, k)
 		delete(m.uploading, k)
 	}
+	clear(m.pending)
 	m.unchoked = 0
 }
 
