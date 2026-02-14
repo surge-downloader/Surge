@@ -21,6 +21,7 @@ const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const serverStatus = document.getElementById('serverStatus');
 const interceptToggle = document.getElementById('interceptToggle');
+const destinationToggle = document.getElementById('destinationToggle');
 const authTokenInput = document.getElementById('authToken');
 const saveTokenButton = document.getElementById('saveToken');
 const authStatus = document.getElementById('authStatus');
@@ -42,6 +43,31 @@ function normalizeToken(token) {
   return token.replace(/\s+/g, '');
 }
 
+function shouldRetryValidation(result) {
+  if (!result || result.ok) return false;
+  if (result.error === 'no_server') return true;
+  if (typeof result.error === 'string') {
+    const msg = result.error.toLowerCase();
+    return msg.includes('timeout') || msg.includes('network') || msg.includes('failed to fetch');
+  }
+  return false;
+}
+
+async function validateAuthWithRetry(maxAttempts = 3) {
+  let lastResult = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    lastResult = await apiCall('validateAuth');
+    if (lastResult && lastResult.ok) {
+      return lastResult;
+    }
+    if (!shouldRetryValidation(lastResult) || attempt === maxAttempts) {
+      return lastResult;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return lastResult;
+}
+
 async function apiCall(action, params = {}) {
   if (isExtensionContext) {
     // Extension mode: use background script
@@ -60,6 +86,10 @@ async function apiCall(action, params = {}) {
         }
         case 'getStatus':
           return { enabled: true }; // Always enabled in standalone
+        case 'getBrowserDestinationMode':
+          return { enabled: false };
+        case 'setBrowserDestinationMode':
+          return { success: true };
         case 'pauseDownload': {
           const response = await fetch(`${SURGE_API_BASE}/pause?id=${params.id}`, { method: 'POST' });
           return { success: response.ok };
@@ -436,6 +466,18 @@ interceptToggle.addEventListener('change', async () => {
   }
 });
 
+if (destinationToggle) {
+  destinationToggle.addEventListener('change', async () => {
+    if (isExtensionContext) {
+      try {
+        await apiCall('setBrowserDestinationMode', { enabled: destinationToggle.checked });
+      } catch (error) {
+        console.error('[Surge Popup] Destination mode toggle error:', error);
+      }
+    }
+  });
+}
+
 // Clear auth status on edit
 if (authTokenInput && authStatus) {
   authTokenInput.addEventListener('input', () => {
@@ -564,6 +606,18 @@ async function init() {
     console.error('[Surge Popup] Error getting status:', error);
   }
 
+  // Get destination mode state
+  if (destinationToggle) {
+    try {
+      const response = await apiCall('getBrowserDestinationMode');
+      if (response) {
+        destinationToggle.checked = response.enabled === true;
+      }
+    } catch (error) {
+      console.error('[Surge Popup] Error getting destination mode:', error);
+    }
+  }
+
   // Check for pending duplicates
   if (isExtensionContext) {
     try {
@@ -647,7 +701,7 @@ if (isExtensionContext && saveTokenButton && authTokenInput) {
     saveTokenButton.disabled = true;
     try {
       await apiCall('setAuthToken', { token });
-      const result = await apiCall('validateAuth');
+      const result = await validateAuthWithRetry(3);
       if (result && result.ok) {
         if (authStatus) {
           authStatus.className = 'auth-status ok';
@@ -659,7 +713,11 @@ if (isExtensionContext && saveTokenButton && authTokenInput) {
       } else {
         if (authStatus) {
           authStatus.className = 'auth-status err';
-          authStatus.textContent = 'Token invalid';
+          if (result && result.error === 'no_server') {
+            authStatus.textContent = 'Connect to Surge first';
+          } else {
+            authStatus.textContent = 'Token invalid';
+          }
         }
         await apiCall('setAuthVerified', { verified: false });
         setAuthValid(false);

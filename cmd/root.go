@@ -632,23 +632,46 @@ func authMiddleware(token string, next http.Handler) http.Handler {
 }
 
 func ensureAuthToken() string {
-	tokenFile := filepath.Join(config.GetStateDir(), "token")
-	data, err := os.ReadFile(tokenFile)
-	if err == nil {
-		return strings.TrimSpace(string(data))
+	stateTokenFile := filepath.Join(config.GetStateDir(), "token")
+	if token, err := readTokenFromFile(stateTokenFile); err == nil {
+		return token
 	}
 
-	// Generate new token
+	legacyTokenFile := filepath.Join(config.GetSurgeDir(), "token")
+	if token, err := readTokenFromFile(legacyTokenFile); err == nil {
+		if err := writeTokenToFile(stateTokenFile, token); err != nil {
+			utils.Debug("Failed to mirror legacy token to state dir: %v", err)
+		}
+		return token
+	}
+
 	token := uuid.New().String()
-
-	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(tokenFile), 0755); err != nil {
-		utils.Debug("Failed to create token directory: %v", err)
-	}
-	if err := os.WriteFile(tokenFile, []byte(token), 0600); err != nil {
-		utils.Debug("Failed to write token file: %v", err)
+	if err := writeTokenToFile(stateTokenFile, token); err != nil {
+		utils.Debug("Failed to write token file in state dir: %v", err)
+		if errLegacy := writeTokenToFile(legacyTokenFile, token); errLegacy != nil {
+			utils.Debug("Failed to write token file in legacy config dir: %v", errLegacy)
+		}
 	}
 	return token
+}
+
+func readTokenFromFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	token := strings.TrimSpace(string(data))
+	if token == "" {
+		return "", fmt.Errorf("empty token file: %s", path)
+	}
+	return token, nil
+}
+
+func writeTokenToFile(path string, token string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(token), 0o600)
 }
 
 // DownloadRequest represents a download request from the browser extension

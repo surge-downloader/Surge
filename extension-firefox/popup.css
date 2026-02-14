@@ -594,6 +594,10 @@ body {
   color: var(--accent-primary);
 }
 
+.toggle-row + .toggle-row {
+  margin-top: 8px;
+}
+
 .toggle {
   position: relative;
   width: 44px;
