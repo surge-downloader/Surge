@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
@@ -26,20 +25,15 @@ var pauseCmd = &cobra.Command{
 		}
 
 		port := readActivePort()
+		if port == 0 {
+			fmt.Fprintln(os.Stderr, "Error: Surge server is not running.")
+			fmt.Fprintln(os.Stderr, "Start it with 'surge server start' and try again.")
+			os.Exit(1)
+		}
 
 		if all {
-			// Pause all downloads
-			if port > 0 {
-				// TODO: Implement /pause-all endpoint or iterate
-				fmt.Println("Pausing all downloads is not yet implemented for running server.")
-			} else {
-				// Offline mode: update DB directly
-				if err := state.PauseAllDownloads(); err != nil {
-					fmt.Fprintf(os.Stderr, "Error pausing downloads: %v\n", err)
-					os.Exit(1)
-				}
-				fmt.Println("All downloads paused.")
-			}
+			// TODO: Implement /pause-all endpoint or iterate
+			fmt.Println("Pausing all downloads is not yet implemented for running server.")
 			return
 		}
 
@@ -52,32 +46,23 @@ var pauseCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		if port > 0 {
-			// Send to running server
-			resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/pause?id=%s", port, id), "application/json", nil)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error connecting to server: %v\n", err)
-				os.Exit(1)
-			}
-			defer func() {
-				if err := resp.Body.Close(); err != nil {
-					utils.Debug("Error closing response body: %v", err)
-				}
-			}()
-
-			if resp.StatusCode != http.StatusOK {
-				fmt.Fprintf(os.Stderr, "Error: server returned %s\n", resp.Status)
-				os.Exit(1)
-			}
-			fmt.Printf("Paused download %s\n", id[:8])
-		} else {
-			// Offline mode: update DB directly
-			if err := state.UpdateStatus(id, "paused"); err != nil {
-				fmt.Fprintf(os.Stderr, "Error pausing download: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("Paused download %s (offline mode)\n", id[:8])
+		// Send to running server
+		resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/pause?id=%s", port, id), "application/json", nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error connecting to server: %v\n", err)
+			os.Exit(1)
 		}
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				utils.Debug("Error closing response body: %v", err)
+			}
+		}()
+
+		if resp.StatusCode != http.StatusOK {
+			fmt.Fprintf(os.Stderr, "Error: server returned %s\n", resp.Status)
+			os.Exit(1)
+		}
+		fmt.Printf("Paused download %s\n", id[:8])
 	},
 }
 
