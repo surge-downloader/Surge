@@ -848,6 +848,41 @@ func TestValidateIntegrity_DeletesOrphanSurgeFile(t *testing.T) {
 	}
 }
 
+func TestValidateIntegrity_PreservesNonCompletedSurgeFile(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	defer CloseDB()
+
+	destPath := filepath.Join(tmpDir, "active.bin")
+	surgePath := destPath + types.IncompleteSuffix
+
+	if err := AddToMasterList(types.DownloadEntry{
+		ID:       "integrity-active",
+		URL:      "https://example.com/active.bin",
+		DestPath: destPath,
+		Filename: "active.bin",
+		Status:   "downloading",
+	}); err != nil {
+		t.Fatalf("AddToMasterList failed: %v", err)
+	}
+
+	if err := os.WriteFile(surgePath, []byte("partial"), 0o644); err != nil {
+		t.Fatalf("failed to create active .surge file: %v", err)
+	}
+
+	removed, err := ValidateIntegrity()
+	if err != nil {
+		t.Fatalf("ValidateIntegrity failed: %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("ValidateIntegrity removed = %d, want 0", removed)
+	}
+
+	if _, err := os.Stat(surgePath); err != nil {
+		t.Fatalf("active .surge file should be preserved, stat err: %v", err)
+	}
+}
+
 // =============================================================================
 // AvgSpeed Persistence Tests
 // =============================================================================

@@ -26,13 +26,6 @@ var rmCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		port := readActivePort()
-		if port == 0 {
-			fmt.Fprintln(os.Stderr, "Error: Surge should be running.")
-			fmt.Fprintln(os.Stderr, "Start it with 'surge server start' and try again.")
-			os.Exit(1)
-		}
-
 		if clean {
 			// Remove completed downloads from DB
 			count, err := state.RemoveCompletedDownloads()
@@ -42,6 +35,13 @@ var rmCmd = &cobra.Command{
 			}
 			fmt.Printf("Removed %d completed downloads.\n", count)
 			return
+		}
+
+		port := readActivePort()
+		if port == 0 {
+			fmt.Fprintln(os.Stderr, "Error: Surge should be running.")
+			fmt.Fprintln(os.Stderr, "Start it with 'surge server start' and try again.")
+			os.Exit(1)
 		}
 
 		id := args[0]

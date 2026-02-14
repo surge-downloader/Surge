@@ -724,8 +724,9 @@ func ValidateIntegrity() (int, error) {
 
 	// Also include directories of all known downloads so we can clean orphan .surge
 	// files that no longer have corresponding DB entries.
+	// Keep .surge files for any non-completed entry (e.g. downloading after crash).
 	allRows, err := db.Query(`
-		SELECT dest_path
+		SELECT dest_path, status
 		FROM downloads
 		WHERE dest_path IS NOT NULL AND dest_path != ''
 	`)
@@ -734,11 +735,15 @@ func ValidateIntegrity() (int, error) {
 	}
 	for allRows.Next() {
 		var dest string
-		if err := allRows.Scan(&dest); err != nil {
+		var status string
+		if err := allRows.Scan(&dest, &status); err != nil {
 			_ = allRows.Close()
 			return 0, fmt.Errorf("failed to scan download path: %w", err)
 		}
 		candidateDirs[filepath.Dir(dest)] = struct{}{}
+		if status != "completed" {
+			expectedSurgePaths[dest+types.IncompleteSuffix] = struct{}{}
+		}
 	}
 	if err := allRows.Err(); err != nil {
 		_ = allRows.Close()
