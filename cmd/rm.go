@@ -28,7 +28,7 @@ var rmCmd = &cobra.Command{
 
 		port := readActivePort()
 		if port == 0 {
-			fmt.Fprintln(os.Stderr, "Error: Surge server is not running.")
+			fmt.Fprintln(os.Stderr, "Error: Surge should be running.")
 			fmt.Fprintln(os.Stderr, "Start it with 'surge server start' and try again.")
 			os.Exit(1)
 		}
