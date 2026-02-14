@@ -8,17 +8,25 @@ import (
 
 // ProgressStore wraps FileLayout to update progress state on verified pieces.
 type ProgressStore struct {
-	layout   *FileLayout
-	state    *types.ProgressState
-	mu       sync.Mutex
-	verified map[int64]bool
+	layout     *FileLayout
+	state      *types.ProgressState
+	mu         sync.Mutex
+	verified   map[int64]bool
+	bitfield   []byte
+	onVerified func(int)
 }
 
 func NewProgressStore(layout *FileLayout, state *types.ProgressState) *ProgressStore {
+	totalPieces := int((layout.TotalLength + layout.Info.PieceLength - 1) / layout.Info.PieceLength)
+	var bitfield []byte
+	if totalPieces > 0 {
+		bitfield = make([]byte, (totalPieces+7)/8)
+	}
 	return &ProgressStore{
 		layout:   layout,
 		state:    state,
 		verified: make(map[int64]bool),
+		bitfield: bitfield,
 	}
 }
 
@@ -37,26 +45,62 @@ func (s *ProgressStore) WriteAtPiece(pieceIndex int64, pieceOffset int64, data [
 	return nil
 }
 
+func (s *ProgressStore) ReadAtPiece(pieceIndex int64, pieceOffset int64, length int64) ([]byte, error) {
+	return s.layout.ReadAtPiece(pieceIndex, pieceOffset, length)
+}
+
 func (s *ProgressStore) VerifyPiece(pieceIndex int64) (bool, error) {
 	ok, err := s.layout.VerifyPiece(pieceIndex)
 	if !ok || err != nil {
 		return ok, err
-	}
-	if s.state == nil {
-		return ok, nil
 	}
 	pieceSize := s.layout.PieceSize(pieceIndex)
 	if pieceSize <= 0 {
 		return ok, nil
 	}
 
+	var notify func(int)
 	s.mu.Lock()
 	if s.verified[pieceIndex] {
 		s.mu.Unlock()
 		return ok, nil
 	}
 	s.verified[pieceIndex] = true
+	if len(s.bitfield) > 0 {
+		byteIndex := int(pieceIndex / 8)
+		if byteIndex >= 0 && byteIndex < len(s.bitfield) {
+			bit := uint(7 - (pieceIndex % 8))
+			s.bitfield[byteIndex] |= 1 << bit
+		}
+	}
+	notify = s.onVerified
 	s.mu.Unlock()
 
+	if notify != nil {
+		notify(int(pieceIndex))
+	}
 	return ok, nil
+}
+
+func (s *ProgressStore) HasPiece(pieceIndex int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.verified[pieceIndex]
+}
+
+func (s *ProgressStore) Bitfield() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.bitfield) == 0 {
+		return nil
+	}
+	out := make([]byte, len(s.bitfield))
+	copy(out, s.bitfield)
+	return out
+}
+
+func (s *ProgressStore) SetOnVerified(fn func(int)) {
+	s.mu.Lock()
+	s.onVerified = fn
+	s.mu.Unlock()
 }

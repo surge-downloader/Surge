@@ -27,10 +27,17 @@ func NewRunner(meta *TorrentMeta, baseDir string, cfg SessionConfig, state *type
 	picker := NewPiecePicker(totalPieces)
 	sess := NewSession(meta.InfoHash, flattenTrackers(meta), cfg)
 	store := peer.Storage(layout)
+	var progressStore *ProgressStore
 	if state != nil {
-		store = NewProgressStore(layout, state)
+		progressStore = NewProgressStore(layout, state)
+		store = progressStore
 	}
-	mgr := peer.NewManager(meta.InfoHash, sess.peerID, picker, layout, store, cfg.MaxPeers)
+	mgr := peer.NewManager(meta.InfoHash, sess.peerID, picker, layout, store, cfg.MaxPeers, cfg.UploadSlots)
+	if progressStore != nil {
+		progressStore.SetOnVerified(func(pieceIndex int) {
+			mgr.BroadcastHave(pieceIndex)
+		})
+	}
 
 	return &Runner{
 		meta:    meta,

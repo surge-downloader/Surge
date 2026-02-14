@@ -71,6 +71,22 @@ func MakeRequest(index, begin, length uint32) *Message {
 	return &Message{ID: MsgRequest, Payload: buf.Bytes()}
 }
 
+func MakeHave(index uint32) *Message {
+	buf := bytes.NewBuffer(nil)
+	_ = binary.Write(buf, binary.BigEndian, index)
+	return &Message{ID: MsgHave, Payload: buf.Bytes()}
+}
+
+func MakePiece(index, begin uint32, block []byte) *Message {
+	buf := bytes.NewBuffer(nil)
+	_ = binary.Write(buf, binary.BigEndian, index)
+	_ = binary.Write(buf, binary.BigEndian, begin)
+	if len(block) > 0 {
+		_, _ = buf.Write(block)
+	}
+	return &Message{ID: MsgPiece, Payload: buf.Bytes()}
+}
+
 func ParsePiece(msg *Message) (index, begin uint32, block []byte, err error) {
 	if msg.ID != MsgPiece || len(msg.Payload) < 8 {
 		return 0, 0, nil, fmt.Errorf("invalid piece msg")
@@ -79,4 +95,14 @@ func ParsePiece(msg *Message) (index, begin uint32, block []byte, err error) {
 	begin = binary.BigEndian.Uint32(msg.Payload[4:8])
 	block = msg.Payload[8:]
 	return index, begin, block, nil
+}
+
+func ParseRequest(msg *Message) (index, begin, length uint32, err error) {
+	if msg.ID != MsgRequest || len(msg.Payload) < 12 {
+		return 0, 0, 0, fmt.Errorf("invalid request msg")
+	}
+	index = binary.BigEndian.Uint32(msg.Payload[0:4])
+	begin = binary.BigEndian.Uint32(msg.Payload[4:8])
+	length = binary.BigEndian.Uint32(msg.Payload[8:12])
+	return index, begin, length, nil
 }

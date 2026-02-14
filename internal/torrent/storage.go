@@ -124,6 +124,40 @@ func (fl *FileLayout) WriteAtPiece(pieceIndex int64, pieceOffset int64, data []b
 	return fl.writeAt(globalOffset, data)
 }
 
+func (fl *FileLayout) ReadAtPiece(pieceIndex int64, pieceOffset int64, length int64) ([]byte, error) {
+	if pieceOffset < 0 || length < 0 {
+		return nil, fmt.Errorf("invalid piece range")
+	}
+	pieceSize := fl.PieceSize(pieceIndex)
+	if pieceSize == 0 {
+		return nil, fmt.Errorf("invalid piece index")
+	}
+	if pieceOffset+length > pieceSize {
+		return nil, fmt.Errorf("read exceeds piece size")
+	}
+	if length == 0 {
+		return nil, nil
+	}
+	buf := make([]byte, length)
+	globalOffset := pieceIndex*fl.Info.PieceLength + pieceOffset
+	if err := fl.readAt(globalOffset, buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+func (fl *FileLayout) HasPiece(pieceIndex int64) bool {
+	// Without resume data, we don't know which pieces are complete.
+	if fl.PieceSize(pieceIndex) == 0 {
+		return false
+	}
+	return false
+}
+
+func (fl *FileLayout) Bitfield() []byte {
+	return nil
+}
+
 func (fl *FileLayout) writeAt(globalOffset int64, data []byte) error {
 	if fl.Info.Length > 0 {
 		path, err := fl.FilePath(0)

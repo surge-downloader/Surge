@@ -8,16 +8,19 @@ import (
 )
 
 type Conn struct {
-	sess     *Session
-	addr     net.TCPAddr
-	mu       sync.Mutex
-	choked   bool
-	bitfield []byte
-	picker   Picker
-	pl       PieceLayout
-	store    Storage
-	pipeline Pipeline
-	piece    int
+	sess      *Session
+	addr      net.TCPAddr
+	mu        sync.Mutex
+	writeMu   sync.Mutex
+	choked    bool
+	amChoking bool
+	bitfield  []byte
+	picker    Picker
+	pl        PieceLayout
+	store     Storage
+	pipeline  Pipeline
+	piece     int
+	onClose   func()
 }
 
 type Picker interface {
@@ -30,28 +33,44 @@ type PieceLayout interface {
 
 type Storage interface {
 	WriteAtPiece(pieceIndex int64, pieceOffset int64, data []byte) error
+	ReadAtPiece(pieceIndex int64, pieceOffset int64, length int64) ([]byte, error)
 	VerifyPiece(pieceIndex int64) (bool, error)
+	HasPiece(pieceIndex int64) bool
+	Bitfield() []byte
 }
 
-func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, store Storage, pipeline Pipeline) *Conn {
+func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, store Storage, pipeline Pipeline, onClose func()) *Conn {
 	return &Conn{
-		sess:     sess,
-		addr:     addr,
-		choked:   true,
-		picker:   picker,
-		pl:       pl,
-		store:    store,
-		pipeline: pipeline,
-		piece:    -1,
+		sess:      sess,
+		addr:      addr,
+		choked:    true,
+		amChoking: true,
+		picker:    picker,
+		pl:        pl,
+		store:     store,
+		pipeline:  pipeline,
+		piece:     -1,
+		onClose:   onClose,
 	}
 }
 
 func (c *Conn) Start(ctx context.Context) {
 	go c.readLoop(ctx)
-	_ = WriteMessage(c.sess.conn, &Message{ID: MsgInterested})
+	if c.store != nil {
+		if bf := c.store.Bitfield(); len(bf) > 0 {
+			c.write(&Message{ID: MsgBitfield, Payload: bf})
+		}
+	}
+	c.write(&Message{ID: MsgInterested})
 }
 
 func (c *Conn) readLoop(ctx context.Context) {
+	defer func() {
+		_ = c.sess.Close()
+		if c.onClose != nil {
+			c.onClose()
+		}
+	}()
 	for {
 		select {
 		case <-ctx.Done():
@@ -63,14 +82,25 @@ func (c *Conn) readLoop(ctx context.Context) {
 		if err != nil {
 			return
 		}
-		if c.handle(msg) {
+		shouldRequest, uploadReq := c.handle(msg)
+		if uploadReq != nil {
+			go c.sendPiece(*uploadReq)
+		}
+		if shouldRequest {
 			c.maybeRequest()
 		}
 	}
 }
 
-func (c *Conn) handle(msg *Message) bool {
+type uploadRequest struct {
+	index  uint32
+	begin  uint32
+	length uint32
+}
+
+func (c *Conn) handle(msg *Message) (bool, *uploadRequest) {
 	requestNext := false
+	var uploadReq *uploadRequest
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	switch msg.ID {
@@ -83,6 +113,18 @@ func (c *Conn) handle(msg *Message) bool {
 		c.bitfield = append([]byte(nil), msg.Payload...)
 	case MsgHave:
 		// TODO: update bitfield (needs piece index parse)
+	case MsgRequest:
+		index, begin, length, err := ParseRequest(msg)
+		if err != nil {
+			break
+		}
+		if c.amChoking || c.store == nil {
+			break
+		}
+		if !c.store.HasPiece(int64(index)) {
+			break
+		}
+		uploadReq = &uploadRequest{index: index, begin: begin, length: length}
 	case MsgPiece:
 		index, begin, block, err := ParsePiece(msg)
 		if err == nil && c.store != nil && c.pipeline != nil {
@@ -96,7 +138,7 @@ func (c *Conn) handle(msg *Message) bool {
 		}
 	default:
 	}
-	return requestNext
+	return requestNext, uploadReq
 }
 
 func (c *Conn) maybeRequest() {
@@ -116,7 +158,7 @@ func (c *Conn) maybeRequest() {
 		return
 	}
 	msg := MakeRequest(uint32(c.piece), uint32(begin), uint32(length))
-	_ = WriteMessage(c.sess.conn, msg)
+	c.write(msg)
 }
 
 func (c *Conn) advancePiece() bool {
@@ -134,6 +176,50 @@ func (c *Conn) advancePiece() bool {
 	c.piece = piece
 	c.pipeline = newSimplePipeline(size)
 	return true
+}
+
+func (c *Conn) SetChoke(choke bool) {
+	c.mu.Lock()
+	if c.amChoking == choke {
+		c.mu.Unlock()
+		return
+	}
+	c.amChoking = choke
+	c.mu.Unlock()
+
+	if choke {
+		c.write(&Message{ID: MsgChoke})
+		return
+	}
+	c.write(&Message{ID: MsgUnchoke})
+}
+
+func (c *Conn) SendHave(pieceIndex int) {
+	if pieceIndex < 0 {
+		return
+	}
+	c.write(MakeHave(uint32(pieceIndex)))
+}
+
+func (c *Conn) sendPiece(req uploadRequest) {
+	c.mu.Lock()
+	if c.amChoking || c.store == nil {
+		c.mu.Unlock()
+		return
+	}
+	c.mu.Unlock()
+
+	data, err := c.store.ReadAtPiece(int64(req.index), int64(req.begin), int64(req.length))
+	if err != nil || len(data) == 0 {
+		return
+	}
+	c.write(MakePiece(req.index, req.begin, data))
+}
+
+func (c *Conn) write(msg *Message) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	_ = WriteMessage(c.sess.conn, msg)
 }
 
 func (c *Conn) IsChoked() bool {
