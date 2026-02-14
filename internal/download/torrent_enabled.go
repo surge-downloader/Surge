@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -131,9 +132,13 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	for {
 		select {
 		case <-downloadCtx.Done():
-			if cfg.State != nil && (cfg.State.IsPaused() || cfg.State.IsPausing()) {
+			if cfg.State != nil && !cfg.State.Done.Load() && (cfg.State.IsPaused() || cfg.State.IsPausing() || errors.Is(downloadCtx.Err(), context.Canceled)) {
 				persistTorrentEntry(cfg, destPath, name, meta.Info.TotalLength(), start, "paused")
+				persistTorrentPauseState(cfg, destPath, name, meta.Info.TotalLength(), start)
 				return types.ErrPaused
+			}
+			if errors.Is(downloadCtx.Err(), context.Canceled) {
+				return nil
 			}
 			persistTorrentEntry(cfg, destPath, name, meta.Info.TotalLength(), start, "error")
 			return downloadCtx.Err()
@@ -164,6 +169,30 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 				}
 			}
 		}
+	}
+}
+
+func persistTorrentPauseState(cfg *types.DownloadConfig, destPath, name string, total int64, start time.Time) {
+	if cfg == nil || cfg.State == nil {
+		return
+	}
+	elapsed := time.Since(start)
+	if savedElapsed := cfg.State.GetSavedElapsed(); savedElapsed > 0 {
+		elapsed += savedElapsed
+	}
+	paused := &types.DownloadState{
+		ID:         cfg.ID,
+		URL:        cfg.URL,
+		DestPath:   destPath,
+		Filename:   name,
+		TotalSize:  total,
+		Downloaded: cfg.State.VerifiedProgress.Load(),
+		PausedAt:   time.Now().Unix(),
+		Elapsed:    elapsed.Nanoseconds(),
+		Mirrors:    cfg.Mirrors,
+	}
+	if err := state.SaveState(cfg.URL, destPath, paused); err != nil {
+		utils.Debug("Torrent: failed to persist pause state: %v", err)
 	}
 }
 

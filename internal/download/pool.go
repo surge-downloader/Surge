@@ -307,7 +307,7 @@ func (p *WorkerPool) worker() {
 		// 1. If Pause() was called: State.IsPaused() is true. We keep the task in p.downloads (so it can be resumed).
 		// 2. If finished/error: We remove from p.downloads.
 
-		isPaused := ad.config.State != nil && ad.config.State.IsPaused()
+		isPaused := ad.config.State != nil && (ad.config.State.IsPaused() || ad.config.State.IsPausing())
 
 		// Clear "Pausing" transition state now that worker has exited
 		if ad.config.State != nil {
