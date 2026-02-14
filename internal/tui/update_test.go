@@ -143,10 +143,10 @@ func TestGenerateUniqueFilename(t *testing.T) {
 	}
 }
 
-func TestUpdate_ResumeResultClearsFlags(t *testing.T) {
+func TestUpdate_ResumeResultSetsResuming(t *testing.T) {
 	m := RootModel{
 		downloads: []*DownloadModel{
-			{ID: "id-1", paused: true, pausing: true, pendingResume: true},
+			{ID: "id-1", paused: true, pausing: true, resuming: true},
 		},
 	}
 
@@ -157,31 +157,31 @@ func TestUpdate_ResumeResultClearsFlags(t *testing.T) {
 		t.Fatalf("Expected 1 download, got %d", len(m2.downloads))
 	}
 	d := m2.downloads[0]
-	if d.paused || d.pausing || d.pendingResume {
-		t.Fatalf("Expected flags cleared after resumeResultMsg success, got paused=%v pausing=%v pendingResume=%v", d.paused, d.pausing, d.pendingResume)
+	if d.paused || d.pausing || !d.resuming {
+		t.Fatalf("Expected paused/pausing cleared and resuming=true after resumeResultMsg success, got paused=%v pausing=%v resuming=%v", d.paused, d.pausing, d.resuming)
 	}
 }
 
 func TestUpdate_ResumeResultErrorKeepsFlags(t *testing.T) {
 	m := RootModel{
 		downloads: []*DownloadModel{
-			{ID: "id-1", paused: true, pausing: true, pendingResume: true},
+			{ID: "id-1", paused: true, pausing: true, resuming: true},
 		},
 	}
 
 	updated, _ := m.Update(resumeResultMsg{id: "id-1", err: errTest})
 	m2 := updated.(RootModel)
 	d := m2.downloads[0]
-	if !d.paused || !d.pausing || !d.pendingResume {
-		t.Fatalf("Expected flags unchanged on resumeResultMsg error, got paused=%v pausing=%v pendingResume=%v", d.paused, d.pausing, d.pendingResume)
+	if !d.paused || !d.pausing || !d.resuming {
+		t.Fatalf("Expected flags unchanged on resumeResultMsg error, got paused=%v pausing=%v resuming=%v", d.paused, d.pausing, d.resuming)
 	}
 }
 
-func TestUpdate_DownloadStartedClearsFlags(t *testing.T) {
+func TestUpdate_DownloadStartedKeepsResuming(t *testing.T) {
 	dm := NewDownloadModel("id-1", "http://example.com/file", "file", 0)
 	dm.paused = true
 	dm.pausing = true
-	dm.pendingResume = true
+	dm.resuming = true
 	m := RootModel{
 		downloads:   []*DownloadModel{dm},
 		list:        NewDownloadList(80, 20),
@@ -209,15 +209,15 @@ func TestUpdate_DownloadStartedClearsFlags(t *testing.T) {
 	if d == nil {
 		t.Fatal("Expected download id-1 to exist")
 	}
-	if d.paused || d.pausing || d.pendingResume {
-		t.Fatalf("Expected flags cleared on DownloadStartedMsg, got paused=%v pausing=%v pendingResume=%v", d.paused, d.pausing, d.pendingResume)
+	if d.paused || d.pausing || !d.resuming {
+		t.Fatalf("Expected paused/pausing cleared and resuming preserved on DownloadStartedMsg, got paused=%v pausing=%v resuming=%v", d.paused, d.pausing, d.resuming)
 	}
 }
 
 func TestUpdate_PauseResumeEventsNormalizeFlags(t *testing.T) {
 	m := RootModel{
 		downloads: []*DownloadModel{
-			{ID: "id-1", paused: false, pausing: true, pendingResume: true},
+			{ID: "id-1", paused: false, pausing: true, resuming: true},
 		},
 		list:        NewDownloadList(80, 20),
 		logViewport: viewport.New(40, 5),
@@ -230,8 +230,8 @@ func TestUpdate_PauseResumeEventsNormalizeFlags(t *testing.T) {
 	})
 	m2 := updated.(RootModel)
 	d := m2.downloads[0]
-	if !d.paused || d.pausing || d.pendingResume {
-		t.Fatalf("Expected paused=true and others false after DownloadPausedMsg, got paused=%v pausing=%v pendingResume=%v", d.paused, d.pausing, d.pendingResume)
+	if !d.paused || d.pausing || d.resuming {
+		t.Fatalf("Expected paused=true and others false after DownloadPausedMsg, got paused=%v pausing=%v resuming=%v", d.paused, d.pausing, d.resuming)
 	}
 
 	updated, _ = m2.Update(events.DownloadResumedMsg{
@@ -240,8 +240,40 @@ func TestUpdate_PauseResumeEventsNormalizeFlags(t *testing.T) {
 	})
 	m3 := updated.(RootModel)
 	d = m3.downloads[0]
-	if d.paused || d.pausing || d.pendingResume {
-		t.Fatalf("Expected flags cleared after DownloadResumedMsg, got paused=%v pausing=%v pendingResume=%v", d.paused, d.pausing, d.pendingResume)
+	if d.paused || d.pausing || !d.resuming {
+		t.Fatalf("Expected paused/pausing cleared and resuming=true after DownloadResumedMsg, got paused=%v pausing=%v resuming=%v", d.paused, d.pausing, d.resuming)
+	}
+}
+
+func TestProcessProgressMsg_ClearsResumingOnTransfer(t *testing.T) {
+	dm := NewDownloadModel("id-1", "http://example.com/file", "file", 100)
+	dm.resuming = true
+	dm.Downloaded = 50
+	m := RootModel{
+		downloads: []*DownloadModel{dm},
+		list:      NewDownloadList(80, 20),
+	}
+
+	// No transfer yet: keep resuming.
+	m.processProgressMsg(events.ProgressMsg{
+		DownloadID: "id-1",
+		Downloaded: 50,
+		Total:      100,
+		Speed:      0,
+	})
+	if !m.downloads[0].resuming {
+		t.Fatal("expected resuming=true before transfer starts")
+	}
+
+	// Transfer observed: clear resuming.
+	m.processProgressMsg(events.ProgressMsg{
+		DownloadID: "id-1",
+		Downloaded: 60,
+		Total:      100,
+		Speed:      1024,
+	})
+	if m.downloads[0].resuming {
+		t.Fatal("expected resuming=false after transfer starts")
 	}
 }
 

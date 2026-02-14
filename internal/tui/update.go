@@ -211,9 +211,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		for _, d := range m.downloads {
 			if d.ID == msg.id {
-				d.pendingResume = false
 				d.paused = false
 				d.pausing = false
+				d.resuming = true
 				break
 			}
 		}
@@ -258,19 +258,19 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case events.DownloadStartedMsg:
 		found := false
 		for _, d := range m.downloads {
-			if d.ID == msg.DownloadID {
-				d.Filename = msg.Filename
-				d.FilenameLower = strings.ToLower(msg.Filename)
-				d.Total = msg.Total
-				d.Destination = msg.DestPath
-				d.StartTime = time.Now()
-				d.paused = false
-				d.pausing = false
-				d.pendingResume = false
-				// Update progress bar
-				if d.Total > 0 {
-					d.progress.SetPercent(0)
-				}
+				if d.ID == msg.DownloadID {
+					d.Filename = msg.Filename
+					d.FilenameLower = strings.ToLower(msg.Filename)
+					d.Total = msg.Total
+					d.Destination = msg.DestPath
+					d.StartTime = time.Now()
+					d.paused = false
+					d.pausing = false
+					// Keep resuming=true for resumed downloads until real transfer starts.
+					// Update progress bar
+					if d.Total > 0 {
+						d.progress.SetPercent(0)
+					}
 				if d.state == nil && msg.State != nil {
 					d.state = msg.State
 				}
@@ -346,7 +346,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if d.ID == msg.DownloadID {
 				d.paused = true
 				d.pausing = false
-				d.pendingResume = false
+				d.resuming = false
 				d.Downloaded = msg.Downloaded
 				d.Speed = 0
 				m.addLogEntry(LogStylePaused.Render("⏸ Paused: " + d.Filename))
@@ -361,7 +361,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if d.ID == msg.DownloadID {
 				d.paused = false
 				d.pausing = false
-				d.pendingResume = false
+				d.resuming = true
 				m.addLogEntry(LogStyleStarted.Render("▶ Resumed: " + d.Filename))
 				break
 			}
@@ -657,23 +657,26 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.addLogEntry(LogStyleError.Render("✖ Service unavailable"))
 						return m, nil
 					}
-					if !d.done {
-						if d.paused {
-							// Resume
-							d.paused = false
-							if err := m.Service.Resume(d.ID); err != nil {
-								m.addLogEntry(LogStyleError.Render("✖ Resume failed: " + err.Error()))
-								d.paused = true // Revert
-							}
-						} else {
-							// Pause
-							if err := m.Service.Pause(d.ID); err != nil {
-								m.addLogEntry(LogStyleError.Render("✖ Pause failed: " + err.Error()))
+						if !d.done {
+							if d.paused {
+								// Resume
+								d.paused = false
+								d.resuming = true
+								if err := m.Service.Resume(d.ID); err != nil {
+									m.addLogEntry(LogStyleError.Render("✖ Resume failed: " + err.Error()))
+									d.paused = true // Revert
+									d.resuming = false
+								}
 							} else {
-								d.pausing = true
+								// Pause
+								if err := m.Service.Pause(d.ID); err != nil {
+									m.addLogEntry(LogStyleError.Render("✖ Pause failed: " + err.Error()))
+								} else {
+									d.resuming = false
+									d.pausing = true
+								}
 							}
 						}
-					}
 				}
 				m.UpdateListItems()
 				return m, nil

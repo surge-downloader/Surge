@@ -69,7 +69,7 @@ type DownloadModel struct {
 	err           error
 	paused        bool
 	pausing       bool // UI state: transitioning to pause
-	pendingResume bool // UI state: waiting for async resume
+	resuming bool // UI state: waiting for async resume
 }
 
 type RootModel struct {
@@ -246,14 +246,14 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 					dm.pausing = true
 				case "paused":
 					if settings.General.AutoResume {
-						dm.pendingResume = true
+						dm.resuming = true
 						dm.paused = true // Will update when resume event received
 					} else {
 						dm.paused = true
 					}
 				case "queued":
 					// Always resume queued items
-					dm.pendingResume = true
+					dm.resuming = true
 					dm.paused = true // Will update when resume event received
 				}
 
@@ -345,7 +345,7 @@ func (m RootModel) Init() tea.Cmd {
 	// Async resume of downloads
 	var resumeIDs []string
 	for _, d := range m.downloads {
-		if d.pendingResume {
+		if d.resuming {
 			resumeIDs = append(resumeIDs, d.ID)
 		}
 	}

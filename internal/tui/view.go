@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/surge-downloader/surge/internal/tui/components"
+	"github.com/surge-downloader/surge/internal/tui/colors"
 	"github.com/surge-downloader/surge/internal/utils"
 
 	"github.com/charmbracelet/lipgloss"
@@ -817,6 +818,9 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 			speedStr = "N/A"
 		}
 		etaStr = "Done"
+	} else if d.resuming {
+		speedStr = "Resuming..."
+		etaStr = "..."
 	} else if d.paused || d.Speed == 0 {
 		speedStr = "Paused"
 		etaStr = "∞"
@@ -929,6 +933,12 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 }
 
 func getDownloadStatus(d *DownloadModel) string {
+	if d.pausing {
+		return lipgloss.NewStyle().Foreground(colors.StatePaused).Render("⏸ Pausing...")
+	}
+	if d.resuming {
+		return lipgloss.NewStyle().Foreground(colors.StateDownloading).Render("▶ Resuming...")
+	}
 	status := components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded)
 	return status.Render()
 }
