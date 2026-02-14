@@ -300,10 +300,6 @@ async function sendToSurge(url, filename, absolutePath) {
       console.log('[Surge] Forwarding captured headers to Surge');
     }
 
-    // Always skip TUI approval for extension downloads (vetted by user action)
-    // This also bypasses duplicate warnings since extension handles those
-    body.skip_approval = true;
-
     const auth = await authHeaders();
     const response = await fetch(`http://127.0.0.1:${port}/download`, {
       method: 'POST',

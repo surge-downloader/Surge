@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/surge-downloader/surge/internal/config"
@@ -401,6 +402,7 @@ func TestUpdate_DownloadRequestMsg(t *testing.T) {
 		Service:     core.NewLocalDownloadServiceWithInput(pool, ch),
 		logViewport: viewport.New(40, 5),
 		list:        NewDownloadList(40, 10),
+		inputs:      []textinput.Model{textinput.New(), textinput.New(), textinput.New(), textinput.New()},
 	}
 
 	// 1. Test Extension Prompt Enabled

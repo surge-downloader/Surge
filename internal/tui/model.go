@@ -122,6 +122,7 @@ type RootModel struct {
 	SettingsIsEditing    bool             // Whether currently editing a value
 	SettingsInput        textinput.Model  // Input for editing string/int values
 	SettingsFileBrowsing bool             // Whether browsing for a directory
+	ExtensionFileBrowsing bool            // Whether browsing for extension prompt path
 
 	// Selection persistence
 	SelectedDownloadID string // ID of the currently selected download
