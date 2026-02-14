@@ -25,6 +25,10 @@ on:
         description: 'Shared connection count for Surge and aria2'
         required: true
         default: '16'
+      url_suite:
+        description: 'Run a predefined multi-CDN URL suite? [y/n]'
+        required: true
+        default: 'y'
       surge_exit_check_interval:
         description: 'Surge --exit-check-interval for benchmark runs (e.g. 100ms)'
         required: true
@@ -89,6 +93,7 @@ jobs:
           BENCH_ITERATIONS: ${{ github.event.inputs.iterations || '10' }}
           BENCH_WARMUPS: ${{ github.event.inputs.warmups || '1' }}
           BENCH_CONNECTIONS: ${{ github.event.inputs.connections || '16' }}
+          BENCH_URL_SUITE: ${{ github.event.inputs.url_suite || 'y' }}
           BENCH_SURGE_EXIT_CHECK_INTERVAL: ${{ github.event.inputs.surge_exit_check_interval || '100ms' }}
           # Default to 'n' unless explicitly requested (avoids mixed-binary flag incompatibility on PRs)
           BASELINE_COMPARE: ${{ github.event.inputs.baseline || 'n' }}
@@ -96,35 +101,61 @@ jobs:
 
         run: |
           cd current
-          
-          # Build benchmark args (aligned with fair Surge vs aria2 comparison)
-          ARGS=(
-            "$BENCH_URL"
-            "-n" "$BENCH_ITERATIONS"
-            "--warmups" "$BENCH_WARMUPS"
-            "--connections" "$BENCH_CONNECTIONS"
-            "--surge-timing" "external"
-            "--surge-exit-check-interval" "$BENCH_SURGE_EXIT_CHECK_INTERVAL"
-            "--isolate-surge"
-            "--aria2-no-conf"
-            "--strict-size"
-            "--surge"
-            "--aria2"
-          )
 
-          # Add Baseline ONLY if requested
-          if [[ "$BASELINE_COMPARE" == "y" ]]; then
-            echo "Comparing against baseline..."
-            ARGS+=("--surge-baseline" "../surge-baseline")
+          run_one() {
+            local target_url="$1"
+            local out_file="$2"
+
+            # Build benchmark args (aligned with fair Surge vs aria2 comparison)
+            ARGS=(
+              "$target_url"
+              "-n" "$BENCH_ITERATIONS"
+              "--warmups" "$BENCH_WARMUPS"
+              "--connections" "$BENCH_CONNECTIONS"
+              "--surge-timing" "external"
+              "--surge-exit-check-interval" "$BENCH_SURGE_EXIT_CHECK_INTERVAL"
+              "--isolate-surge"
+              "--aria2-no-conf"
+              "--strict-size"
+              "--surge-exec" "../surge-current"
+              "--surge"
+              "--aria2"
+            )
+
+            # Add Baseline ONLY if requested
+            if [[ "$BASELINE_COMPARE" == "y" ]]; then
+              echo "Comparing against baseline..."
+              ARGS+=("--surge-baseline" "../surge-baseline")
+            fi
+
+            # Optional speedtest
+            if [[ "$BENCH_SPEEDTEST" == "y" ]]; then
+              ARGS+=("--speedtest")
+            fi
+
+            python3 benchmark.py "${ARGS[@]}" | tee "$out_file"
+          }
+
+          : > benchmark_output.txt
+
+          if [[ "$BENCH_URL_SUITE" == "y" ]]; then
+            # Multi-CDN suite for robustness (all use range-friendly large files)
+            URLS=(
+              "https://sin-speed.hetzner.com/1GB.bin"
+              "https://proof.ovh.net/files/1Gb.dat"
+              "https://mirror.leaseweb.com/speedtest/1GB.bin"
+            )
+
+            echo "Running multi-CDN benchmark suite (${#URLS[@]} URLs)..."
+            for target_url in "${URLS[@]}"; do
+              echo "" | tee -a benchmark_output.txt
+              echo "================ URL: $target_url ================" | tee -a benchmark_output.txt
+              run_one "$target_url" bench_single_output.txt
+              cat bench_single_output.txt >> benchmark_output.txt
+            done
+          else
+            run_one "$BENCH_URL" benchmark_output.txt
           fi
-
-          # Optional speedtest
-          if [[ "$BENCH_SPEEDTEST" == "y" ]]; then
-            ARGS+=("--speedtest")
-          fi
-
-          # Run benchmark
-          python3 benchmark.py "${ARGS[@]}" | tee benchmark_output.txt
 
           # Save output to GITHUB_ENV for the next step (multiline safe)
           echo "BENCHMARK_RESULTS<<EOF" >> $GITHUB_ENV
@@ -137,6 +168,7 @@ jobs:
           echo "**Iterations:** $BENCH_ITERATIONS" >> $GITHUB_STEP_SUMMARY
           echo "**Warmups:** $BENCH_WARMUPS" >> $GITHUB_STEP_SUMMARY
           echo "**Connections:** $BENCH_CONNECTIONS" >> $GITHUB_STEP_SUMMARY
+          echo "**URL suite:** $BENCH_URL_SUITE" >> $GITHUB_STEP_SUMMARY
           echo "**Surge exit-check-interval:** $BENCH_SURGE_EXIT_CHECK_INTERVAL" >> $GITHUB_STEP_SUMMARY
           echo "**Tools:** surge, aria2" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
