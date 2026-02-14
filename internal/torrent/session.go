@@ -35,6 +35,14 @@ type Session struct {
 	lowPeerMode bool
 }
 
+var fallbackTrackers = []string{
+	"udp://tracker.opentrackr.org:1337/announce",
+	"udp://open.stealth.si:80/announce",
+	"udp://tracker.torrent.eu.org:451/announce",
+	"udp://tracker.moeking.me:6969/announce",
+	"https://tracker.opentrackr.org:443/announce",
+}
+
 func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Session {
 	if cfg.TrackerInterval == 0 {
 		cfg.TrackerInterval = 10 * time.Second
@@ -44,7 +52,7 @@ func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Sessio
 	}
 	return &Session{
 		infoHash: infoHash,
-		trackers: trackers,
+		trackers: withFallbackTrackers(trackers),
 		cfg:      cfg,
 		peerID:   tracker.DefaultPeerID(),
 	}
@@ -53,11 +61,12 @@ func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Sessio
 // DiscoverPeers merges tracker and DHT peer streams.
 func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 	out := make(chan net.TCPAddr, 256)
+	const peerRetryWindow = 20 * time.Second
 
 	// tracker stream
 	go func() {
 		defer close(out)
-		seen := make(map[string]bool)
+		seen := make(map[string]time.Time)
 		type trackerRetryState struct {
 			next    time.Time
 			backoff time.Duration
@@ -130,10 +139,9 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 				for _, p := range resp.Peers {
 					addr := net.TCPAddr{IP: p.IP, Port: p.Port}
 					key := addr.String()
-					if seen[key] {
+					if !shouldEmitPeer(seen, key, peerRetryWindow) {
 						continue
 					}
-					seen[key] = true
 					select {
 					case out <- addr:
 					case <-ctx.Done():
@@ -166,14 +174,13 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 		}
 		defer func() { _ = svc.Close() }()
 
-		seen := make(map[string]bool)
+		seen := make(map[string]time.Time)
 		for p := range svc.DiscoverPeers(ctx, s.infoHash) {
 			addr := net.TCPAddr{IP: p.IP, Port: p.Port}
 			key := addr.String()
-			if seen[key] {
+			if !shouldEmitPeer(seen, key, peerRetryWindow) {
 				continue
 			}
-			seen[key] = true
 			select {
 			case out <- addr:
 			case <-ctx.Done():
@@ -238,4 +245,34 @@ func startedEvent(initial bool) string {
 		return "started"
 	}
 	return ""
+}
+
+func withFallbackTrackers(trackers []string) []string {
+	seen := make(map[string]bool, len(trackers)+len(fallbackTrackers))
+	out := make([]string, 0, len(trackers)+len(fallbackTrackers))
+	for _, tr := range trackers {
+		if tr == "" || seen[tr] {
+			continue
+		}
+		seen[tr] = true
+		out = append(out, tr)
+	}
+	for _, tr := range fallbackTrackers {
+		if seen[tr] {
+			continue
+		}
+		seen[tr] = true
+		out = append(out, tr)
+	}
+	return out
+}
+
+func shouldEmitPeer(seen map[string]time.Time, key string, retryWindow time.Duration) bool {
+	now := time.Now()
+	last, ok := seen[key]
+	if ok && now.Sub(last) < retryWindow {
+		return false
+	}
+	seen[key] = now
+	return true
 }

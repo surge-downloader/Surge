@@ -31,6 +31,7 @@ type Manager struct {
 	dialSuccess     int
 	dialFailures    int
 	inboundAccepted int
+	lastEvictAt     time.Time
 }
 
 type Stats struct {
@@ -94,6 +95,7 @@ func (m *Manager) Start(ctx context.Context, peers <-chan net.TCPAddr) {
 			}
 		}
 	}()
+	go m.maintain(ctx)
 }
 
 func (m *Manager) markDiscovered(key string) {
@@ -106,10 +108,14 @@ func (m *Manager) markDiscovered(key string) {
 
 func (m *Manager) tryDialAsync(ctx context.Context, addr net.TCPAddr) {
 	key := addr.String()
+	var victim *Conn
 	m.mu.Lock()
 	if len(m.active) >= m.maxPeers {
-		m.mu.Unlock()
-		return
+		victim = m.pickEvictionCandidateLocked()
+		if victim == nil {
+			m.mu.Unlock()
+			return
+		}
 	}
 	if _, ok := m.active[key]; ok {
 		m.mu.Unlock()
@@ -121,6 +127,9 @@ func (m *Manager) tryDialAsync(ctx context.Context, addr net.TCPAddr) {
 	}
 	m.pending[key] = true
 	m.mu.Unlock()
+	if victim != nil {
+		victim.Close()
+	}
 
 	select {
 	case m.dialSem <- struct{}{}:
@@ -311,6 +320,60 @@ func (m *Manager) CloseAll() {
 	}
 	clear(m.pending)
 	m.unchoked = 0
+}
+
+func (m *Manager) maintain(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.mu.Lock()
+			victim := m.pickEvictionCandidateLocked()
+			m.mu.Unlock()
+			if victim != nil {
+				victim.Close()
+			}
+		}
+	}
+}
+
+func (m *Manager) pickEvictionCandidateLocked() *Conn {
+	if len(m.active) < m.maxPeers {
+		return nil
+	}
+	if !m.lastEvictAt.IsZero() && time.Since(m.lastEvictAt) < 8*time.Second {
+		return nil
+	}
+
+	var victim *Conn
+	bestRate := 1e18
+	for _, c := range m.active {
+		p := c.Performance()
+		if p.Uptime < 15*time.Second {
+			continue
+		}
+		if p.IdleFor > 20*time.Second {
+			victim = c
+			bestRate = -1
+			break
+		}
+		if p.RateBps < bestRate {
+			bestRate = p.RateBps
+			victim = c
+		}
+	}
+	if victim == nil {
+		return nil
+	}
+	// Avoid evicting decent peers.
+	if bestRate > 128*1024 && bestRate != -1 {
+		return nil
+	}
+	m.lastEvictAt = time.Now()
+	return victim
 }
 
 func (m *Manager) Stats() Stats {

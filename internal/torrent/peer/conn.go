@@ -22,6 +22,19 @@ type Conn struct {
 	maxInFlight int
 	piece       int
 	onClose     func()
+	startedAt   time.Time
+	lastPieceAt time.Time
+	received    int64
+	lastTuneAt  time.Time
+	lastTuneRx  int64
+}
+
+type Perf struct {
+	RateBps  float64
+	Uptime   time.Duration
+	IdleFor  time.Duration
+	Received int64
+	InFlight int
 }
 
 type Picker interface {
@@ -58,6 +71,7 @@ func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, sto
 		maxInFlight: maxInFlight,
 		piece:       -1,
 		onClose:     onClose,
+		startedAt:   time.Now(),
 	}
 }
 
@@ -141,6 +155,7 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest) {
 		index, begin, block, err := ParsePiece(msg)
 		if err == nil && c.store != nil && c.pipeline != nil {
 			_ = c.store.WriteAtPiece(int64(index), int64(begin), block)
+			c.observeBlockLocked(int64(len(block)))
 			c.pipeline.OnBlock(int64(begin), int64(len(block)))
 			if c.pipeline.Completed() {
 				ok, _ := c.store.VerifyPiece(int64(index))
@@ -259,4 +274,79 @@ func (c *Conn) Bitfield() []byte {
 	out := make([]byte, len(c.bitfield))
 	copy(out, c.bitfield)
 	return out
+}
+
+func (c *Conn) observeBlockLocked(n int64) {
+	if n <= 0 {
+		return
+	}
+	now := time.Now()
+	c.received += n
+	c.lastPieceAt = now
+	if c.lastTuneAt.IsZero() {
+		c.lastTuneAt = now
+		c.lastTuneRx = c.received
+		return
+	}
+
+	elapsed := now.Sub(c.lastTuneAt)
+	if elapsed < 2*time.Second {
+		return
+	}
+
+	delta := c.received - c.lastTuneRx
+	if delta < 0 {
+		delta = 0
+	}
+	rate := float64(delta) / elapsed.Seconds()
+
+	target := c.maxInFlight
+	switch {
+	case rate > 12*1024*1024:
+		target += 2
+	case rate > 4*1024*1024:
+		target++
+	case rate < 512*1024:
+		target--
+	}
+	if target < 2 {
+		target = 2
+	}
+	if target > 32 {
+		target = 32
+	}
+	c.maxInFlight = target
+	if c.pipeline != nil {
+		c.pipeline.SetMaxInFlight(target)
+	}
+
+	c.lastTuneAt = now
+	c.lastTuneRx = c.received
+}
+
+func (c *Conn) Performance() Perf {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+	uptime := now.Sub(c.startedAt)
+	if uptime <= 0 {
+		uptime = time.Millisecond
+	}
+	idle := time.Duration(0)
+	if !c.lastPieceAt.IsZero() {
+		idle = now.Sub(c.lastPieceAt)
+	}
+
+	return Perf{
+		RateBps:  float64(c.received) / uptime.Seconds(),
+		Uptime:   uptime,
+		IdleFor:  idle,
+		Received: c.received,
+		InFlight: c.maxInFlight,
+	}
+}
+
+func (c *Conn) Close() {
+	_ = c.sess.Close()
 }

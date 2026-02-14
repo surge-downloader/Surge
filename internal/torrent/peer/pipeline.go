@@ -5,6 +5,7 @@ type Pipeline interface {
 	NextRequest() (begin int64, length int64, ok bool)
 	OnBlock(begin int64, length int64)
 	Completed() bool
+	SetMaxInFlight(n int)
 }
 
 const defaultBlockSize = 16 * 1024
@@ -60,4 +61,11 @@ func (p *simplePipeline) OnBlock(begin int64, length int64) {
 
 func (p *simplePipeline) Completed() bool {
 	return p.completed
+}
+
+func (p *simplePipeline) SetMaxInFlight(n int) {
+	if n <= 0 {
+		n = 1
+	}
+	p.maxInFlight = n
 }
