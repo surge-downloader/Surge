@@ -104,6 +104,14 @@ async function authHeaders() {
   return { Authorization: `Bearer ${token}` };
 }
 
+browser.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local' || !changes[AUTH_TOKEN_KEY]) {
+    return;
+  }
+  const nextToken = changes[AUTH_TOKEN_KEY].newValue;
+  cachedAuthToken = typeof nextToken === 'string' ? nextToken : '';
+});
+
 // === Port Discovery ===
 
 async function findSurgePort() {
@@ -784,6 +792,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
 
 async function initialize() {
   console.log('[Surge] Extension initializing...');
+  await loadAuthToken();
   await checkSurgeHealth();
   console.log('[Surge] Extension loaded');
 }
