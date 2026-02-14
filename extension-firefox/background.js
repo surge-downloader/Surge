@@ -5,7 +5,6 @@ const DEFAULT_PORT = 1700;
 const MAX_PORT_SCAN = 100;
 const INTERCEPT_ENABLED_KEY = 'interceptEnabled';
 const AUTH_TOKEN_KEY = 'authToken';
-const BROWSER_DESTINATION_MODE_KEY = 'browserDestinationMode';
 
 // === State ===
 let cachedPort = null;
@@ -18,7 +17,6 @@ let cachedAuthToken = null;
 // Key: unique id, Value: { downloadItem, filename, directory, timestamp }
 const pendingDuplicates = new Map();
 let pendingDuplicateCounter = 0;
-const pendingPathSelection = new Map();
 
 function updateBadge() {
   const count = pendingDuplicates.size;
@@ -104,11 +102,6 @@ async function authHeaders() {
   const token = await loadAuthToken();
   if (!token) return {};
   return { Authorization: `Bearer ${token}` };
-}
-
-async function isBrowserDestinationModeEnabled() {
-  const result = await browser.storage.local.get(BROWSER_DESTINATION_MODE_KEY);
-  return result[BROWSER_DESTINATION_MODE_KEY] === true;
 }
 
 browser.storage.onChanged.addListener((changes, areaName) => {
@@ -479,9 +472,6 @@ function extractPathInfo(downloadItem) {
 }
 
 // === Download Interception ===
-// Firefox doesn't support onDeterminingFilename, so we use a two-phase approach:
-// 1. onCreated: Store the download as "pending" 
-// 2. onChanged: Wait for filename to be determined, then intercept
 
 const processedIds = new Set();
 
@@ -508,56 +498,13 @@ browser.downloads.onCreated.addListener(async (downloadItem) => {
     return;
   }
 
-  const useBrowserDestination = await isBrowserDestinationModeEnabled();
-
-  // In browser destination mode, wait until browser resolves a concrete path
-  // (e.g. after "Save As" selection) before forwarding to Surge.
-  if (useBrowserDestination && !downloadItem.filename) {
-    pendingPathSelection.set(downloadItem.id, {
-      downloadItem,
-      createdAt: Date.now(),
-    });
-    setTimeout(() => pendingPathSelection.delete(downloadItem.id), 120000);
-    return;
-  }
-
   processedIds.add(downloadItem.id);
   setTimeout(() => processedIds.delete(downloadItem.id), 120000);
   
-  await handleDownloadIntercept(downloadItem, useBrowserDestination);
+  await handleDownloadIntercept(downloadItem);
 });
 
-browser.downloads.onChanged.addListener(async (delta) => {
-  if (!delta || typeof delta.id !== 'number') return;
-
-  const pending = pendingPathSelection.get(delta.id);
-  if (!pending) return;
-
-  if (delta.state && delta.state.current !== 'in_progress') {
-    pendingPathSelection.delete(delta.id);
-    return;
-  }
-
-  if (!delta.filename || !delta.filename.current) {
-    return;
-  }
-
-  pendingPathSelection.delete(delta.id);
-  const resolvedItem = {
-    ...pending.downloadItem,
-    filename: delta.filename.current,
-  };
-
-  if (processedIds.has(resolvedItem.id)) {
-    return;
-  }
-  processedIds.add(resolvedItem.id);
-  setTimeout(() => processedIds.delete(resolvedItem.id), 120000);
-
-  await handleDownloadIntercept(resolvedItem, true);
-});
-
-async function handleDownloadIntercept(downloadItem, useBrowserDestination) {
+async function handleDownloadIntercept(downloadItem) {
   // Check for duplicates (async - checks both time-based and Surge's download list)
   if (await isDuplicateDownload(downloadItem.url)) {
     // Cancel the browser download
@@ -576,8 +523,7 @@ async function handleDownloadIntercept(downloadItem, useBrowserDestination) {
     pendingDuplicates.set(pendingId, {
       downloadItem,
       filename,
-      directory: useBrowserDestination ? directory : '',
-      useBrowserDestination,
+      directory: '',
       url: downloadItem.url,
       timestamp: Date.now()
     });
@@ -617,8 +563,7 @@ async function handleDownloadIntercept(downloadItem, useBrowserDestination) {
     return; // Let browser continue - download is already in progress
   }
 
-  const { filename, directory } = extractPathInfo(downloadItem);
-  const targetDirectory = useBrowserDestination ? directory : '';
+  const { filename } = extractPathInfo(downloadItem);
 
   try {
     await browser.downloads.cancel(downloadItem.id);
@@ -627,7 +572,7 @@ async function handleDownloadIntercept(downloadItem, useBrowserDestination) {
     const result = await sendToSurge(
       downloadItem.url,
       filename,
-      targetDirectory
+      ''
     );
 
     if (result.success) {
@@ -733,16 +678,6 @@ browser.runtime.onMessage.addListener((message, sender) => {
           return { success: true };
         }
         
-        case 'getBrowserDestinationMode': {
-          const enabled = await isBrowserDestinationModeEnabled();
-          return { enabled };
-        }
-
-        case 'setBrowserDestinationMode': {
-          await browser.storage.local.set({ [BROWSER_DESTINATION_MODE_KEY]: message.enabled === true });
-          return { success: true };
-        }
-        
         case 'getDownloads': {
           const { list, authError } = await fetchDownloadList();
           return { 
@@ -779,7 +714,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
             const result = await sendToSurge(
               pending.url,
               pending.filename,
-              pending.useBrowserDestination ? pending.directory : ''
+              pending.directory
             );
             console.log('[Surge] sendToSurge result:', result);
             

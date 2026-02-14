@@ -410,6 +410,7 @@ func TestUpdate_DownloadRequestMsg(t *testing.T) {
 	msg := events.DownloadRequestMsg{
 		URL:      "http://example.com/test.zip",
 		Filename: "test.zip",
+		Path:     "/tmp/downloads",
 	}
 
 	newM, _ := m.Update(msg)
@@ -420,6 +421,12 @@ func TestUpdate_DownloadRequestMsg(t *testing.T) {
 	}
 	if newRoot.pendingURL != msg.URL {
 		t.Errorf("Expected pendingURL=%s, got %s", msg.URL, newRoot.pendingURL)
+	}
+	if newRoot.pendingFilename != msg.Filename {
+		t.Errorf("Expected pendingFilename=%s, got %s", msg.Filename, newRoot.pendingFilename)
+	}
+	if newRoot.pendingPath != msg.Path {
+		t.Errorf("Expected pendingPath=%s, got %s", msg.Path, newRoot.pendingPath)
 	}
 
 	// 2. Test Duplicate Warning (when prompt disabled but duplicate exists)

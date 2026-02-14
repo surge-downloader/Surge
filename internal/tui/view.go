@@ -136,15 +136,29 @@ func (m RootModel) View() string {
 	}
 
 	if m.state == ExtensionConfirmationState {
+		filename := m.pendingFilename
+		if strings.TrimSpace(filename) == "" {
+			filename = "(auto-detect)"
+		}
+		path := m.pendingPath
+		if strings.TrimSpace(path) == "" {
+			path = "."
+		}
+		detail := strings.Join([]string{
+			"Filename: " + truncateString(filename, 46),
+			"Path: " + truncateString(path, 50),
+			"URL: " + truncateString(m.pendingURL, 50),
+		}, "\n")
+
 		modal := components.ConfirmationModal{
 			Title:       "Extension Download",
 			Message:     "Do you want to add this download?",
-			Detail:      truncateString(m.pendingURL, 50),
+			Detail:      detail,
 			Keys:        m.keys.Extension,
 			Help:        m.help,
 			BorderColor: ColorNeonCyan,
 			Width:       60,
-			Height:      10,
+			Height:      13,
 		}
 		box := modal.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
 		return m.renderModalWithOverlay(box)
