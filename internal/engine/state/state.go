@@ -72,7 +72,7 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 				chunk_bitmap=excluded.chunk_bitmap,
 				actual_chunk_size=excluded.actual_chunk_size,
 				file_hash=excluded.file_hash
-		`, state.ID, state.URL, state.SourceType, state.SourceKey, state.DestPath, state.Filename, "paused", state.TotalSize, state.Downloaded, state.URLHash, state.CreatedAt, state.PausedAt, state.Elapsed/1e6, strings.Join(state.Mirrors, ","), state.ChunkBitmap, state.ActualChunkSize)
+		`, state.ID, state.URL, state.SourceType, state.SourceKey, state.DestPath, state.Filename, "paused", state.TotalSize, state.Downloaded, state.URLHash, state.CreatedAt, state.PausedAt, state.Elapsed/1e6, strings.Join(state.Mirrors, ","), state.ChunkBitmap, state.ActualChunkSize, state.FileHash)
 		if err != nil {
 			return fmt.Errorf("failed to upsert download: %w", err)
 		}
@@ -285,7 +285,7 @@ func LoadMasterList() (*types.MasterList, error) {
 
 		if err := rows.Scan(
 			&e.ID, &e.URL, &e.SourceType, &e.SourceKey, &e.DestPath, &filename, &e.Status, &e.TotalSize, &e.Downloaded,
-			&completedAt, &timeTaken, &urlHash, &mirrors,
+			&completedAt, &timeTaken, &urlHash, &mirrors, &avgSpeed,
 		); err != nil {
 			return nil, err
 		}
@@ -338,7 +338,7 @@ func AddToMasterList(entry types.DownloadEntry) error {
 		_, err := tx.Exec(`
 			INSERT INTO downloads (
 				id, url, source_type, source_key, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors, avg_speed
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				url=excluded.url,
 				source_type=excluded.source_type,
@@ -355,7 +355,7 @@ func AddToMasterList(entry types.DownloadEntry) error {
 				avg_speed=excluded.avg_speed
 		`,
 			entry.ID, entry.URL, entry.SourceType, entry.SourceKey, entry.DestPath, entry.Filename, entry.Status, entry.TotalSize, entry.Downloaded,
-			entry.CompletedAt, entry.TimeTaken, entry.URLHash, strings.Join(entry.Mirrors, ","))
+			entry.CompletedAt, entry.TimeTaken, entry.URLHash, strings.Join(entry.Mirrors, ","), entry.AvgSpeed)
 
 		return err
 	})
@@ -385,7 +385,7 @@ func GetDownload(id string) (*types.DownloadEntry, error) {
 	var avgSpeed sql.NullFloat64
 
 	row := db.QueryRow(`
-		SELECT id, url, source_type, source_key, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors 
+		SELECT id, url, source_type, source_key, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash, mirrors, avg_speed
 		FROM downloads
 		WHERE id = ?
 	`, id)

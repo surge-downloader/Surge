@@ -131,8 +131,13 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest) {
 			_ = c.store.WriteAtPiece(int64(index), int64(begin), block)
 			c.pipeline.OnBlock(int64(begin), int64(len(block)))
 			if c.pipeline.Completed() {
-				_, _ = c.store.VerifyPiece(int64(index))
-				c.advancePiece()
+				ok, _ := c.store.VerifyPiece(int64(index))
+				if ok {
+					c.advancePiece()
+				} else if c.pl != nil {
+					// Re-request the piece if verification fails
+					c.pipeline = newSimplePipeline(c.pl.PieceSize(int64(index)))
+				}
 			}
 			requestNext = true
 		}
