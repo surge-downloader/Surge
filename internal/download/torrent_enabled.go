@@ -108,7 +108,8 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	runner, err := torrent.NewRunner(meta, outPath, torrent.SessionConfig{
 		ListenAddr:     "0.0.0.0:0",
 		BootstrapNodes: []string{"router.bittorrent.com:6881", "dht.transmissionbt.com:6881"},
-	})
+		TotalLength:    meta.Info.TotalLength(),
+	}, cfg.State)
 	if err != nil {
 		return err
 	}
@@ -129,10 +130,30 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 			persistTorrentEntry(cfg, destPath, name, meta.Info.TotalLength(), start, "error")
 			return downloadCtx.Err()
 		case <-ticker.C:
-			// TODO: real progress tracking
 			if cfg.State != nil {
-				// keep total size updated
-				cfg.State.SetTotalSize(meta.Info.TotalLength())
+				cfg.State.ActiveWorkers.Store(int32(runner.ActivePeerCount()))
+				downloaded := cfg.State.VerifiedProgress.Load()
+				if downloaded >= meta.Info.TotalLength() {
+					persistTorrentEntry(cfg, destPath, name, meta.Info.TotalLength(), start, "completed")
+					if cfg.ProgressCh != nil {
+						elapsed := time.Since(start)
+						if savedElapsed := cfg.State.GetSavedElapsed(); savedElapsed > 0 {
+							elapsed += savedElapsed
+						}
+						avgSpeed := float64(0)
+						if elapsed.Seconds() > 0 {
+							avgSpeed = float64(meta.Info.TotalLength()) / elapsed.Seconds()
+						}
+						cfg.ProgressCh <- events.DownloadCompleteMsg{
+							DownloadID: cfg.ID,
+							Filename:   name,
+							Elapsed:    elapsed,
+							Total:      meta.Info.TotalLength(),
+							AvgSpeed:   avgSpeed,
+						}
+					}
+					return nil
+				}
 			}
 		}
 	}

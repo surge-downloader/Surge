@@ -387,11 +387,11 @@ func (m RootModel) getFilteredDownloads() []*DownloadModel {
 		// Apply tab filter first
 		switch m.activeTab {
 		case TabQueued:
-			if d.done || d.Speed > 0 {
+			if d.done || isActiveDownload(d) {
 				continue
 			}
 		case TabActive:
-			if d.done || (d.Speed == 0 && d.Connections == 0) {
+			if d.done || !isActiveDownload(d) {
 				continue
 			}
 		case TabDone:
@@ -410,6 +410,19 @@ func (m RootModel) getFilteredDownloads() []*DownloadModel {
 		filtered = append(filtered, d)
 	}
 	return filtered
+}
+
+func isActiveDownload(d *DownloadModel) bool {
+	if d == nil || d.done || d.paused {
+		return false
+	}
+	if d.pausing {
+		return true
+	}
+	if d.Speed > 0 || d.Connections > 0 {
+		return true
+	}
+	return !d.StartTime.IsZero()
 }
 
 // newFilepicker creates a fresh filepicker instance with consistent settings.

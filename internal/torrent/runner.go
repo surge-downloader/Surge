@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/torrent/peer"
 )
 
@@ -17,7 +18,7 @@ type Runner struct {
 	peers   *peer.Manager
 }
 
-func NewRunner(meta *TorrentMeta, baseDir string, cfg SessionConfig) (*Runner, error) {
+func NewRunner(meta *TorrentMeta, baseDir string, cfg SessionConfig, state *types.ProgressState) (*Runner, error) {
 	layout, err := NewFileLayout(baseDir, meta.Info)
 	if err != nil {
 		return nil, err
@@ -25,7 +26,11 @@ func NewRunner(meta *TorrentMeta, baseDir string, cfg SessionConfig) (*Runner, e
 	totalPieces := int((layout.TotalLength + meta.Info.PieceLength - 1) / meta.Info.PieceLength)
 	picker := NewPiecePicker(totalPieces)
 	sess := NewSession(meta.InfoHash, flattenTrackers(meta), cfg)
-	mgr := peer.NewManager(meta.InfoHash, sess.peerID, picker, layout, layout, 32)
+	store := peer.Storage(layout)
+	if state != nil {
+		store = NewProgressStore(layout, state)
+	}
+	mgr := peer.NewManager(meta.InfoHash, sess.peerID, picker, layout, store, 32)
 
 	return &Runner{
 		meta:    meta,
@@ -67,4 +72,11 @@ func (r *Runner) Wait(ctx context.Context) error {
 func (r *Runner) ListenAddr() *net.TCPAddr {
 	// placeholder for future incoming peers
 	return nil
+}
+
+func (r *Runner) ActivePeerCount() int {
+	if r == nil || r.peers == nil {
+		return 0
+	}
+	return r.peers.Count()
 }

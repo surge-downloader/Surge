@@ -32,7 +32,7 @@ func (i DownloadItem) Description() string {
 		// Custom "Pausing..." style using existing colors
 		styledStatus = lipgloss.NewStyle().Foreground(colors.StatePaused).Render("⏸ Pausing...")
 	} else {
-		styledStatus = components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded).Render()
+		styledStatus = components.DetermineStatus(d.done, d.paused, d.err != nil, isActiveDownload(d)).Render()
 	}
 
 	// Build progress info
@@ -242,7 +242,7 @@ func (m *RootModel) UpdateListItems() {
 					var newTab int
 					if d.done {
 						newTab = TabDone
-					} else if d.Speed > 0 {
+					} else if isActiveDownload(d) {
 						newTab = TabActive
 					} else {
 						newTab = TabQueued

@@ -63,11 +63,14 @@ func (c *Conn) readLoop(ctx context.Context) {
 		if err != nil {
 			return
 		}
-		c.handle(msg)
+		if c.handle(msg) {
+			c.maybeRequest()
+		}
 	}
 }
 
-func (c *Conn) handle(msg *Message) {
+func (c *Conn) handle(msg *Message) bool {
+	requestNext := false
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	switch msg.ID {
@@ -75,7 +78,7 @@ func (c *Conn) handle(msg *Message) {
 		c.choked = true
 	case MsgUnchoke:
 		c.choked = false
-		c.maybeRequest()
+		requestNext = true
 	case MsgBitfield:
 		c.bitfield = append([]byte(nil), msg.Payload...)
 	case MsgHave:
@@ -89,9 +92,11 @@ func (c *Conn) handle(msg *Message) {
 				_, _ = c.store.VerifyPiece(int64(index))
 				c.advancePiece()
 			}
+			requestNext = true
 		}
 	default:
 	}
+	return requestNext
 }
 
 func (c *Conn) maybeRequest() {

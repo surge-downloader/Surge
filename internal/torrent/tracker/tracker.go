@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"fmt"
 	"math/rand"
 	"net/url"
 	"time"
@@ -17,7 +18,7 @@ func Announce(announceURL string, req AnnounceRequest) (*AnnounceResponse, error
 	case "udp":
 		return AnnounceUDP(announceURL, req)
 	default:
-		return nil, err
+		return nil, fmt.Errorf("unsupported tracker scheme: %s", u.Scheme)
 	}
 }
 

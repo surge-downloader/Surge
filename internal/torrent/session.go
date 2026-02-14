@@ -13,6 +13,7 @@ type SessionConfig struct {
 	ListenAddr      string
 	BootstrapNodes  []string
 	TrackerInterval time.Duration
+	TotalLength     int64
 }
 
 type PeerSource interface {
@@ -29,6 +30,9 @@ type Session struct {
 func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Session {
 	if cfg.TrackerInterval == 0 {
 		cfg.TrackerInterval = 10 * time.Second
+	}
+	if cfg.TotalLength <= 0 {
+		cfg.TotalLength = 1
 	}
 	return &Session{
 		infoHash: infoHash,
@@ -48,6 +52,7 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 		seen := make(map[string]bool)
 		tick := time.NewTicker(s.cfg.TrackerInterval)
 		defer tick.Stop()
+		started := true
 
 		for {
 			for _, tr := range s.trackers {
@@ -55,7 +60,8 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 					InfoHash: s.infoHash,
 					PeerID:   s.peerID,
 					Port:     6881,
-					Left:     1,
+					Left:     s.cfg.TotalLength,
+					Event:    startedEvent(started),
 					NumWant:  50,
 				})
 				if err == nil && resp != nil {
@@ -74,6 +80,7 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 					}
 				}
 			}
+			started = false
 			select {
 			case <-ctx.Done():
 				return
@@ -110,4 +117,11 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 	}()
 
 	return out
+}
+
+func startedEvent(initial bool) string {
+	if initial {
+		return "started"
+	}
+	return ""
 }

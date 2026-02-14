@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/surge-downloader/surge/internal/torrent/bencode"
 )
@@ -44,8 +45,6 @@ func AnnounceHTTP(announceURL string, req AnnounceRequest) (*AnnounceResponse, e
 	}
 
 	q := u.Query()
-	q.Set("info_hash", string(req.InfoHash[:]))
-	q.Set("peer_id", string(req.PeerID[:]))
 	q.Set("port", strconv.Itoa(req.Port))
 	q.Set("uploaded", strconv.FormatInt(req.Uploaded, 10))
 	q.Set("downloaded", strconv.FormatInt(req.Downloaded, 10))
@@ -56,8 +55,15 @@ func AnnounceHTTP(announceURL string, req AnnounceRequest) (*AnnounceResponse, e
 		q.Set("event", req.Event)
 	}
 
-	u.RawQuery = q.Encode()
-	resp, err := http.Get(u.String())
+	raw := q.Encode()
+	if raw != "" {
+		raw += "&"
+	}
+	raw += "info_hash=" + escapeBytes(req.InfoHash[:]) + "&peer_id=" + escapeBytes(req.PeerID[:])
+	u.RawQuery = raw
+
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Get(u.String())
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +104,15 @@ func AnnounceHTTP(announceURL string, req AnnounceRequest) (*AnnounceResponse, e
 	}
 
 	return &out, nil
+}
+
+func escapeBytes(in []byte) string {
+	const hexdigits = "0123456789abcdef"
+	out := make([]byte, 0, len(in)*3)
+	for _, b := range in {
+		out = append(out, '%', hexdigits[b>>4], hexdigits[b&0x0f])
+	}
+	return string(out)
 }
 
 func parseCompactPeers(b []byte) []Peer {

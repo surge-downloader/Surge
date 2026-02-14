@@ -817,8 +817,15 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 			speedStr = "N/A"
 		}
 		etaStr = "Done"
-	} else if d.paused || d.Speed == 0 {
+	} else if d.paused {
 		speedStr = "Paused"
+		etaStr = "∞"
+	} else if d.Speed == 0 {
+		if d.Connections > 0 {
+			speedStr = "0 B/s"
+		} else {
+			speedStr = "Connecting"
+		}
 		etaStr = "∞"
 	} else {
 		speedStr = fmt.Sprintf("%.2f MB/s", d.Speed/Megabyte)
@@ -852,7 +859,7 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Size:"), StatsValueStyle.Render(sizeStr)),
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Speed:"), StatsValueStyle.Render(speedStr)),
 	}
-	isActive := !d.done && !d.paused && !d.pausing && d.Speed > 0
+	isActive := isActiveDownload(d)
 	if isActive {
 		connStr := "0"
 		if d.Connections > 0 {
@@ -929,7 +936,7 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 }
 
 func getDownloadStatus(d *DownloadModel) string {
-	status := components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded)
+	status := components.DetermineStatus(d.done, d.paused, d.err != nil, isActiveDownload(d))
 	return status.Render()
 }
 
@@ -950,7 +957,7 @@ func (m RootModel) ComputeViewStats() ViewStats {
 	for _, d := range m.downloads {
 		if d.done {
 			stats.DownloadedCount++
-		} else if d.Speed > 0 {
+		} else if isActiveDownload(d) {
 			stats.ActiveCount++
 		} else {
 			stats.QueuedCount++
