@@ -14,31 +14,36 @@ type Manager struct {
 	layout   PieceLayout
 	store    Storage
 
-	maxPeers    int
-	uploadSlots int
-	mu          sync.Mutex
-	active      map[string]*Conn
-	uploading   map[string]bool
-	unchoked    int
+	maxPeers        int
+	uploadSlots     int
+	requestPipeline int
+	mu              sync.Mutex
+	active          map[string]*Conn
+	uploading       map[string]bool
+	unchoked        int
 }
 
-func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceLayout, store Storage, maxPeers int, uploadSlots int) *Manager {
+func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceLayout, store Storage, maxPeers int, uploadSlots int, requestPipeline int) *Manager {
 	if maxPeers <= 0 {
 		maxPeers = 32
 	}
 	if uploadSlots < 0 {
 		uploadSlots = 0
 	}
+	if requestPipeline <= 0 {
+		requestPipeline = 8
+	}
 	return &Manager{
-		infoHash:    infoHash,
-		peerID:      peerID,
-		picker:      picker,
-		layout:      layout,
-		store:       store,
-		maxPeers:    maxPeers,
-		uploadSlots: uploadSlots,
-		active:      make(map[string]*Conn),
-		uploading:   make(map[string]bool),
+		infoHash:        infoHash,
+		peerID:          peerID,
+		picker:          picker,
+		layout:          layout,
+		store:           store,
+		maxPeers:        maxPeers,
+		uploadSlots:     uploadSlots,
+		requestPipeline: requestPipeline,
+		active:          make(map[string]*Conn),
+		uploading:       make(map[string]bool),
 	}
 }
 
@@ -81,7 +86,7 @@ func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 	}
 
 	var pipe Pipeline
-	conn := NewConn(sess, addr, m.picker, m.layout, m.store, pipe, func() {
+	conn := NewConn(sess, addr, m.picker, m.layout, m.store, pipe, m.requestPipeline, func() {
 		m.onClose(key)
 	})
 	conn.Start(ctx)

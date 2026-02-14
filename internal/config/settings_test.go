@@ -310,6 +310,9 @@ func TestToRuntimeConfig(t *testing.T) {
 	if runtime.TorrentUploadSlots != settings.Torrent.UploadSlotsPerTorrent {
 		t.Error("TorrentUploadSlots not correctly mapped")
 	}
+	if runtime.TorrentRequestPipeline != settings.Torrent.RequestPipelineDepth {
+		t.Error("TorrentRequestPipeline not correctly mapped")
+	}
 }
 
 func TestGetSettingsMetadata(t *testing.T) {

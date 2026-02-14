@@ -111,11 +111,12 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	}
 
 	runner, err := torrent.NewRunner(meta, outPath, torrent.SessionConfig{
-		ListenAddr:     "0.0.0.0:0",
-		BootstrapNodes: []string{"router.bittorrent.com:6881", "dht.transmissionbt.com:6881"},
-		TotalLength:    meta.Info.TotalLength(),
-		MaxPeers:       runtime.GetTorrentMaxConnections(),
-		UploadSlots:    runtime.GetTorrentUploadSlots(),
+		ListenAddr:      "0.0.0.0:0",
+		BootstrapNodes:  []string{"router.bittorrent.com:6881", "dht.transmissionbt.com:6881"},
+		TotalLength:     meta.Info.TotalLength(),
+		MaxPeers:        runtime.GetTorrentMaxConnections(),
+		UploadSlots:     runtime.GetTorrentUploadSlots(),
+		RequestPipeline: runtime.GetTorrentRequestPipeline(),
 	}, cfg.State)
 	if err != nil {
 		return err

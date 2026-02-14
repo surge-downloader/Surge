@@ -12,19 +12,20 @@ import (
 // This test would have caught the ProxyURL bug.
 func TestConvertRuntimeConfig_AllFieldsCopied(t *testing.T) {
 	input := &config.RuntimeConfig{
-		MaxConnectionsPerHost: 48,
-		UserAgent:             "TestAgent/1.0",
-		ProxyURL:              "http://127.0.0.1:8080",
-		SequentialDownload:    true,
-		MinChunkSize:          4 * 1024 * 1024,
-		WorkerBufferSize:      512 * 1024,
-		MaxTaskRetries:        5,
-		SlowWorkerThreshold:   0.25,
-		SlowWorkerGracePeriod: 10 * time.Second,
-		StallTimeout:          7 * time.Second,
-		SpeedEmaAlpha:         0.4,
-		TorrentMaxConnections: 80,
-		TorrentUploadSlots:    6,
+		MaxConnectionsPerHost:  48,
+		UserAgent:              "TestAgent/1.0",
+		ProxyURL:               "http://127.0.0.1:8080",
+		SequentialDownload:     true,
+		MinChunkSize:           4 * 1024 * 1024,
+		WorkerBufferSize:       512 * 1024,
+		MaxTaskRetries:         5,
+		SlowWorkerThreshold:    0.25,
+		SlowWorkerGracePeriod:  10 * time.Second,
+		StallTimeout:           7 * time.Second,
+		SpeedEmaAlpha:          0.4,
+		TorrentMaxConnections:  80,
+		TorrentUploadSlots:     6,
+		TorrentRequestPipeline: 12,
 	}
 
 	result := ConvertRuntimeConfig(input)
@@ -71,6 +72,9 @@ func TestConvertRuntimeConfig_AllFieldsCopied(t *testing.T) {
 	}
 	if result.TorrentUploadSlots != input.TorrentUploadSlots {
 		t.Errorf("TorrentUploadSlots: got %d, want %d", result.TorrentUploadSlots, input.TorrentUploadSlots)
+	}
+	if result.TorrentRequestPipeline != input.TorrentRequestPipeline {
+		t.Errorf("TorrentRequestPipeline: got %d, want %d", result.TorrentRequestPipeline, input.TorrentRequestPipeline)
 	}
 }
 

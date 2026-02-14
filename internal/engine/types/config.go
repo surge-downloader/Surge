@@ -74,14 +74,15 @@ type RuntimeConfig struct {
 	SequentialDownload    bool
 	MinChunkSize          int64
 
-	WorkerBufferSize      int
-	MaxTaskRetries        int
-	SlowWorkerThreshold   float64
-	SlowWorkerGracePeriod time.Duration
-	StallTimeout          time.Duration
-	SpeedEmaAlpha         float64
-	TorrentMaxConnections int
-	TorrentUploadSlots    int
+	WorkerBufferSize       int
+	MaxTaskRetries         int
+	SlowWorkerThreshold    float64
+	SlowWorkerGracePeriod  time.Duration
+	StallTimeout           time.Duration
+	SpeedEmaAlpha          float64
+	TorrentMaxConnections  int
+	TorrentUploadSlots     int
+	TorrentRequestPipeline int
 }
 
 // GetUserAgent returns the configured user agent or the default
@@ -128,6 +129,13 @@ func (r *RuntimeConfig) GetTorrentUploadSlots() int {
 		return 4
 	}
 	return r.TorrentUploadSlots
+}
+
+func (r *RuntimeConfig) GetTorrentRequestPipeline() int {
+	if r == nil || r.TorrentRequestPipeline <= 0 {
+		return 8
+	}
+	return r.TorrentRequestPipeline
 }
 
 const (

@@ -33,5 +33,5 @@ func TestManagerStartStop(t *testing.T) {
 func peerManagerForTest() *peer.Manager {
 	var ih [20]byte
 	var pid [20]byte
-	return peer.NewManager(ih, pid, nil, nil, nil, 1, 0)
+	return peer.NewManager(ih, pid, nil, nil, nil, 1, 0, 8)
 }

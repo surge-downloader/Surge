@@ -8,19 +8,20 @@ import (
 )
 
 type Conn struct {
-	sess      *Session
-	addr      net.TCPAddr
-	mu        sync.Mutex
-	writeMu   sync.Mutex
-	choked    bool
-	amChoking bool
-	bitfield  []byte
-	picker    Picker
-	pl        PieceLayout
-	store     Storage
-	pipeline  Pipeline
-	piece     int
-	onClose   func()
+	sess        *Session
+	addr        net.TCPAddr
+	mu          sync.Mutex
+	writeMu     sync.Mutex
+	choked      bool
+	amChoking   bool
+	bitfield    []byte
+	picker      Picker
+	pl          PieceLayout
+	store       Storage
+	pipeline    Pipeline
+	maxInFlight int
+	piece       int
+	onClose     func()
 }
 
 type Picker interface {
@@ -39,18 +40,22 @@ type Storage interface {
 	Bitfield() []byte
 }
 
-func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, store Storage, pipeline Pipeline, onClose func()) *Conn {
+func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, store Storage, pipeline Pipeline, maxInFlight int, onClose func()) *Conn {
+	if maxInFlight <= 0 {
+		maxInFlight = 1
+	}
 	return &Conn{
-		sess:      sess,
-		addr:      addr,
-		choked:    true,
-		amChoking: true,
-		picker:    picker,
-		pl:        pl,
-		store:     store,
-		pipeline:  pipeline,
-		piece:     -1,
-		onClose:   onClose,
+		sess:        sess,
+		addr:        addr,
+		choked:      true,
+		amChoking:   true,
+		picker:      picker,
+		pl:          pl,
+		store:       store,
+		pipeline:    pipeline,
+		maxInFlight: maxInFlight,
+		piece:       -1,
+		onClose:     onClose,
 	}
 }
 
@@ -136,7 +141,7 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest) {
 					c.advancePiece()
 				} else if c.pl != nil {
 					// Re-request the piece if verification fails
-					c.pipeline = newSimplePipeline(c.pl.PieceSize(int64(index)))
+					c.pipeline = newSimplePipeline(c.pl.PieceSize(int64(index)), c.maxInFlight)
 				}
 			}
 			requestNext = true
@@ -158,12 +163,14 @@ func (c *Conn) maybeRequest() {
 			return
 		}
 	}
-	begin, length, ok := c.pipeline.NextRequest()
-	if !ok {
-		return
+	for {
+		begin, length, ok := c.pipeline.NextRequest()
+		if !ok {
+			return
+		}
+		msg := MakeRequest(uint32(c.piece), uint32(begin), uint32(length))
+		c.write(msg)
 	}
-	msg := MakeRequest(uint32(c.piece), uint32(begin), uint32(length))
-	c.write(msg)
 }
 
 func (c *Conn) advancePiece() bool {
@@ -179,7 +186,7 @@ func (c *Conn) advancePiece() bool {
 		return false
 	}
 	c.piece = piece
-	c.pipeline = newSimplePipeline(size)
+	c.pipeline = newSimplePipeline(size, c.maxInFlight)
 	return true
 }
 

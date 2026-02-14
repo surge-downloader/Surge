@@ -16,6 +16,7 @@ type SessionConfig struct {
 	TotalLength     int64
 	MaxPeers        int
 	UploadSlots     int
+	RequestPipeline int
 }
 
 type PeerSource interface {

@@ -49,6 +49,7 @@ type NetworkSettings struct {
 type TorrentSettings struct {
 	MaxConnectionsPerTorrent int `json:"max_connections_per_torrent"`
 	UploadSlotsPerTorrent    int `json:"upload_slots_per_torrent"`
+	RequestPipelineDepth     int `json:"request_pipeline_depth"`
 }
 
 // UnmarshalJSON implements custom JSON unmarshalling for Settings.
@@ -124,6 +125,7 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 		"Torrent": {
 			{Key: "max_connections_per_torrent", Label: "Max Connections/Torrent", Description: "Maximum peer connections per torrent (1-500).", Type: "int"},
 			{Key: "upload_slots_per_torrent", Label: "Upload Slots/Torrent", Description: "Maximum upload slots per torrent (0-50).", Type: "int"},
+			{Key: "request_pipeline_depth", Label: "Request Pipeline Depth", Description: "Max in-flight block requests per peer (1-64). Higher values improve high-latency throughput.", Type: "int"},
 		},
 		"Performance": {
 			{Key: "max_task_retries", Label: "Max Task Retries", Description: "Number of times to retry a failed chunk before giving up.", Type: "int"},
@@ -188,6 +190,7 @@ func DefaultSettings() *Settings {
 		Torrent: TorrentSettings{
 			MaxConnectionsPerTorrent: 32,
 			UploadSlotsPerTorrent:    4,
+			RequestPipelineDepth:     8,
 		},
 		Performance: PerformanceSettings{
 			MaxTaskRetries:        3,
@@ -251,36 +254,38 @@ func SaveSettings(s *Settings) error {
 // ToRuntimeConfig converts Settings to a downloader RuntimeConfig
 // This is used to pass user settings to the download engine
 type RuntimeConfig struct {
-	MaxConnectionsPerHost int
-	UserAgent             string
-	ProxyURL              string
-	SequentialDownload    bool
-	MinChunkSize          int64
-	WorkerBufferSize      int
-	MaxTaskRetries        int
-	SlowWorkerThreshold   float64
-	SlowWorkerGracePeriod time.Duration
-	StallTimeout          time.Duration
-	SpeedEmaAlpha         float64
-	TorrentMaxConnections int
-	TorrentUploadSlots    int
+	MaxConnectionsPerHost  int
+	UserAgent              string
+	ProxyURL               string
+	SequentialDownload     bool
+	MinChunkSize           int64
+	WorkerBufferSize       int
+	MaxTaskRetries         int
+	SlowWorkerThreshold    float64
+	SlowWorkerGracePeriod  time.Duration
+	StallTimeout           time.Duration
+	SpeedEmaAlpha          float64
+	TorrentMaxConnections  int
+	TorrentUploadSlots     int
+	TorrentRequestPipeline int
 }
 
 // ToRuntimeConfig creates a RuntimeConfig from user Settings
 func (s *Settings) ToRuntimeConfig() *RuntimeConfig {
 	return &RuntimeConfig{
-		MaxConnectionsPerHost: s.Network.MaxConnectionsPerHost,
-		UserAgent:             s.Network.UserAgent,
-		ProxyURL:              s.Network.ProxyURL,
-		SequentialDownload:    s.Network.SequentialDownload,
-		MinChunkSize:          s.Network.MinChunkSize,
-		WorkerBufferSize:      s.Network.WorkerBufferSize,
-		MaxTaskRetries:        s.Performance.MaxTaskRetries,
-		SlowWorkerThreshold:   s.Performance.SlowWorkerThreshold,
-		SlowWorkerGracePeriod: s.Performance.SlowWorkerGracePeriod,
-		StallTimeout:          s.Performance.StallTimeout,
-		SpeedEmaAlpha:         s.Performance.SpeedEmaAlpha,
-		TorrentMaxConnections: s.Torrent.MaxConnectionsPerTorrent,
-		TorrentUploadSlots:    s.Torrent.UploadSlotsPerTorrent,
+		MaxConnectionsPerHost:  s.Network.MaxConnectionsPerHost,
+		UserAgent:              s.Network.UserAgent,
+		ProxyURL:               s.Network.ProxyURL,
+		SequentialDownload:     s.Network.SequentialDownload,
+		MinChunkSize:           s.Network.MinChunkSize,
+		WorkerBufferSize:       s.Network.WorkerBufferSize,
+		MaxTaskRetries:         s.Performance.MaxTaskRetries,
+		SlowWorkerThreshold:    s.Performance.SlowWorkerThreshold,
+		SlowWorkerGracePeriod:  s.Performance.SlowWorkerGracePeriod,
+		StallTimeout:           s.Performance.StallTimeout,
+		SpeedEmaAlpha:          s.Performance.SpeedEmaAlpha,
+		TorrentMaxConnections:  s.Torrent.MaxConnectionsPerTorrent,
+		TorrentUploadSlots:     s.Torrent.UploadSlotsPerTorrent,
+		TorrentRequestPipeline: s.Torrent.RequestPipelineDepth,
 	}
 }
