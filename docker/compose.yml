@@ -1,0 +1,15 @@
+services:
+  surge:
+    image: ghcr.io/surge-downloader/surge # OR surge:latest if building
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+    container_name: surge
+    ports:
+      - "1700:1700"
+    volumes:
+      - ./downloads:/downloads
+      - ./surge-config:/root/.surge
+    restart: unless-stopped
+    environment:
+      - TZ=UTC

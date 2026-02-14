@@ -131,6 +131,35 @@ By default, `surge connect` uses:
 - `http://` for loopback and private IP targets
 - `https://` for public/hostname targets
 
+### 4. Server Mode with Docker Compose
+
+Download the compose file and start the container:
+
+   ```bash
+   wget https://raw.githubusercontent.com/driftywinds/surge-docker/refs/heads/main/compose.yml
+   docker compose up -d
+   ```
+
+Get the API token:
+
+   ```bash
+   docker compose exec surge surge token
+   ```
+   
+   Save this token - you'll need it to authenticate API requests and connect remotely.
+
+Check server status:
+
+   ```bash
+   docker compose exec surge surge server status
+   ```
+
+View logs:
+
+   ```bash
+   docker compose logs -f surge
+   ```
+
 ---
 
 ## Benchmarks
