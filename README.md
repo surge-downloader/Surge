@@ -136,7 +136,7 @@ By default, `surge connect` uses:
 Download the compose file and start the container:
 
    ```bash
-   wget https://raw.githubusercontent.com/driftywinds/surge-docker/refs/heads/main/compose.yml
+   wget https://raw.githubusercontent.com/surge-downloader/surge/refs/heads/main/docker/compose.yml
    docker compose up -d
    ```
 
