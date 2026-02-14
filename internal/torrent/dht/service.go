@@ -2,14 +2,12 @@ package dht
 
 import (
 	"context"
-	"sync"
 	"time"
 )
 
 type Service struct {
 	node      *Node
 	bootstrap []string
-	mu        sync.Mutex
 }
 
 type ServiceConfig struct {

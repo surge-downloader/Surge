@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
-	"time"
 )
 
 func Announce(announceURL string, req AnnounceRequest) (*AnnounceResponse, error) {
@@ -26,7 +25,6 @@ func DefaultPeerID() [20]byte {
 	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	var id [20]byte
 	copy(id[:8], []byte("-SG0001-"))
-	rand.Seed(time.Now().UnixNano())
 	for i := 8; i < 20; i++ {
 		id[i] = alphabet[rand.Intn(len(alphabet))]
 	}

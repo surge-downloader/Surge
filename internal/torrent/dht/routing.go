@@ -11,18 +11,18 @@ const (
 
 type routingTable struct {
 	self    NodeID
-	buckets [][]Node
+	buckets [][]*Node
 }
 
 func newRoutingTable(self NodeID) *routingTable {
 	return &routingTable{
 		self:    self,
-		buckets: make([][]Node, 160),
+		buckets: make([][]*Node, 160),
 	}
 }
 
-func (rt *routingTable) add(n Node) {
-	if bytes.Equal(n.id[:], rt.self[:]) {
+func (rt *routingTable) add(n *Node) {
+	if n == nil || bytes.Equal(n.id[:], rt.self[:]) {
 		return
 	}
 	i := bucketIndex(rt.self, n.id)
@@ -41,8 +41,8 @@ func (rt *routingTable) add(n Node) {
 	rt.buckets[i] = append(b[1:], n)
 }
 
-func (rt *routingTable) nearest(target NodeID, count int) []Node {
-	all := make([]Node, 0, bucketSize*len(rt.buckets))
+func (rt *routingTable) nearest(target NodeID, count int) []*Node {
+	all := make([]*Node, 0, bucketSize*len(rt.buckets))
 	for _, b := range rt.buckets {
 		all = append(all, b...)
 	}

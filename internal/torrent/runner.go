@@ -59,9 +59,7 @@ func flattenTrackers(meta *TorrentMeta) []string {
 		out = append(out, meta.Announce)
 	}
 	for _, tier := range meta.AnnounceList {
-		for _, tr := range tier {
-			out = append(out, tr)
-		}
+		out = append(out, tier...)
 	}
 	return out
 }

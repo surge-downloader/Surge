@@ -12,8 +12,8 @@ import (
 
 const (
 	udpProtoID     uint64 = 0x41727101980
-	actionConnect         = 0
-	actionAnnounce        = 1
+	actionConnect  uint32 = 0
+	actionAnnounce uint32 = 1
 )
 
 func AnnounceUDP(announceURL string, req AnnounceRequest) (*AnnounceResponse, error) {

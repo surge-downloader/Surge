@@ -35,13 +35,13 @@ func encodeValue(buf *bytes.Buffer, v any) error {
 
 func encodeInt(buf *bytes.Buffer, n int64) error {
 	buf.WriteByte('i')
-	_, _ = buf.WriteString(fmt.Sprintf("%d", n))
+	_, _ = fmt.Fprintf(buf, "%d", n)
 	buf.WriteByte('e')
 	return nil
 }
 
 func encodeString(buf *bytes.Buffer, b []byte) error {
-	_, _ = buf.WriteString(fmt.Sprintf("%d:", len(b)))
+	_, _ = fmt.Fprintf(buf, "%d:", len(b))
 	_, _ = buf.Write(b)
 	return nil
 }

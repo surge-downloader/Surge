@@ -88,7 +88,7 @@ func (n *Node) Bootstrap() error {
 			if id, ok := resp.R["id"].([]byte); ok && len(id) == 20 {
 				var nid NodeID
 				copy(nid[:], id)
-				n.rt.add(Node{id: nid, addr: addr})
+				n.rt.add(&Node{id: nid, addr: addr})
 			}
 		}
 	}
@@ -233,7 +233,9 @@ func (n *Node) readLoop() {
 			return
 		default:
 		}
-		n.conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		if err := n.conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			continue
+		}
 		nr, addr, err := n.conn.ReadFromUDP(buf)
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {

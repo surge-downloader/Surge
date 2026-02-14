@@ -51,16 +51,17 @@ func EncodeMessage(msg *Message) ([]byte, error) {
 		"t": []byte(msg.T),
 		"y": []byte(msg.Y),
 	}
-	if msg.Y == krpcQuery {
+	switch msg.Y {
+	case krpcQuery:
 		root["q"] = []byte(msg.Q)
 		if msg.A != nil {
 			root["a"] = msg.A
 		}
-	} else if msg.Y == krpcResponse {
+	case krpcResponse:
 		if msg.R != nil {
 			root["r"] = msg.R
 		}
-	} else if msg.Y == krpcError {
+	case krpcError:
 		if msg.E != nil {
 			root["e"] = msg.E
 		}
