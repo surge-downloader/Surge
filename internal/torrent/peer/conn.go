@@ -26,6 +26,8 @@ type Conn struct {
 
 type Picker interface {
 	Next() (int, bool)
+	Done(piece int)
+	Requeue(piece int)
 }
 
 type PieceLayout interface {
@@ -71,6 +73,11 @@ func (c *Conn) Start(ctx context.Context) {
 
 func (c *Conn) readLoop(ctx context.Context) {
 	defer func() {
+		c.mu.Lock()
+		if c.picker != nil && c.piece >= 0 && c.pipeline != nil && !c.pipeline.Completed() {
+			c.picker.Requeue(c.piece)
+		}
+		c.mu.Unlock()
 		_ = c.sess.Close()
 		if c.onClose != nil {
 			c.onClose()
@@ -138,6 +145,9 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest) {
 			if c.pipeline.Completed() {
 				ok, _ := c.store.VerifyPiece(int64(index))
 				if ok {
+					if c.picker != nil {
+						c.picker.Done(int(index))
+					}
 					c.advancePiece()
 				} else if c.pl != nil {
 					// Re-request the piece if verification fails
