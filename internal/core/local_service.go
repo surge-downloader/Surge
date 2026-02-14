@@ -174,9 +174,9 @@ func (s *LocalDownloadService) reportProgressLoop() {
 
 			// Calculate Progress
 			downloaded, total, totalElapsed, sessionElapsed, connections, sessionStart := cfg.State.GetProgress()
+			sessionDownloaded := downloaded - sessionStart
 
 			// Calculate Speed with EMA
-			sessionDownloaded := downloaded - sessionStart
 			var instantSpeed float64
 			if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
 				instantSpeed = float64(sessionDownloaded) / sessionElapsed.Seconds()
@@ -336,6 +336,7 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 			if cfg.State != nil {
 				// Calculate progress and speed (thread-safe)
 				downloaded, totalSize, _, sessionElapsed, connections, sessionStart := cfg.State.GetProgress()
+				sessionDownloaded := downloaded - sessionStart
 
 				status.TotalSize = totalSize
 				status.Downloaded = downloaded
@@ -357,11 +358,12 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 					status.Status = "paused"
 				} else if cfg.State.Done.Load() {
 					status.Status = "completed"
+				} else if sessionDownloaded <= 0 {
+					status.Status = "connecting"
 				}
 
 				// Calculate speed from progress only while actively downloading.
 				if status.Status == "downloading" {
-					sessionDownloaded := downloaded - sessionStart
 					if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
 						status.Speed = float64(sessionDownloaded) / sessionElapsed.Seconds() / (1024 * 1024)
 

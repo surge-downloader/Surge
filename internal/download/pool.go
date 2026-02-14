@@ -385,6 +385,7 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 
 	// Calculate progress and speed (thread-safe)
 	downloaded, totalSize, _, sessionElapsed, _, sessionStart := state.GetProgress()
+	sessionDownloaded := downloaded - sessionStart
 
 	status := &types.DownloadStatus{
 		ID:         id,
@@ -401,6 +402,8 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 		status.Status = "paused"
 	} else if state.Done.Load() {
 		status.Status = "completed"
+	} else if sessionDownloaded <= 0 {
+		status.Status = "connecting"
 	}
 
 	if err := state.GetError(); err != nil {
@@ -415,7 +418,6 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 
 	// Calculate speed (MB/s) only for active downloads.
 	if status.Status == "downloading" {
-		sessionDownloaded := downloaded - sessionStart
 		if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
 			bytesPerSec := float64(sessionDownloaded) / sessionElapsed.Seconds()
 			status.Speed = bytesPerSec / (1024 * 1024)
