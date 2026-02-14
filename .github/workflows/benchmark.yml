@@ -17,8 +17,20 @@ on:
         description: 'Number of iterations'
         required: true
         default: '5'
+      warmups:
+        description: 'Warmup rounds (not counted)'
+        required: true
+        default: '1'
+      connections:
+        description: 'Shared connection count for Surge and aria2'
+        required: true
+        default: '16'
       baseline:
         description: 'Compare against baseline (main branch)? [y/n]'
+        required: true
+        default: 'n'
+      speedtest:
+        description: 'Run speedtest-cli? [y/n]'
         required: true
         default: 'n'
 
@@ -71,46 +83,55 @@ jobs:
           BENCH_URL: ${{ github.event.inputs.url || 'https://sin-speed.hetzner.com/1GB.bin' }}
           # On push/PR, we usually want 1 iteration to save time, 5 for manual
           BENCH_ITERATIONS: ${{ github.event.inputs.iterations || '10' }}
+          BENCH_WARMUPS: ${{ github.event.inputs.warmups || '1' }}
+          BENCH_CONNECTIONS: ${{ github.event.inputs.connections || '16' }}
           # Default to 'y' for PRs to see regressions, 'n' for simple pushes
           BASELINE_COMPARE: ${{ github.event.inputs.baseline || 'y' }}
+          BENCH_SPEEDTEST: ${{ github.event.inputs.speedtest || 'n' }}
 
         run: |
           cd current
           
-          # 1. Build the command arguments dynamically
-          ARGS=""
-          
-          # Add URL (Positional argument in your script)
-          ARGS="$ARGS $BENCH_URL"
-          
-          # Add Iterations
-          ARGS="$ARGS -n $BENCH_ITERATIONS"
-          
+          # Build benchmark args (aligned with fair Surge vs aria2 comparison)
+          ARGS=(
+            "$BENCH_URL"
+            "-n" "$BENCH_ITERATIONS"
+            "--warmups" "$BENCH_WARMUPS"
+            "--connections" "$BENCH_CONNECTIONS"
+            "--surge-timing" "external"
+            "--isolate-surge"
+            "--aria2-no-conf"
+            "--strict-size"
+            "--surge"
+            "--aria2"
+          )
+
           # Add Baseline ONLY if requested
           if [[ "$BASELINE_COMPARE" == "y" ]]; then
             echo "Comparing against baseline..."
-            ARGS="$ARGS --surge-baseline ../surge-baseline"
+            ARGS+=("--surge-baseline" "../surge-baseline")
           fi
 
-          # 2. Run the command using the constructed ARGS
-          # We pass the current build as the executable
-          python3 benchmark.py \
-            $ARGS \
-            --surge \
-            --speedtest \
-            --axel \
-            --aria2 \
-            | tee benchmark_output.txt
+          # Optional speedtest
+          if [[ "$BENCH_SPEEDTEST" == "y" ]]; then
+            ARGS+=("--speedtest")
+          fi
 
-          # 3. Save output to GITHUB_ENV for the next step (multiline safe)
+          # Run benchmark
+          python3 benchmark.py "${ARGS[@]}" | tee benchmark_output.txt
+
+          # Save output to GITHUB_ENV for the next step (multiline safe)
           echo "BENCHMARK_RESULTS<<EOF" >> $GITHUB_ENV
           cat benchmark_output.txt >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-          # 4. Write to Job Summary (Markdown)
+          # Write to Job Summary (Markdown)
           echo "## 🚀 Benchmark Results" >> $GITHUB_STEP_SUMMARY
           echo "**Target:** $BENCH_URL" >> $GITHUB_STEP_SUMMARY
           echo "**Iterations:** $BENCH_ITERATIONS" >> $GITHUB_STEP_SUMMARY
+          echo "**Warmups:** $BENCH_WARMUPS" >> $GITHUB_STEP_SUMMARY
+          echo "**Connections:** $BENCH_CONNECTIONS" >> $GITHUB_STEP_SUMMARY
+          echo "**Tools:** surge, aria2" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           cat benchmark_output.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
