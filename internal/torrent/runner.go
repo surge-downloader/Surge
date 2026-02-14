@@ -54,6 +54,10 @@ func (r *Runner) Start(ctx context.Context) {
 		if addr, err := r.peers.StartInbound(ctx, r.session.cfg.ListenAddr); err == nil && addr != nil {
 			r.listenAddr = addr
 			r.session.SetListenPort(addr.Port)
+		} else if addr, err := r.peers.StartInbound(ctx, "0.0.0.0:0"); err == nil && addr != nil {
+			// Fallback to an ephemeral port if fixed bind fails.
+			r.listenAddr = addr
+			r.session.SetListenPort(addr.Port)
 		}
 	}
 	peerCh := r.session.DiscoverPeers(ctx)

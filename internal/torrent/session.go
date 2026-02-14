@@ -3,7 +3,6 @@ package torrent
 import (
 	"context"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
@@ -41,18 +40,12 @@ func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Sessio
 	if cfg.TotalLength <= 0 {
 		cfg.TotalLength = 1
 	}
-	s := &Session{
+	return &Session{
 		infoHash: infoHash,
 		trackers: trackers,
 		cfg:      cfg,
 		peerID:   tracker.DefaultPeerID(),
 	}
-	if _, p, err := net.SplitHostPort(cfg.ListenAddr); err == nil {
-		if pi, err := strconv.Atoi(p); err == nil && pi > 0 {
-			s.listenPort = pi
-		}
-	}
-	return s
 }
 
 // DiscoverPeers merges tracker and DHT peer streams.

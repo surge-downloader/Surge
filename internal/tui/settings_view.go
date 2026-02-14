@@ -276,6 +276,7 @@ func (m RootModel) getSettingsValues(category string) map[string]interface{} {
 		values["max_connections_per_torrent"] = m.Settings.Torrent.MaxConnectionsPerTorrent
 		values["upload_slots_per_torrent"] = m.Settings.Torrent.UploadSlotsPerTorrent
 		values["request_pipeline_depth"] = m.Settings.Torrent.RequestPipelineDepth
+		values["listen_port"] = m.Settings.Torrent.ListenPort
 	}
 
 	return values
@@ -476,6 +477,15 @@ func (m *RootModel) setTorrentSetting(key, value, typ string) error {
 			}
 			m.Settings.Torrent.RequestPipelineDepth = v
 		}
+	case "listen_port":
+		if v, err := strconv.Atoi(value); err == nil {
+			if v < 1 {
+				v = 1
+			} else if v > 65535 {
+				v = 65535
+			}
+			m.Settings.Torrent.ListenPort = v
+		}
 	}
 	return nil
 }
@@ -552,6 +562,8 @@ func (m RootModel) getSettingUnit() string {
 		return " slots"
 	case "request_pipeline_depth":
 		return " in-flight"
+	case "listen_port":
+		return " port"
 	default:
 		return ""
 	}
@@ -715,6 +727,8 @@ func (m *RootModel) resetSettingToDefault(category, key string, defaults *config
 			m.Settings.Torrent.UploadSlotsPerTorrent = defaults.Torrent.UploadSlotsPerTorrent
 		case "request_pipeline_depth":
 			m.Settings.Torrent.RequestPipelineDepth = defaults.Torrent.RequestPipelineDepth
+		case "listen_port":
+			m.Settings.Torrent.ListenPort = defaults.Torrent.ListenPort
 		}
 	}
 }

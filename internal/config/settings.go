@@ -50,6 +50,7 @@ type TorrentSettings struct {
 	MaxConnectionsPerTorrent int `json:"max_connections_per_torrent"`
 	UploadSlotsPerTorrent    int `json:"upload_slots_per_torrent"`
 	RequestPipelineDepth     int `json:"request_pipeline_depth"`
+	ListenPort               int `json:"listen_port"`
 }
 
 // UnmarshalJSON implements custom JSON unmarshalling for Settings.
@@ -126,6 +127,7 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 			{Key: "max_connections_per_torrent", Label: "Max Connections/Torrent", Description: "Maximum peer connections per torrent (1-500).", Type: "int"},
 			{Key: "upload_slots_per_torrent", Label: "Upload Slots/Torrent", Description: "Maximum upload slots per torrent (0-50).", Type: "int"},
 			{Key: "request_pipeline_depth", Label: "Request Pipeline Depth", Description: "Max in-flight block requests per peer (1-64). Higher values improve high-latency throughput.", Type: "int"},
+			{Key: "listen_port", Label: "Listen Port", Description: "Inbound TCP port for torrent peers (1-65535). Requires firewall/NAT forwarding for best results.", Type: "int"},
 		},
 		"Performance": {
 			{Key: "max_task_retries", Label: "Max Task Retries", Description: "Number of times to retry a failed chunk before giving up.", Type: "int"},
@@ -191,6 +193,7 @@ func DefaultSettings() *Settings {
 			MaxConnectionsPerTorrent: 32,
 			UploadSlotsPerTorrent:    4,
 			RequestPipelineDepth:     8,
+			ListenPort:               6881,
 		},
 		Performance: PerformanceSettings{
 			MaxTaskRetries:        3,
@@ -268,6 +271,7 @@ type RuntimeConfig struct {
 	TorrentMaxConnections  int
 	TorrentUploadSlots     int
 	TorrentRequestPipeline int
+	TorrentListenPort      int
 }
 
 // ToRuntimeConfig creates a RuntimeConfig from user Settings
@@ -287,5 +291,6 @@ func (s *Settings) ToRuntimeConfig() *RuntimeConfig {
 		TorrentMaxConnections:  s.Torrent.MaxConnectionsPerTorrent,
 		TorrentUploadSlots:     s.Torrent.UploadSlotsPerTorrent,
 		TorrentRequestPipeline: s.Torrent.RequestPipelineDepth,
+		TorrentListenPort:      s.Torrent.ListenPort,
 	}
 }

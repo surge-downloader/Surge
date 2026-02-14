@@ -19,5 +19,6 @@ func ConvertRuntimeConfig(rc *config.RuntimeConfig) *RuntimeConfig {
 		TorrentMaxConnections:  rc.TorrentMaxConnections,
 		TorrentUploadSlots:     rc.TorrentUploadSlots,
 		TorrentRequestPipeline: rc.TorrentRequestPipeline,
+		TorrentListenPort:      rc.TorrentListenPort,
 	}
 }

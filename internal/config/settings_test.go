@@ -313,6 +313,9 @@ func TestToRuntimeConfig(t *testing.T) {
 	if runtime.TorrentRequestPipeline != settings.Torrent.RequestPipelineDepth {
 		t.Error("TorrentRequestPipeline not correctly mapped")
 	}
+	if runtime.TorrentListenPort != settings.Torrent.ListenPort {
+		t.Error("TorrentListenPort not correctly mapped")
+	}
 }
 
 func TestGetSettingsMetadata(t *testing.T) {

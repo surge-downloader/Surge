@@ -26,6 +26,7 @@ func TestConvertRuntimeConfig_AllFieldsCopied(t *testing.T) {
 		TorrentMaxConnections:  80,
 		TorrentUploadSlots:     6,
 		TorrentRequestPipeline: 12,
+		TorrentListenPort:      6881,
 	}
 
 	result := ConvertRuntimeConfig(input)
@@ -75,6 +76,9 @@ func TestConvertRuntimeConfig_AllFieldsCopied(t *testing.T) {
 	}
 	if result.TorrentRequestPipeline != input.TorrentRequestPipeline {
 		t.Errorf("TorrentRequestPipeline: got %d, want %d", result.TorrentRequestPipeline, input.TorrentRequestPipeline)
+	}
+	if result.TorrentListenPort != input.TorrentListenPort {
+		t.Errorf("TorrentListenPort: got %d, want %d", result.TorrentListenPort, input.TorrentListenPort)
 	}
 }
 

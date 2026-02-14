@@ -83,6 +83,7 @@ type RuntimeConfig struct {
 	TorrentMaxConnections  int
 	TorrentUploadSlots     int
 	TorrentRequestPipeline int
+	TorrentListenPort      int
 }
 
 // GetUserAgent returns the configured user agent or the default
@@ -136,6 +137,13 @@ func (r *RuntimeConfig) GetTorrentRequestPipeline() int {
 		return 8
 	}
 	return r.TorrentRequestPipeline
+}
+
+func (r *RuntimeConfig) GetTorrentListenPort() int {
+	if r == nil || r.TorrentListenPort <= 0 || r.TorrentListenPort > 65535 {
+		return 6881
+	}
+	return r.TorrentListenPort
 }
 
 const (

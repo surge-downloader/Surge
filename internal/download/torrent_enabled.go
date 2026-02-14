@@ -111,7 +111,7 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	}
 
 	runner, err := torrent.NewRunner(meta, outPath, torrent.SessionConfig{
-		ListenAddr:      "0.0.0.0:0",
+		ListenAddr:      fmt.Sprintf("0.0.0.0:%d", runtime.GetTorrentListenPort()),
 		BootstrapNodes:  []string{"router.bittorrent.com:6881", "dht.transmissionbt.com:6881"},
 		TotalLength:     meta.Info.TotalLength(),
 		MaxPeers:        runtime.GetTorrentMaxConnections(),
