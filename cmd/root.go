@@ -46,6 +46,7 @@ var (
 	GlobalProgressCh chan any
 	GlobalService    core.DownloadService
 	serverProgram    *tea.Program
+	startupIntegrityMessage string
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -73,14 +74,6 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		initializeGlobalState()
 
-		// Validate integrity of paused downloads before resuming
-		// Removes entries whose .surge files are missing or tampered with
-		if removed, err := state.ValidateIntegrity(); err != nil {
-			utils.Debug("Integrity check failed: %v", err)
-		} else if removed > 0 {
-			utils.Debug("Integrity check: removed %d corrupted/orphaned downloads", removed)
-		}
-
 		// Attempt to acquire lock
 		isMaster, err := AcquireLock()
 		if err != nil {
@@ -98,6 +91,8 @@ var rootCmd = &cobra.Command{
 				utils.Debug("Error releasing lock: %v", err)
 			}
 		}()
+
+		startupIntegrityMessage = runStartupIntegrityCheck()
 
 		// Initialize Service
 		GlobalService = core.NewLocalDownloadServiceWithInput(GlobalPool, GlobalProgressCh)
@@ -145,6 +140,27 @@ var rootCmd = &cobra.Command{
 	},
 }
 
+func runStartupIntegrityCheck() string {
+	// Validate integrity of paused/queued downloads before auto-resume.
+	// This removes entries whose .surge files are missing/tampered and
+	// also cleans orphan .surge files that no longer have DB entries.
+	if removed, err := state.ValidateIntegrity(); err != nil {
+		msg := fmt.Sprintf("Startup integrity check failed: %v", err)
+		fmt.Println(msg)
+		utils.Debug("Integrity check failed: %v", err)
+		return msg
+	} else if removed > 0 {
+		msg := fmt.Sprintf("Startup integrity check: removed %d corrupted/orphaned downloads", removed)
+		fmt.Println(msg)
+		utils.Debug("%s", msg)
+		return msg
+	}
+	msg := "Startup integrity check: no issues found"
+	fmt.Println(msg)
+	utils.Debug("%s", msg)
+	return msg
+}
+
 // startTUI initializes and runs the TUI program
 func startTUI(port int, exitWhenDone bool, noResume bool) {
 	// Initialize TUI
@@ -161,7 +177,7 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 	serverProgram = p // Save reference for HTTP handler
 
 	// Get event stream from service
-	events, cleanup, err := GlobalService.StreamEvents(context.Background())
+	stream, cleanup, err := GlobalService.StreamEvents(context.Background())
 	if err != nil {
 		_ = executeGlobalShutdown("tui: stream init failed")
 		fmt.Printf("Error getting event stream: %v\n", err)
@@ -171,10 +187,17 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 
 	// Background listener for progress events
 	go func() {
-		for msg := range events {
+		for msg := range stream {
 			p.Send(msg)
 		}
 	}()
+
+	if startupIntegrityMessage != "" && GlobalService != nil {
+		_ = GlobalService.Publish(events.SystemLogMsg{
+			Message: startupIntegrityMessage,
+		})
+		startupIntegrityMessage = ""
+	}
 
 	// Exit-when-done checker for TUI
 	if exitWhenDone {
@@ -415,6 +438,8 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service
 					eventType = "removed"
 				case events.DownloadRequestMsg:
 					eventType = "request"
+				case events.SystemLogMsg:
+					eventType = "system"
 				case events.BatchProgressMsg:
 					// Unroll batch and send individual progress events
 					for _, p := range msg {

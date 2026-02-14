@@ -52,6 +52,36 @@ func TestServer_Startup_HandlesResume(t *testing.T) {
 	}
 }
 
+func TestStartupIntegrityCheck_RemovesMissingPausedEntry(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "surge-startup-integrity-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	setupTestEnv(t, tmpDir)
+
+	testID := "startup-integrity-missing-id"
+	testURL := "http://example.com/startup-integrity.bin"
+	testDest := filepath.Join(tmpDir, "startup-integrity.bin")
+	seedDownload(t, testID, testURL, testDest, "paused")
+
+	// Ensure .surge file is missing to simulate an orphaned paused DB entry.
+	if err := os.Remove(testDest + types.IncompleteSuffix); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("failed to remove test .surge file: %v", err)
+	}
+
+	_ = runStartupIntegrityCheck()
+
+	entry, err := state.GetDownload(testID)
+	if err != nil {
+		t.Fatalf("GetDownload failed: %v", err)
+	}
+	if entry != nil {
+		t.Fatalf("expected missing paused entry to be removed, got %+v", entry)
+	}
+}
+
 // Helper: Setup XDG_CONFIG_HOME and Settings
 func setupTestEnv(t *testing.T, tmpDir string) {
 	originalXDG := os.Getenv("XDG_CONFIG_HOME")

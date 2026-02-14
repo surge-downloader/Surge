@@ -395,6 +395,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case events.SystemLogMsg:
+		if msg.Message != "" {
+			m.addLogEntry(LogStyleStarted.Render("ℹ " + msg.Message))
+		}
+		return m, tea.Batch(cmds...)
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height

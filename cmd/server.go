@@ -46,6 +46,8 @@ var serverStartCmd = &cobra.Command{
 			}
 		}()
 
+		_ = runStartupIntegrityCheck()
+
 		portFlag, _ := cmd.Flags().GetInt("port")
 		batchFile, _ := cmd.Flags().GetString("batch")
 		outputDir, _ := cmd.Flags().GetString("output")

@@ -445,7 +445,7 @@ func TestWorkerPool_Cancel_MarksDone(t *testing.T) {
 	}
 }
 
-func TestWorkerPool_Cancel_RemovesIncompleteFile(t *testing.T) {
+func TestWorkerPool_Cancel_DoesNotRemoveIncompleteFile(t *testing.T) {
 	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
@@ -476,8 +476,8 @@ func TestWorkerPool_Cancel_RemovesIncompleteFile(t *testing.T) {
 		t.Fatal("expected removal message")
 	}
 
-	if _, err := os.Stat(incompletePath); !os.IsNotExist(err) {
-		t.Fatalf("expected .surge file to be removed, stat err: %v", err)
+	if _, err := os.Stat(incompletePath); err != nil {
+		t.Fatalf("expected .surge file to remain for centralized delete cleanup, stat err: %v", err)
 	}
 }
 

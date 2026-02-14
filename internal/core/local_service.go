@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -705,7 +704,7 @@ func (s *LocalDownloadService) Delete(id string) error {
 		removedFilename = entry.Filename
 		_ = state.DeleteState(entry.ID, entry.URL, entry.DestPath)
 		if entry.DestPath != "" && entry.Status != "completed" {
-			_ = os.Remove(entry.DestPath + types.IncompleteSuffix)
+			_ = state.RemoveIncompleteFile(entry.DestPath)
 		}
 	}
 

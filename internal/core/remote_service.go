@@ -350,6 +350,12 @@ func (s *RemoteDownloadService) connectSSE(ctx context.Context, ch chan interfac
 				continue
 			}
 			msg = m
+		case "system":
+			var m events.SystemLogMsg
+			if err := json.Unmarshal([]byte(jsonData), &m); err != nil {
+				continue
+			}
+			msg = m
 		default:
 			continue
 		}
