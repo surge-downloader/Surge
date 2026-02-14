@@ -85,6 +85,64 @@ func TestLocalDownloadService_Delete_DBOnlyBroadcastsRemoved(t *testing.T) {
 	}
 }
 
+func TestLocalDownloadService_Delete_ActiveWithoutDB_RemovesPartialFile(t *testing.T) {
+	tempDir := t.TempDir()
+	state.CloseDB()
+	state.Configure(filepath.Join(tempDir, "surge.db"))
+	defer state.CloseDB()
+
+	ch := make(chan interface{}, 100)
+	pool := download.NewWorkerPool(ch, 1)
+	svc := NewLocalDownloadServiceWithInput(pool, ch)
+	defer func() { _ = svc.Shutdown() }()
+
+	server := testutil.NewStreamingMockServerT(t,
+		200*1024*1024,
+		testutil.WithRangeSupport(true),
+		testutil.WithLatency(8*time.Millisecond),
+	)
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	const filename = "active-delete.bin"
+	id, err := svc.Add(server.URL(), outputDir, filename, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to add download: %v", err)
+	}
+
+	destPath := filepath.Join(outputDir, filename)
+	incompletePath := destPath + types.IncompleteSuffix
+
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(incompletePath); err == nil {
+			break
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+	if _, err := os.Stat(incompletePath); err != nil {
+		t.Fatalf("expected partial file to exist before delete, stat err: %v", err)
+	}
+
+	// Simulate delete-before-persist path: no DB entry available.
+	_ = state.RemoveFromMasterList(id)
+
+	if err := svc.Delete(id); err != nil {
+		t.Fatalf("delete failed: %v", err)
+	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(incompletePath); os.IsNotExist(err) {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if _, err := os.Stat(incompletePath); !os.IsNotExist(err) {
+		t.Fatalf("expected partial file to be removed, stat err: %v", err)
+	}
+}
+
 func TestLocalDownloadService_Shutdown_Idempotent(t *testing.T) {
 	ch := make(chan interface{}, 1)
 	svc := NewLocalDownloadServiceWithInput(nil, ch)
