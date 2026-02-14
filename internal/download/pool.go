@@ -342,10 +342,15 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 	}
 
 	if qExists {
+		destPath := qCfg.DestPath
+		if destPath == "" && qCfg.State != nil {
+			destPath = qCfg.State.GetDestPath()
+		}
 		return &types.DownloadStatus{
 			ID:         id,
 			URL:        qCfg.URL,
 			Filename:   qCfg.Filename,
+			DestPath:   destPath,
 			Status:     "queued",
 			Downloaded: 0,
 			TotalSize:  0, // Metadata not yet fetched
@@ -373,6 +378,11 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 		TotalSize:  totalSize,
 		Downloaded: downloaded,
 		Status:     "downloading",
+	}
+	if dp := state.GetDestPath(); dp != "" {
+		status.DestPath = dp
+	} else {
+		status.DestPath = ad.config.DestPath
 	}
 
 	if ad.config.State.IsPausing() {

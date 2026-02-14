@@ -873,3 +873,30 @@ func TestWorkerPool_PauseResume_Idempotency(t *testing.T) {
 		// OK
 	}
 }
+
+func TestWorkerPool_GetStatus_IncludesDestPath(t *testing.T) {
+	ch := make(chan any, 10)
+	pool := NewWorkerPool(ch, 1)
+
+	destPath := "/tmp/status-dest.bin"
+	st := types.NewProgressState("status-id", 1024)
+	st.DestPath = destPath
+
+	pool.mu.Lock()
+	pool.downloads["status-id"] = &activeDownload{
+		config: types.DownloadConfig{
+			ID:    "status-id",
+			URL:   "https://example.com/file.bin",
+			State: st,
+		},
+	}
+	pool.mu.Unlock()
+
+	got := pool.GetStatus("status-id")
+	if got == nil {
+		t.Fatal("expected status, got nil")
+	}
+	if got.DestPath != destPath {
+		t.Fatalf("dest_path = %q, want %q", got.DestPath, destPath)
+	}
+}
