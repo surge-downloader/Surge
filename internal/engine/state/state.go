@@ -679,7 +679,7 @@ func ValidateIntegrity() (int, error) {
 
 	// Load all paused/queued downloads
 	rows, err := db.Query(`
-		SELECT id, dest_path, file_hash
+		SELECT id, dest_path, file_hash, status, downloaded
 		FROM downloads
 		WHERE status IN ('paused', 'queued')
 	`)
@@ -689,16 +689,18 @@ func ValidateIntegrity() (int, error) {
 	defer func() { _ = rows.Close() }()
 
 	type entry struct {
-		id       string
-		destPath string
-		fileHash string
+		id         string
+		destPath   string
+		fileHash   string
+		status     string
+		downloaded int64
 	}
 
 	var entries []entry
 	for rows.Next() {
 		var e entry
 		var fh sql.NullString
-		if err := rows.Scan(&e.id, &e.destPath, &fh); err != nil {
+		if err := rows.Scan(&e.id, &e.destPath, &fh, &e.status, &e.downloaded); err != nil {
 			return 0, err
 		}
 		if fh.Valid {
@@ -716,6 +718,11 @@ func ValidateIntegrity() (int, error) {
 
 	for _, e := range entries {
 		if e.destPath == "" {
+			continue
+		}
+		// Fresh queued entries may not have a partial file yet.
+		if e.status == "queued" && e.downloaded <= 0 {
+			candidateDirs[filepath.Dir(e.destPath)] = struct{}{}
 			continue
 		}
 		expectedSurgePaths[e.destPath+types.IncompleteSuffix] = struct{}{}
@@ -752,6 +759,9 @@ func ValidateIntegrity() (int, error) {
 	_ = allRows.Close()
 
 	for _, e := range entries {
+		if e.status == "queued" && e.downloaded <= 0 {
+			continue
+		}
 		surgePath := e.destPath + types.IncompleteSuffix
 
 		// Check if .surge file exists

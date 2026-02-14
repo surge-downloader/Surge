@@ -813,6 +813,42 @@ func TestValidateIntegrity_CompletedIgnored(t *testing.T) {
 	}
 }
 
+func TestValidateIntegrity_QueuedWithoutPartialFilePreserved(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	defer CloseDB()
+
+	destPath := filepath.Join(tmpDir, "queued-never-started.bin")
+
+	if err := AddToMasterList(types.DownloadEntry{
+		ID:         "integrity-queued-fresh",
+		URL:        "https://example.com/queued-never-started.bin",
+		DestPath:   destPath,
+		Filename:   "queued-never-started.bin",
+		Status:     "queued",
+		TotalSize:  0,
+		Downloaded: 0,
+	}); err != nil {
+		t.Fatalf("AddToMasterList failed: %v", err)
+	}
+
+	removed, err := ValidateIntegrity()
+	if err != nil {
+		t.Fatalf("ValidateIntegrity failed: %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("ValidateIntegrity removed = %d, want 0", removed)
+	}
+
+	dl, err := GetDownload("integrity-queued-fresh")
+	if err != nil {
+		t.Fatalf("GetDownload failed: %v", err)
+	}
+	if dl == nil {
+		t.Fatal("queued entry should be preserved when no partial file exists yet")
+	}
+}
+
 func TestValidateIntegrity_DeletesOrphanSurgeFile(t *testing.T) {
 	tmpDir := setupTestDB(t)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
