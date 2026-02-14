@@ -304,6 +304,12 @@ func TestToRuntimeConfig(t *testing.T) {
 	if runtime.SpeedEmaAlpha != settings.Performance.SpeedEmaAlpha {
 		t.Error("SpeedEmaAlpha not correctly mapped")
 	}
+	if runtime.TorrentMaxConnections != settings.Torrent.MaxConnectionsPerTorrent {
+		t.Error("TorrentMaxConnections not correctly mapped")
+	}
+	if runtime.TorrentUploadSlots != settings.Torrent.UploadSlotsPerTorrent {
+		t.Error("TorrentUploadSlots not correctly mapped")
+	}
 }
 
 func TestGetSettingsMetadata(t *testing.T) {
@@ -357,7 +363,7 @@ func TestCategoryOrder(t *testing.T) {
 	}
 
 	// Should have all expected categories
-	expectedCount := 3 // General, Network, Performance
+	expectedCount := 4 // General, Network, Performance, Torrent
 	if len(order) != expectedCount {
 		t.Errorf("Expected %d categories, got %d", expectedCount, len(order))
 	}
@@ -401,6 +407,12 @@ func TestSettingsJSON_Serialization(t *testing.T) {
 	}
 	if loaded.Performance.StallTimeout != original.Performance.StallTimeout {
 		t.Error("Round-trip failed for StallTimeout (duration)")
+	}
+	if loaded.Torrent.MaxConnectionsPerTorrent != original.Torrent.MaxConnectionsPerTorrent {
+		t.Error("Round-trip failed for MaxConnectionsPerTorrent")
+	}
+	if loaded.Torrent.UploadSlotsPerTorrent != original.Torrent.UploadSlotsPerTorrent {
+		t.Error("Round-trip failed for UploadSlotsPerTorrent")
 	}
 }
 

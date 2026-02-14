@@ -245,13 +245,13 @@ func TestUpdate_PauseResumeEventsNormalizeFlags(t *testing.T) {
 	}
 }
 
-func TestUpdate_SettingsIgnoresMissingFourthTab(t *testing.T) {
+func TestUpdate_SettingsIgnoresMissingFifthTab(t *testing.T) {
 	m := RootModel{
 		state:    SettingsState,
 		Settings: config.DefaultSettings(),
 	}
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
 	m2 := updated.(RootModel)
 
 	if m2.SettingsActiveTab >= len(config.CategoryOrder()) {

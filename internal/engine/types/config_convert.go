@@ -16,5 +16,7 @@ func ConvertRuntimeConfig(rc *config.RuntimeConfig) *RuntimeConfig {
 		SlowWorkerGracePeriod: rc.SlowWorkerGracePeriod,
 		StallTimeout:          rc.StallTimeout,
 		SpeedEmaAlpha:         rc.SpeedEmaAlpha,
+		TorrentMaxConnections: rc.TorrentMaxConnections,
+		TorrentUploadSlots:    rc.TorrentUploadSlots,
 	}
 }

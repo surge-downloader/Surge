@@ -14,6 +14,8 @@ type SessionConfig struct {
 	BootstrapNodes  []string
 	TrackerInterval time.Duration
 	TotalLength     int64
+	MaxPeers        int
+	UploadSlots     int
 }
 
 type PeerSource interface {

@@ -260,9 +260,9 @@ func (m RootModel) getSettingsValues(category string) map[string]interface{} {
 
 	case "Network":
 		values["max_connections_per_host"] = m.Settings.Network.MaxConnectionsPerHost
-
 		values["max_concurrent_downloads"] = m.Settings.Network.MaxConcurrentDownloads
 		values["user_agent"] = m.Settings.Network.UserAgent
+		values["proxy_url"] = m.Settings.Network.ProxyURL
 		values["sequential_download"] = m.Settings.Network.SequentialDownload
 		values["min_chunk_size"] = m.Settings.Network.MinChunkSize
 		values["worker_buffer_size"] = m.Settings.Network.WorkerBufferSize
@@ -272,6 +272,9 @@ func (m RootModel) getSettingsValues(category string) map[string]interface{} {
 		values["slow_worker_grace_period"] = m.Settings.Performance.SlowWorkerGracePeriod
 		values["stall_timeout"] = m.Settings.Performance.StallTimeout
 		values["speed_ema_alpha"] = m.Settings.Performance.SpeedEmaAlpha
+	case "Torrent":
+		values["max_connections_per_torrent"] = m.Settings.Torrent.MaxConnectionsPerTorrent
+		values["upload_slots_per_torrent"] = m.Settings.Torrent.UploadSlotsPerTorrent
 	}
 
 	return values
@@ -297,6 +300,8 @@ func (m *RootModel) setSettingValue(category, key, value string) error {
 		return m.setNetworkSetting(key, value, meta.Type)
 	case "Performance":
 		return m.setPerformanceSetting(key, value, meta.Type)
+	case "Torrent":
+		return m.setTorrentSetting(key, value, meta.Type)
 	}
 
 	return nil
@@ -370,6 +375,8 @@ func (m *RootModel) setNetworkSetting(key, value, typ string) error {
 		}
 	case "user_agent":
 		m.Settings.Network.UserAgent = value
+	case "proxy_url":
+		m.Settings.Network.ProxyURL = value
 	case "sequential_download":
 		// Toggle logic handled by generic bool toggle in Update, but just in case
 		if value == "" {
@@ -434,6 +441,30 @@ func (m *RootModel) setPerformanceSetting(key, value, typ string) error {
 				v = 1.0
 			}
 			m.Settings.Performance.SpeedEmaAlpha = v
+		}
+	}
+	return nil
+}
+
+func (m *RootModel) setTorrentSetting(key, value, typ string) error {
+	switch key {
+	case "max_connections_per_torrent":
+		if v, err := strconv.Atoi(value); err == nil {
+			if v < 1 {
+				v = 1
+			} else if v > 500 {
+				v = 500
+			}
+			m.Settings.Torrent.MaxConnectionsPerTorrent = v
+		}
+	case "upload_slots_per_torrent":
+		if v, err := strconv.Atoi(value); err == nil {
+			if v < 0 {
+				v = 0
+			} else if v > 50 {
+				v = 50
+			}
+			m.Settings.Torrent.UploadSlotsPerTorrent = v
 		}
 	}
 	return nil
@@ -505,6 +536,10 @@ func (m RootModel) getSettingUnit() string {
 		return " seconds"
 	case "slow_worker_threshold", "speed_ema_alpha":
 		return " (0.0-1.0)"
+	case "max_connections_per_torrent":
+		return " connections"
+	case "upload_slots_per_torrent":
+		return " slots"
 	default:
 		return ""
 	}
@@ -638,6 +673,8 @@ func (m *RootModel) resetSettingToDefault(category, key string, defaults *config
 			m.Settings.Network.MaxConcurrentDownloads = defaults.Network.MaxConcurrentDownloads
 		case "user_agent":
 			m.Settings.Network.UserAgent = defaults.Network.UserAgent
+		case "proxy_url":
+			m.Settings.Network.ProxyURL = defaults.Network.ProxyURL
 		case "sequential_download":
 			m.Settings.Network.SequentialDownload = defaults.Network.SequentialDownload
 		case "min_chunk_size":
@@ -657,6 +694,13 @@ func (m *RootModel) resetSettingToDefault(category, key string, defaults *config
 			m.Settings.Performance.StallTimeout = defaults.Performance.StallTimeout
 		case "speed_ema_alpha":
 			m.Settings.Performance.SpeedEmaAlpha = defaults.Performance.SpeedEmaAlpha
+		}
+	case "Torrent":
+		switch key {
+		case "max_connections_per_torrent":
+			m.Settings.Torrent.MaxConnectionsPerTorrent = defaults.Torrent.MaxConnectionsPerTorrent
+		case "upload_slots_per_torrent":
+			m.Settings.Torrent.UploadSlotsPerTorrent = defaults.Torrent.UploadSlotsPerTorrent
 		}
 	}
 }

@@ -80,6 +80,8 @@ type RuntimeConfig struct {
 	SlowWorkerGracePeriod time.Duration
 	StallTimeout          time.Duration
 	SpeedEmaAlpha         float64
+	TorrentMaxConnections int
+	TorrentUploadSlots    int
 }
 
 // GetUserAgent returns the configured user agent or the default
@@ -112,6 +114,20 @@ func (r *RuntimeConfig) GetWorkerBufferSize() int {
 		return WorkerBuffer
 	}
 	return r.WorkerBufferSize
+}
+
+func (r *RuntimeConfig) GetTorrentMaxConnections() int {
+	if r == nil || r.TorrentMaxConnections <= 0 {
+		return 32
+	}
+	return r.TorrentMaxConnections
+}
+
+func (r *RuntimeConfig) GetTorrentUploadSlots() int {
+	if r == nil || r.TorrentUploadSlots < 0 {
+		return 4
+	}
+	return r.TorrentUploadSlots
 }
 
 const (

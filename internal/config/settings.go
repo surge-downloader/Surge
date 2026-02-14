@@ -11,6 +11,7 @@ import (
 type Settings struct {
 	General     GeneralSettings     `json:"general"`
 	Network     NetworkSettings     `json:"network"`
+	Torrent     TorrentSettings     `json:"torrent"`
 	Performance PerformanceSettings `json:"performance"`
 }
 
@@ -42,6 +43,12 @@ type NetworkSettings struct {
 	SequentialDownload     bool   `json:"sequential_download"`
 	MinChunkSize           int64  `json:"min_chunk_size"`
 	WorkerBufferSize       int    `json:"worker_buffer_size"`
+}
+
+// TorrentSettings contains per-torrent tuning parameters.
+type TorrentSettings struct {
+	MaxConnectionsPerTorrent int `json:"max_connections_per_torrent"`
+	UploadSlotsPerTorrent    int `json:"upload_slots_per_torrent"`
 }
 
 // UnmarshalJSON implements custom JSON unmarshalling for Settings.
@@ -114,6 +121,10 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 			{Key: "min_chunk_size", Label: "Min Chunk Size", Description: "Minimum download chunk size in MB (e.g., 2).", Type: "int64"},
 			{Key: "worker_buffer_size", Label: "Worker Buffer Size", Description: "I/O buffer size per worker in KB (e.g., 512).", Type: "int"},
 		},
+		"Torrent": {
+			{Key: "max_connections_per_torrent", Label: "Max Connections/Torrent", Description: "Maximum peer connections per torrent (1-500).", Type: "int"},
+			{Key: "upload_slots_per_torrent", Label: "Upload Slots/Torrent", Description: "Maximum upload slots per torrent (0-50).", Type: "int"},
+		},
 		"Performance": {
 			{Key: "max_task_retries", Label: "Max Task Retries", Description: "Number of times to retry a failed chunk before giving up.", Type: "int"},
 			{Key: "slow_worker_threshold", Label: "Slow Worker Threshold", Description: "Restart workers slower than this fraction of mean speed (0.0-1.0).", Type: "float64"},
@@ -126,7 +137,7 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 
 // CategoryOrder returns the order of categories for UI tabs.
 func CategoryOrder() []string {
-	return []string{"General", "Network", "Performance"}
+	return []string{"General", "Network", "Performance", "Torrent"}
 }
 
 const (
@@ -173,6 +184,10 @@ func DefaultSettings() *Settings {
 			SequentialDownload:     false,
 			MinChunkSize:           2 * MB,
 			WorkerBufferSize:       512 * KB,
+		},
+		Torrent: TorrentSettings{
+			MaxConnectionsPerTorrent: 32,
+			UploadSlotsPerTorrent:    4,
 		},
 		Performance: PerformanceSettings{
 			MaxTaskRetries:        3,
@@ -247,6 +262,8 @@ type RuntimeConfig struct {
 	SlowWorkerGracePeriod time.Duration
 	StallTimeout          time.Duration
 	SpeedEmaAlpha         float64
+	TorrentMaxConnections int
+	TorrentUploadSlots    int
 }
 
 // ToRuntimeConfig creates a RuntimeConfig from user Settings
@@ -263,5 +280,7 @@ func (s *Settings) ToRuntimeConfig() *RuntimeConfig {
 		SlowWorkerGracePeriod: s.Performance.SlowWorkerGracePeriod,
 		StallTimeout:          s.Performance.StallTimeout,
 		SpeedEmaAlpha:         s.Performance.SpeedEmaAlpha,
+		TorrentMaxConnections: s.Torrent.MaxConnectionsPerTorrent,
+		TorrentUploadSlots:    s.Torrent.UploadSlotsPerTorrent,
 	}
 }

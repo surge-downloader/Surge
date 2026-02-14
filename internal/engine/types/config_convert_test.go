@@ -23,6 +23,8 @@ func TestConvertRuntimeConfig_AllFieldsCopied(t *testing.T) {
 		SlowWorkerGracePeriod: 10 * time.Second,
 		StallTimeout:          7 * time.Second,
 		SpeedEmaAlpha:         0.4,
+		TorrentMaxConnections: 80,
+		TorrentUploadSlots:    6,
 	}
 
 	result := ConvertRuntimeConfig(input)
@@ -63,6 +65,12 @@ func TestConvertRuntimeConfig_AllFieldsCopied(t *testing.T) {
 	}
 	if result.SpeedEmaAlpha != input.SpeedEmaAlpha {
 		t.Errorf("SpeedEmaAlpha: got %f, want %f", result.SpeedEmaAlpha, input.SpeedEmaAlpha)
+	}
+	if result.TorrentMaxConnections != input.TorrentMaxConnections {
+		t.Errorf("TorrentMaxConnections: got %d, want %d", result.TorrentMaxConnections, input.TorrentMaxConnections)
+	}
+	if result.TorrentUploadSlots != input.TorrentUploadSlots {
+		t.Errorf("TorrentUploadSlots: got %d, want %d", result.TorrentUploadSlots, input.TorrentUploadSlots)
 	}
 }
 

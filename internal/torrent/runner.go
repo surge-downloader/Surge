@@ -30,7 +30,7 @@ func NewRunner(meta *TorrentMeta, baseDir string, cfg SessionConfig, state *type
 	if state != nil {
 		store = NewProgressStore(layout, state)
 	}
-	mgr := peer.NewManager(meta.InfoHash, sess.peerID, picker, layout, store, 32)
+	mgr := peer.NewManager(meta.InfoHash, sess.peerID, picker, layout, store, cfg.MaxPeers)
 
 	return &Runner{
 		meta:    meta,
