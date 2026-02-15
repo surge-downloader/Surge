@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -46,7 +47,8 @@ var resumeCmd = &cobra.Command{
 		}
 
 		// Send to running server
-		resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/resume?id=%s", port, id), "application/json", nil)
+		path := fmt.Sprintf("/resume?id=%s", url.QueryEscape(id))
+		resp, err := doLocalAPIRequest(http.MethodPost, port, path, nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error connecting to server: %v\n", err)
 			os.Exit(1)

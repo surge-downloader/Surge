@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"text/tabwriter"
 	"time"
@@ -163,7 +164,8 @@ func showDownloadDetails(partialID string, jsonOutput bool) {
 	// Try to get from running server first
 	port := readActivePort()
 	if port > 0 {
-		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/download?id=%s", port, fullID))
+		path := fmt.Sprintf("/download?id=%s", url.QueryEscape(fullID))
+		resp, err := doLocalAPIRequest(http.MethodGet, port, path, nil)
 		if err == nil {
 			defer func() {
 				if err := resp.Body.Close(); err != nil {
