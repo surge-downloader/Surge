@@ -8,8 +8,26 @@ services:
     ports:
       - "1700:1700"
     volumes:
+      #- ~/docker/volumes/surge/downloads:/downloads # isolation if using in a professional envir
+      #- ~/docker/volumes/surge/config:/root/.surge  # isolation if using in a professional envir
       - ./downloads:/downloads
-      - ./surge-config:/root/.surge
+      - ./surge-config:/root/.local/state/surge
     restart: unless-stopped
     environment:
       - TZ=UTC
+    #healthcheck:
+    #  test: ["CMD", "surge", "server", "status"]  # at times during release the conatiner health check can break having manual health check for testing and trouble shooting is nice. 
+    #  interval: 30s
+    #  timeout: 10s
+    #  retries: 3
+    # start_period: 5s
+    deploy:
+      resources: 
+        limits:
+          cpus: '0.5'
+          memory: 256M # change to your liking or specs
+    logging:
+      driver: "json-file" # etting this up proper you want to see logs all Terminal based apps should have logs
+      options:
+        max-size: "10m"
+        max-file: "3"
