@@ -52,11 +52,11 @@ Surge provides a robust Command Line Interface for automation and scripting.
 
 | Command | What it does | Key flags | Notes |
 | :--- | :--- | :--- | :--- |
-| `surge [url]...` | Launches local TUI. Queues optional URLs. | `--batch, -b`, `--port, -p`, `--output, -o`, `--no-resume`, `--exit-when-done` | If `--host` is set, this becomes remote TUI mode. |
-| `surge server [url]...` | Launches headless server. Queues optional URLs. | `--batch, -b`, `--port, -p`, `--output, -o`, `--exit-when-done`, `--no-resume`, `--token` | Primary headless mode command. |
+| `surge [url]...` | Launches local TUI. Queues optional URLs. | `--batch, -b`<br>`--port, -p`<br>`--output, -o`<br>`--no-resume`<br>`--exit-when-done` | If `--host` is set, this becomes remote TUI mode. |
+| `surge server [url]...` | Launches headless server. Queues optional URLs. | `--batch, -b`<br>`--port, -p`<br>`--output, -o`<br>`--exit-when-done`<br>`--no-resume`<br>`--token` | Primary headless mode command. |
 | `surge connect <host:port>` | Launches TUI connected to remote server. | `--insecure-http` | Convenience alias for remote TUI usage. |
-| `surge add <url>...` | Queues downloads via CLI/API. | `--batch, -b`, `--output, -o` | Alias: `get`. |
-| `surge ls [id]` | Lists downloads, or shows one download detail. | `--json`, `--watch` | Alias: `l`. |
+| `surge add <url>...` | Queues downloads via CLI/API. | `--batch, -b`<br>`--output, -o` | Alias: `get`. |
+| `surge ls [id]` | Lists downloads, or shows one download detail. | `--json`<br>`--watch` | Alias: `l`. |
 | `surge pause <id>` | Pauses a download by ID/prefix. | `--all` | |
 | `surge resume <id>` | Resumes a paused download by ID/prefix. | `--all` | |
 | `surge rm <id>` | Removes a download by ID/prefix. | `--clean` | Alias: `kill`. |
