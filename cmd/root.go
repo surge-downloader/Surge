@@ -42,10 +42,10 @@ var verbose bool
 
 // Globals for Unified Backend
 var (
-	GlobalPool       *download.WorkerPool
-	GlobalProgressCh chan any
-	GlobalService    core.DownloadService
-	serverProgram    *tea.Program
+	GlobalPool              *download.WorkerPool
+	GlobalProgressCh        chan any
+	GlobalService           core.DownloadService
+	serverProgram           *tea.Program
 	startupIntegrityMessage string
 )
 
@@ -146,17 +146,14 @@ func runStartupIntegrityCheck() string {
 	// also cleans orphan .surge files that no longer have DB entries.
 	if removed, err := state.ValidateIntegrity(); err != nil {
 		msg := fmt.Sprintf("Startup integrity check failed: %v", err)
-		fmt.Println(msg)
 		utils.Debug("Integrity check failed: %v", err)
 		return msg
 	} else if removed > 0 {
 		msg := fmt.Sprintf("Startup integrity check: removed %d corrupted/orphaned downloads", removed)
-		fmt.Println(msg)
 		utils.Debug("%s", msg)
 		return msg
 	}
 	msg := "Startup integrity check: no issues found"
-	fmt.Println(msg)
 	utils.Debug("%s", msg)
 	return msg
 }
