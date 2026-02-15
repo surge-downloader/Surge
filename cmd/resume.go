@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -24,10 +25,9 @@ var resumeCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		port := readActivePort()
-		if port == 0 {
-			fmt.Fprintln(os.Stderr, "Error: Surge should be running.")
-			fmt.Fprintln(os.Stderr, "Start it with 'surge server start' and try again.")
+		baseURL, token, err := resolveAPIConnection(true)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -39,14 +39,15 @@ var resumeCmd = &cobra.Command{
 		id := args[0]
 
 		// Resolve partial ID to full ID
-		id, err := resolveDownloadID(id)
+		id, err = resolveDownloadID(id)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 
 		// Send to running server
-		resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/resume?id=%s", port, id), "application/json", nil)
+		path := fmt.Sprintf("/resume?id=%s", url.QueryEscape(id))
+		resp, err := doAPIRequest(http.MethodPost, baseURL, token, path, nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error connecting to server: %v\n", err)
 			os.Exit(1)

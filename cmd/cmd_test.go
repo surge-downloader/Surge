@@ -665,7 +665,7 @@ func TestStartHTTPServer_HealthEndpoint(t *testing.T) {
 
 	// Start server in background
 	svc := core.NewLocalDownloadService(nil) // Mock service with nil pool/chan for health check
-	go startHTTPServer(ln, port, "", svc)
+	go startHTTPServer(ln, port, "", svc, "")
 
 	// Give server time to start
 	time.Sleep(50 * time.Millisecond)
@@ -703,7 +703,7 @@ func TestStartHTTPServer_HasCORSHeaders(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	svc := core.NewLocalDownloadService(nil)
-	go startHTTPServer(ln, port, "", svc)
+	go startHTTPServer(ln, port, "", svc, "")
 	time.Sleep(50 * time.Millisecond)
 
 	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/health", port))
@@ -726,7 +726,7 @@ func TestStartHTTPServer_OptionsRequest(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	svc := core.NewLocalDownloadService(nil)
-	go startHTTPServer(ln, port, "", svc)
+	go startHTTPServer(ln, port, "", svc, "")
 	time.Sleep(50 * time.Millisecond)
 
 	req, _ := http.NewRequest(http.MethodOptions, fmt.Sprintf("http://127.0.0.1:%d/download", port), nil)
@@ -751,7 +751,7 @@ func TestStartHTTPServer_DownloadEndpoint_MethodNotAllowed(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	svc := core.NewLocalDownloadService(nil)
-	go startHTTPServer(ln, port, "", svc)
+	go startHTTPServer(ln, port, "", svc, "")
 	time.Sleep(50 * time.Millisecond)
 
 	token := ensureAuthToken()
@@ -779,7 +779,7 @@ func TestStartHTTPServer_DownloadEndpoint_BadRequest(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	svc := core.NewLocalDownloadService(nil)
-	go startHTTPServer(ln, port, "", svc)
+	go startHTTPServer(ln, port, "", svc, "")
 	time.Sleep(50 * time.Millisecond)
 
 	// POST with invalid JSON
@@ -807,7 +807,7 @@ func TestStartHTTPServer_DownloadEndpoint_MissingURL(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	svc := core.NewLocalDownloadService(nil)
-	go startHTTPServer(ln, port, "", svc)
+	go startHTTPServer(ln, port, "", svc, "")
 	time.Sleep(50 * time.Millisecond)
 
 	// POST with missing URL
@@ -835,7 +835,7 @@ func TestStartHTTPServer_NotFoundEndpoint(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	svc := core.NewLocalDownloadService(nil)
-	go startHTTPServer(ln, port, "", svc)
+	go startHTTPServer(ln, port, "", svc, "")
 	time.Sleep(50 * time.Millisecond)
 
 	req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/nonexistent", port), nil)
@@ -1151,5 +1151,28 @@ func TestServerCmd_HasSubcommands(t *testing.T) {
 		if !found {
 			t.Errorf("Missing '%s' subcommand in serverCmd", name)
 		}
+	}
+}
+
+func TestResolveServerToken_UsesEnvWhenFlagEmpty(t *testing.T) {
+	t.Setenv("SURGE_TOKEN", "env-token-abc")
+	_ = serverCmd.Flags().Set("token", "")
+
+	got := resolveServerToken(serverCmd)
+	if got != "env-token-abc" {
+		t.Fatalf("resolveServerToken() = %q, want %q", got, "env-token-abc")
+	}
+}
+
+func TestResolveServerToken_FlagOverridesEnv(t *testing.T) {
+	t.Setenv("SURGE_TOKEN", "env-token-abc")
+	_ = serverCmd.Flags().Set("token", "flag-token-xyz")
+	t.Cleanup(func() {
+		_ = serverCmd.Flags().Set("token", "")
+	})
+
+	got := resolveServerToken(serverCmd)
+	if got != "flag-token-xyz" {
+		t.Fatalf("resolveServerToken() = %q, want %q", got, "flag-token-xyz")
 	}
 }

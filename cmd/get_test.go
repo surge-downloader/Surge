@@ -38,7 +38,7 @@ func TestCLI_NewEndpoints(t *testing.T) {
 
 	// Start server in background
 	svc := core.NewLocalDownloadService(GlobalPool)
-	go startHTTPServer(ln, port, "", svc)
+	go startHTTPServer(ln, port, "", svc, "")
 	time.Sleep(50 * time.Millisecond)
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
@@ -177,7 +177,7 @@ func TestCLI_DeleteEndpoint_CleansPausedStateAndPartialFile(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 	svc := core.NewLocalDownloadService(GlobalPool)
-	go startHTTPServer(ln, port, "", svc)
+	go startHTTPServer(ln, port, "", svc, "")
 	time.Sleep(50 * time.Millisecond)
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)

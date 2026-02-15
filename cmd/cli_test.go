@@ -68,6 +68,116 @@ func TestResolveDownloadID_Remote(t *testing.T) {
 	}
 }
 
+func TestResolveDownloadID_RemoteStillWorksWhenDBUnavailable(t *testing.T) {
+	downloads := []types.DownloadStatus{
+		{ID: "ddeeff00-1234-5678-90ab-cdef12345678", Filename: "test_remote_db_fail.zip"},
+	}
+
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/list" {
+			_ = json.NewEncoder(w).Encode(downloads)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	_, portStr, _ := net.SplitHostPort(server.Listener.Addr().String())
+	origHost := globalHost
+	origToken := globalToken
+	globalHost = "127.0.0.1:" + portStr
+	globalToken = "test-token"
+	t.Cleanup(func() {
+		globalHost = origHost
+		globalToken = origToken
+	})
+
+	state.CloseDB()
+	state.Configure(filepath.Join(t.TempDir(), "missing", "surge.db")) // Intentionally invalid path
+
+	full, err := resolveDownloadID("ddeeff")
+	if err != nil {
+		t.Fatalf("resolveDownloadID failed: %v", err)
+	}
+	if full != downloads[0].ID {
+		t.Fatalf("expected %s, got %s", downloads[0].ID, full)
+	}
+}
+
+func TestResolveDownloadID_StrictRemoteDoesNotFallbackToDBOnRemoteError(t *testing.T) {
+	setupIsolatedCmdState(t)
+
+	entry := types.DownloadEntry{
+		ID:       "11223344-1234-5678-90ab-cdef12345678",
+		Filename: "db-only.bin",
+	}
+	if err := state.AddToMasterList(entry); err != nil {
+		t.Fatalf("failed to seed db entry: %v", err)
+	}
+
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/list" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	_, portStr, _ := net.SplitHostPort(server.Listener.Addr().String())
+	origHost := globalHost
+	origToken := globalToken
+	globalHost = "127.0.0.1:" + portStr
+	globalToken = "test-token"
+	t.Cleanup(func() {
+		globalHost = origHost
+		globalToken = origToken
+	})
+
+	_, err := resolveDownloadID("112233")
+	if err == nil {
+		t.Fatal("expected remote list error, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to list remote downloads") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResolveDownloadID_LocalModeFallsBackToDBWhenRemoteListFails(t *testing.T) {
+	setupIsolatedCmdState(t)
+
+	entry := types.DownloadEntry{
+		ID:       "99aabbcc-1234-5678-90ab-cdef12345678",
+		Filename: "fallback.bin",
+	}
+	if err := state.AddToMasterList(entry); err != nil {
+		t.Fatalf("failed to seed db entry: %v", err)
+	}
+
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/list" {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	_, portStr, _ := net.SplitHostPort(server.Listener.Addr().String())
+	var port int
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
+	saveActivePort(port)
+	t.Cleanup(removeActivePort)
+
+	full, err := resolveDownloadID("99aabb")
+	if err != nil {
+		t.Fatalf("resolveDownloadID failed: %v", err)
+	}
+	if full != entry.ID {
+		t.Fatalf("expected fallback to DB id %s, got %s", entry.ID, full)
+	}
+}
+
 // TestLsCmd_Alias verify 'l' alias exists
 func TestLsCmd_Alias(t *testing.T) {
 	found := false
@@ -94,7 +204,7 @@ func TestGetRemoteDownloads(t *testing.T) {
 	var port int
 	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
-	downloads, err := GetRemoteDownloads(port)
+	downloads, err := GetRemoteDownloads(fmt.Sprintf("http://127.0.0.1:%d", port), "")
 	if err != nil {
 		t.Fatalf("Failed to get downloads: %v", err)
 	}
@@ -279,7 +389,7 @@ func TestPrintDownloads_FromDatabase_TableAndJSON(t *testing.T) {
 	}
 
 	tableOut := captureStdout(t, func() {
-		printDownloads(false)
+		printDownloads(false, "", "", false)
 	})
 	if !strings.Contains(tableOut, "ID") {
 		t.Fatalf("expected table header in output, got: %s", tableOut)
@@ -295,7 +405,7 @@ func TestPrintDownloads_FromDatabase_TableAndJSON(t *testing.T) {
 	}
 
 	jsonOut := captureStdout(t, func() {
-		printDownloads(true)
+		printDownloads(true, "", "", false)
 	})
 	var infos []downloadInfo
 	if err := json.Unmarshal([]byte(jsonOut), &infos); err != nil {
@@ -311,7 +421,7 @@ func TestPrintDownloads_JSONEmpty(t *testing.T) {
 	removeActivePort()
 
 	out := captureStdout(t, func() {
-		printDownloads(true)
+		printDownloads(true, "", "", false)
 	})
 	if strings.TrimSpace(out) != "[]" {
 		t.Fatalf("expected empty json array, got %q", strings.TrimSpace(out))
@@ -335,7 +445,7 @@ func TestShowDownloadDetails_UsesDatabaseFallback(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		showDownloadDetails("87654321", true)
+		showDownloadDetails("87654321", true, "", "")
 	})
 
 	var decoded types.DownloadStatus
@@ -389,7 +499,7 @@ func TestSendToServer_SuccessAndServerError(t *testing.T) {
 			})
 
 			port := ln.Addr().(*net.TCPAddr).Port
-			err = sendToServer("https://example.com/file.zip", nil, "", port)
+			err = sendToServer("https://example.com/file.zip", nil, "", fmt.Sprintf("http://127.0.0.1:%d", port), "")
 			if tt.wantErr && err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -397,6 +507,69 @@ func TestSendToServer_SuccessAndServerError(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestSendToServer_UsesBearerTokenFromEnv(t *testing.T) {
+	t.Setenv("SURGE_TOKEN", "env-token-123")
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen failed: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/download", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer env-token-123" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"id":"ok"}`))
+	})
+
+	server := &http.Server{Handler: mux}
+	go func() { _ = server.Serve(ln) }()
+	t.Cleanup(func() { _ = server.Close() })
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	err = sendToServer("https://example.com/file.zip", nil, "", fmt.Sprintf("http://127.0.0.1:%d", port), resolveLocalToken())
+	if err != nil {
+		t.Fatalf("expected authenticated request to succeed, got error: %v", err)
+	}
+}
+
+func TestGetRemoteDownloads_UsesBearerTokenFromEnv(t *testing.T) {
+	t.Setenv("SURGE_TOKEN", "env-token-123")
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen failed: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/list", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer env-token-123" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"id":"123","filename":"foo.bin","status":"downloading"}]`))
+	})
+
+	server := &http.Server{Handler: mux}
+	go func() { _ = server.Serve(ln) }()
+	t.Cleanup(func() { _ = server.Close() })
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	downloads, err := GetRemoteDownloads(fmt.Sprintf("http://127.0.0.1:%d", port), resolveLocalToken())
+	if err != nil {
+		t.Fatalf("expected authenticated request to succeed, got error: %v", err)
+	}
+	if len(downloads) != 1 {
+		t.Fatalf("expected 1 download, got %d", len(downloads))
 	}
 }
 
@@ -411,7 +584,7 @@ func TestGetRemoteDownloads_NonOKAndInvalidJSON(t *testing.T) {
 		var port int
 		_, _ = fmt.Sscanf(portStr, "%d", &port)
 
-		_, err := GetRemoteDownloads(port)
+		_, err := GetRemoteDownloads(fmt.Sprintf("http://127.0.0.1:%d", port), "")
 		if err == nil {
 			t.Fatal("expected error for non-200 response")
 		}
@@ -428,7 +601,7 @@ func TestGetRemoteDownloads_NonOKAndInvalidJSON(t *testing.T) {
 		var port int
 		_, _ = fmt.Sscanf(portStr, "%d", &port)
 
-		_, err := GetRemoteDownloads(port)
+		_, err := GetRemoteDownloads(fmt.Sprintf("http://127.0.0.1:%d", port), "")
 		if err == nil {
 			t.Fatal("expected json decode error")
 		}

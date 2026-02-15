@@ -40,16 +40,25 @@ var addCmd = &cobra.Command{
 			return
 		}
 
-		// Check if Surge is running
-		port := readActivePort()
-		if port == 0 {
-			fmt.Println("Error: Surge is not running.")
-			fmt.Println("Use 'surge <url>' to start Surge with a download.")
+		baseURL, token, err := resolveAPIConnection(true)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
 
 		// Send downloads to server
-		count := processDownloads(urls, output, port)
+		count := 0
+		for _, arg := range urls {
+			url, mirrors := ParseURLArg(arg)
+			if url == "" {
+				continue
+			}
+			if err := sendToServer(url, mirrors, output, baseURL, token); err != nil {
+				fmt.Printf("Error adding %s: %v\n", url, err)
+				continue
+			}
+			count++
+		}
 
 		if count > 0 {
 			fmt.Printf("Successfully added %d downloads.\n", count)
