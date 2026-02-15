@@ -176,34 +176,6 @@ func (ps *ProgressState) GetSavedElapsed() time.Duration {
 	return ps.SavedElapsed
 }
 
-// GetSessionElapsed returns elapsed time for the currently active session only.
-// If paused, session elapsed is frozen at 0 and should be considered finalized.
-func (ps *ProgressState) GetSessionElapsed() time.Duration {
-	ps.mu.Lock()
-	startTime := ps.StartTime
-	ps.mu.Unlock()
-
-	if ps.Paused.Load() {
-		return 0
-	}
-
-	elapsed := time.Since(startTime)
-	if elapsed < 0 {
-		return 0
-	}
-	return elapsed
-}
-
-// GetTotalElapsed returns elapsed time accumulated from completed sessions only.
-func (ps *ProgressState) GetTotalElapsed() time.Duration {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-	if ps.SavedElapsed < 0 {
-		return 0
-	}
-	return ps.SavedElapsed
-}
-
 // FinalizeSession closes the current session and accumulates its elapsed time into total elapsed.
 // It returns (sessionElapsed, totalElapsedAfterFinalize).
 func (ps *ProgressState) FinalizeSession(downloaded int64) (time.Duration, time.Duration) {

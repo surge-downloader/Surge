@@ -225,8 +225,8 @@ func TestProgressState_FinalizeSession_AccumulatesElapsed(t *testing.T) {
 	if totalElapsed < 1500*time.Millisecond || totalElapsed > 3*time.Second {
 		t.Fatalf("totalElapsed = %v, want around 2s", totalElapsed)
 	}
-	if got := ps.GetTotalElapsed(); got < 1500*time.Millisecond || got > 3*time.Second {
-		t.Fatalf("GetTotalElapsed = %v, want around 2s", got)
+	if got := ps.GetSavedElapsed(); got < 1500*time.Millisecond || got > 3*time.Second {
+		t.Fatalf("GetSavedElapsed = %v, want around 2s", got)
 	}
 	if ps.SessionStartBytes != 80 {
 		t.Fatalf("SessionStartBytes = %d, want 80", ps.SessionStartBytes)
