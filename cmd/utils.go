@@ -87,7 +87,6 @@ func doLocalAPIRequest(method string, port int, path string, body io.Reader) (*h
 	return client.Do(req)
 }
 
-// sendToServer sends a download request to a running surge server
 func sendToServer(url string, mirrors []string, outPath string, port int) error {
 	reqBody := DownloadRequest{
 		URL:     url,
