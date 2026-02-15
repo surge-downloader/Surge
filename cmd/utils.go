@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,7 +92,7 @@ func resolveAPIConnection(requireServer bool) (string, string, error) {
 		if !requireServer {
 			return "", "", nil
 		}
-		return "", "", errors.New("Surge is not running locally. Start it or pass --host (or set SURGE_HOST)")
+		return "", "", errors.New("surge is not running locally. start it or pass --host (or set SURGE_HOST)")
 	}
 
 	baseURL, err := resolveConnectBaseURL(target, false)
@@ -243,16 +242,4 @@ func resolveDownloadID(partialID string) (string, error) {
 	}
 
 	return partialID, nil // No match, use as-is (will fail with "not found" later)
-}
-
-func doLocalAPIRequest(method string, port int, path string, body io.Reader) (*http.Response, error) {
-	return doAPIRequest(method, fmt.Sprintf("http://127.0.0.1:%d", port), resolveLocalToken(), path, body)
-}
-
-func connectionHost(baseURL string) string {
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return ""
-	}
-	return u.Hostname()
 }
