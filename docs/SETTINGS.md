@@ -57,6 +57,8 @@ Start the interactive TUI mode. If URLs are provided, they are added to the queu
 - `--output, -o <dir>`: Set a default output directory for this session.
 - `--no-resume`: Do not auto-resume paused downloads on startup.
 - `--exit-when-done`: Automatically exit the application when all downloads complete.
+- `--host <host:port>`: Connect TUI to a remote server instead of starting local mode.
+- `--token <token>`: Bearer token for authentication.
 
 ### `surge add <url>`
 Add a download to the running instance (or start a new one if not running).
@@ -65,11 +67,10 @@ Add a download to the running instance (or start a new one if not running).
 - `--batch, -b <file>`: Add multiple URLs from a file.
 - `--output, -o <dir>`: Specify the output directory for this download.
 
-### `surge connect [host]`
+### `surge connect <host:port>`
 Connect the TUI to a remote Surge daemon.
 
 **Flags:**
-- `--token <token>`: Bearer token for authentication (or set `SURGE_TOKEN` env var).
 - `--insecure-http`: Allow plain HTTP connections to non-loopback targets.
 
 ### `surge ls`
@@ -97,7 +98,7 @@ Remove/Cancel a download.
 **Flags:**
 - `--clean`: Remove all completed downloads from the list.
 
-### `surge server start`
+### `surge server [url...]`
 Start Surge in headless server mode (no TUI). Ideal for background services or remote servers.
 
 **Flags:**
@@ -106,3 +107,16 @@ Start Surge in headless server mode (no TUI). Ideal for background services or r
 - `--output, -o <dir>`: Set the default output directory.
 - `--exit-when-done`: Exit when the queue is empty.
 - `--no-resume`: Do not auto-resume paused downloads on startup.
+- `--token <token>`: Set the API auth token for this server.
+
+### Global Connection Flags and Environment Variables
+
+These apply to all commands:
+
+- `--host <host:port>`: target server for TUI and CLI actions.
+- `--token <token>`: bearer token used for API requests.
+
+Environment variables:
+
+- `SURGE_HOST`: default host when `--host` is not provided.
+- `SURGE_TOKEN`: default token when `--token` is not provided.

@@ -97,16 +97,16 @@ Great for servers, Raspberry Pis, or background processes.
 
 ```bash
 # Start the server
-surge server start
+surge server
 
 # Start the server with a download
-surge server start https://url.com/file.zip
+surge server https://url.com/file.zip
 
-# Check server status
-surge server status
+# Start with explicit API token
+surge server --token <token>
 ```
 
-`surge` and `surge server start` bind the HTTP API to `0.0.0.0` (all interfaces) by default.
+`surge` and `surge server` bind the HTTP API to `0.0.0.0` (all interfaces) by default.
 This means the server is accessible via `localhost` (127.0.0.1) as well as your local network IP.
 
 The API is token-protected. Generate/read your token by running:
@@ -120,11 +120,11 @@ surge token
 Connect to a running Surge daemon (local or remote).
 
 ```bash
-# Connect to a local daemon (auto-discovery)
-surge connect
-
 # Connect to a remote daemon
 surge connect 192.168.1.10:1700 --token <token>
+
+# Equivalent global-flag form
+surge --host 192.168.1.10:1700 --token <token>
 ```
 
 By default, `surge connect` uses:
@@ -132,7 +132,19 @@ By default, `surge connect` uses:
 - `http://` for loopback and private IP targets
 - `https://` for public/hostname targets
 
-### 4. Server Mode with Docker Compose
+### 4. Global Connection Flags (CLI + TUI)
+
+These global flags are available on all commands:
+
+- `--host <host:port>`: target server for TUI and CLI operations.
+- `--token <token>`: bearer token for authentication.
+
+Environment variable fallbacks:
+
+- `SURGE_HOST`
+- `SURGE_TOKEN`
+
+### 5. Server Mode with Docker Compose
 
 Download the compose file and start the container:
 
@@ -149,10 +161,10 @@ Get the API token:
    
    Save this token - you'll need it to authenticate API requests and connect remotely.
 
-Check server status:
+Check downloads/API availability:
 
    ```bash
-   docker compose exec surge surge server status
+   docker compose exec surge surge ls
    ```
 
 View logs:
