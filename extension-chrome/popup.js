@@ -9,6 +9,8 @@ let downloads = new Map();
 let serverConnected = false;
 let pollInterval = null;
 let healthInterval = null;
+let authEditPendingSave = false;
+let authValidationInProgress = false;
 
 // Detect if running in extension context
 const isExtensionContext = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage;
@@ -381,12 +383,14 @@ async function fetchDownloads() {
     if (response) {
       updateServerStatus(response.connected);
       if (response.authError) {
-        if (authStatus) {
+        if (authStatus && !authEditPendingSave && !authValidationInProgress) {
           const tokenValue = authTokenInput ? authTokenInput.value.trim() : '';
           authStatus.className = 'auth-status err';
           authStatus.textContent = tokenValue ? 'Token invalid' : 'Token required';
         }
-        setAuthValid(false);
+        if (!authValidationInProgress) {
+          setAuthValid(false);
+        }
       } else if (authStatus && authStatus.classList.contains('err')) {
         authStatus.className = 'auth-status';
         authStatus.textContent = '';
@@ -464,6 +468,7 @@ interceptToggle.addEventListener('change', async () => {
 // Clear auth status on edit
 if (authTokenInput && authStatus) {
   authTokenInput.addEventListener('input', () => {
+    authEditPendingSave = true;
     authStatus.className = 'auth-status';
     authStatus.textContent = '';
   });
@@ -637,6 +642,7 @@ window.addEventListener('unload', () => {
 // Save auth token
 if (isExtensionContext && saveTokenButton && authTokenInput) {
       saveTokenButton.addEventListener('click', async () => {
+    authEditPendingSave = false;
     if (!serverConnected) {
       if (authStatus) {
         authStatus.className = 'auth-status err';
@@ -646,7 +652,10 @@ if (isExtensionContext && saveTokenButton && authTokenInput) {
     }
     if (saveTokenButton.textContent === 'Delete') {
       try {
-        await apiCall('setAuthToken', { token: '' });
+        const clearResult = await apiCall('setAuthToken', { token: '' });
+        if (!clearResult || clearResult.success !== true) {
+          throw new Error((clearResult && clearResult.error) || 'Failed to clear token');
+        }
         await apiCall('setAuthVerified', { verified: false });
       } catch (error) {
         console.error('[Surge Popup] Error deleting auth token:', error);
@@ -668,10 +677,14 @@ if (isExtensionContext && saveTokenButton && authTokenInput) {
       authStatus.className = 'auth-status';
       authStatus.textContent = 'Validating...';
     }
+    authValidationInProgress = true;
     authTokenInput.disabled = true;
     saveTokenButton.disabled = true;
     try {
-      await apiCall('setAuthToken', { token });
+      const saveResult = await apiCall('setAuthToken', { token });
+      if (!saveResult || saveResult.success !== true) {
+        throw new Error((saveResult && saveResult.error) || 'Failed to persist token');
+      }
       const result = await validateAuthWithRetry(3);
       if (result && result.ok) {
         if (authStatus) {
@@ -701,6 +714,7 @@ if (isExtensionContext && saveTokenButton && authTokenInput) {
       }
       setAuthValid(false);
     } finally {
+      authValidationInProgress = false;
       if (saveTokenButton.textContent !== 'Delete') {
         authTokenInput.disabled = false;
       }

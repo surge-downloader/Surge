@@ -5,6 +5,7 @@ const DEFAULT_PORT = 1700;
 const MAX_PORT_SCAN = 100;
 const INTERCEPT_ENABLED_KEY = "interceptEnabled";
 const AUTH_TOKEN_KEY = "authToken";
+const AUTH_VERIFIED_KEY = "authVerified";
 
 // === State ===
 let cachedPort = null;
@@ -89,13 +90,27 @@ async function loadAuthToken() {
     return cachedAuthToken;
   }
   const result = await chrome.storage.local.get(AUTH_TOKEN_KEY);
-  cachedAuthToken = result[AUTH_TOKEN_KEY] || "";
+  cachedAuthToken = normalizeToken(result[AUTH_TOKEN_KEY]);
   return cachedAuthToken;
 }
 
+function normalizeToken(token) {
+  if (typeof token !== "string") return "";
+  return token.replace(/\s+/g, "");
+}
+
 async function setAuthToken(token) {
-  cachedAuthToken = (token || "").replace(/\s+/g, "");
-  await chrome.storage.local.set({ [AUTH_TOKEN_KEY]: cachedAuthToken });
+  const normalized = normalizeToken(token);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await chrome.storage.local.set({ [AUTH_TOKEN_KEY]: normalized });
+    const result = await chrome.storage.local.get(AUTH_TOKEN_KEY);
+    if (normalizeToken(result[AUTH_TOKEN_KEY]) === normalized) {
+      cachedAuthToken = normalized;
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+  }
+  return false;
 }
 
 async function authHeaders() {
@@ -109,7 +124,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     return;
   }
   const nextToken = changes[AUTH_TOKEN_KEY].newValue;
-  cachedAuthToken = typeof nextToken === "string" ? nextToken : "";
+  cachedAuthToken = normalizeToken(nextToken);
 });
 
 // === Port Discovery ===
@@ -682,27 +697,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         case "getAuthToken": {
           const token = await loadAuthToken();
-          const result = await chrome.storage.local.get("authVerified");
-          sendResponse({ token, verified: result.authVerified === true });
+          const result = await chrome.storage.local.get(AUTH_VERIFIED_KEY);
+          sendResponse({ token, verified: result[AUTH_VERIFIED_KEY] === true });
           break;
         }
         case "setAuthToken": {
-          await setAuthToken(message.token || "");
+          const persisted = await setAuthToken(message.token || "");
+          if (!persisted) {
+            sendResponse({ success: false, error: "Failed to persist auth token" });
+            break;
+          }
           // Reset verification on token change
-          await chrome.storage.local.set({ authVerified: false });
+          await chrome.storage.local.set({ [AUTH_VERIFIED_KEY]: false });
           sendResponse({ success: true });
           break;
         }
 
         case "getAuthVerified": {
-          const result = await chrome.storage.local.get("authVerified");
-          sendResponse({ verified: result.authVerified === true });
+          const result = await chrome.storage.local.get(AUTH_VERIFIED_KEY);
+          sendResponse({ verified: result[AUTH_VERIFIED_KEY] === true });
           break;
         }
 
         case "setAuthVerified": {
           await chrome.storage.local.set({
-            authVerified: message.verified === true,
+            [AUTH_VERIFIED_KEY]: message.verified === true,
           });
           sendResponse({ success: true });
           break;
@@ -879,5 +898,17 @@ async function initialize() {
   await checkSurgeHealth();
   console.log("[Surge] Extension loaded");
 }
+
+chrome.runtime.onInstalled.addListener(() => {
+  initialize().catch((error) =>
+    console.error("[Surge] Initialization on install failed:", error),
+  );
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  initialize().catch((error) =>
+    console.error("[Surge] Initialization on startup failed:", error),
+  );
+});
 
 initialize();

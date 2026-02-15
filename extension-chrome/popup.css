@@ -541,12 +541,13 @@ body {
 
 .auth-input input {
   flex: 1;
+  min-width: 0;
   height: 28px;
   padding: 0 8px;
   border-radius: 6px;
   border: 1px solid var(--border-default);
   background: var(--bg-elevated);
-  color: var(--text);
+  color: var(--text-primary);
   font-size: 12px;
 }
 
@@ -556,9 +557,10 @@ body {
   border-radius: 6px;
   border: 1px solid var(--border-default);
   background: var(--bg-surface);
-  color: var(--text);
+  color: var(--text-primary);
   font-size: 12px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .auth-input button:hover {
