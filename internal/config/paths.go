@@ -4,9 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-
-	"github.com/surge-downloader/surge/internal/utils"
 )
+
+// migrationDebugf is intentionally a no-op by default to keep migration silent
+// without introducing a config -> utils dependency (which creates test import cycles).
+var migrationDebugf = func(string, ...any) {}
 
 // GetSurgeDir returns the directory for configuration files (settings.json).
 // Linux: $XDG_CONFIG_HOME/surge or ~/.config/surge
@@ -127,9 +129,9 @@ func MigrateOldPaths() error {
 		if _, err := os.Stat(oldPath); err == nil {
 			if _, err := os.Stat(newPath); os.IsNotExist(err) {
 				if err := os.Rename(oldPath, newPath); err != nil {
-					utils.Debug("Failed to migrate %s from %s to %s: %v", filename, oldPath, newPath, err)
+					migrationDebugf("Failed to migrate %s from %s to %s: %v", filename, oldPath, newPath, err)
 				} else {
-					utils.Debug("Migrated %s to %s", filename, newPath)
+					migrationDebugf("Migrated %s to %s", filename, newPath)
 				}
 			} else {
 				// Never delete potentially newer data (e.g. surge.db) when both
@@ -137,13 +139,13 @@ func MigrateOldPaths() error {
 				// delete legacy token to avoid ambiguity.
 				if filename == "token" {
 					if err := os.Remove(oldPath); err != nil {
-						utils.Debug("Failed to remove legacy token file %s: %v", oldPath, err)
+						migrationDebugf("Failed to remove legacy token file %s: %v", oldPath, err)
 					} else {
-						utils.Debug("Removed legacy token file %s (state token retained at %s)", oldPath, newPath)
+						migrationDebugf("Removed legacy token file %s (state token retained at %s)", oldPath, newPath)
 					}
 					continue
 				}
-				utils.Debug("Skipped migrating %s: both old and new files exist (%s, %s)", filename, oldPath, newPath)
+				migrationDebugf("Skipped migrating %s: both old and new files exist (%s, %s)", filename, oldPath, newPath)
 			}
 		}
 	}
@@ -167,7 +169,7 @@ func MigrateOldPaths() error {
 			oldPath := filepath.Join(oldLogs, entry.Name())
 			newPath := filepath.Join(newLogs, entry.Name())
 			if err := os.Rename(oldPath, newPath); err != nil {
-				utils.Debug("Failed to migrate log file %s to %s: %v", oldPath, newPath, err)
+				migrationDebugf("Failed to migrate log file %s to %s: %v", oldPath, newPath, err)
 			}
 		}
 		_ = os.Remove(oldLogs)
@@ -183,7 +185,7 @@ func MigrateOldPaths() error {
 			oldPath := filepath.Join(oldStateDir, entry.Name())
 			newPath := filepath.Join(stateDir, entry.Name())
 			if err := os.Rename(oldPath, newPath); err != nil {
-				utils.Debug("Failed to migrate state file %s to %s: %v", oldPath, newPath, err)
+				migrationDebugf("Failed to migrate state file %s to %s: %v", oldPath, newPath, err)
 			}
 		}
 		// Remove empty old state dir
