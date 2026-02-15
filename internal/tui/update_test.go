@@ -278,6 +278,41 @@ func TestProcessProgressMsg_ClearsResumingOnTransfer(t *testing.T) {
 	}
 }
 
+func TestUpdate_DownloadComplete_UsesAverageSpeed(t *testing.T) {
+	dm := NewDownloadModel("id-1", "http://example.com/file", "file.bin", 100)
+	dm.Speed = 12345 // Simulate last instantaneous speed before completion.
+	m := RootModel{
+		downloads:   []*DownloadModel{dm},
+		list:        NewDownloadList(80, 20),
+		logViewport: viewport.New(40, 5),
+	}
+
+	elapsed := 4 * time.Second
+	avgSpeed := float64(26400000) / elapsed.Seconds()
+	updated, _ := m.Update(events.DownloadCompleteMsg{
+		DownloadID: "id-1",
+		Filename:   "file.bin",
+		Elapsed:    elapsed,
+		Total:      26400000,
+		AvgSpeed:   avgSpeed,
+	})
+	m2 := updated.(RootModel)
+	d := m2.downloads[0]
+
+	if !d.done {
+		t.Fatal("expected download to be marked done")
+	}
+	if d.Downloaded != d.Total {
+		t.Fatalf("expected downloaded=%d to match total", d.Total)
+	}
+	if d.Elapsed != elapsed {
+		t.Fatalf("elapsed = %v, want %v", d.Elapsed, elapsed)
+	}
+	if d.Speed != avgSpeed {
+		t.Fatalf("speed = %f, want avg speed %f", d.Speed, avgSpeed)
+	}
+}
+
 func TestUpdate_SettingsIgnoresMissingFourthTab(t *testing.T) {
 	m := RootModel{
 		state:    SettingsState,

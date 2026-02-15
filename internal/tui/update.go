@@ -322,6 +322,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d.Total = msg.Total
 				d.Downloaded = d.Total
 				d.Elapsed = msg.Elapsed
+				d.Speed = msg.AvgSpeed
 				d.done = true
 				cmds = append(cmds, d.progress.SetPercent(1.0))
 
