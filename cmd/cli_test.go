@@ -104,6 +104,80 @@ func TestResolveDownloadID_RemoteStillWorksWhenDBUnavailable(t *testing.T) {
 	}
 }
 
+func TestResolveDownloadID_StrictRemoteDoesNotFallbackToDBOnRemoteError(t *testing.T) {
+	setupIsolatedCmdState(t)
+
+	entry := types.DownloadEntry{
+		ID:       "11223344-1234-5678-90ab-cdef12345678",
+		Filename: "db-only.bin",
+	}
+	if err := state.AddToMasterList(entry); err != nil {
+		t.Fatalf("failed to seed db entry: %v", err)
+	}
+
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/list" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	_, portStr, _ := net.SplitHostPort(server.Listener.Addr().String())
+	origHost := globalHost
+	origToken := globalToken
+	globalHost = "127.0.0.1:" + portStr
+	globalToken = "test-token"
+	t.Cleanup(func() {
+		globalHost = origHost
+		globalToken = origToken
+	})
+
+	_, err := resolveDownloadID("112233")
+	if err == nil {
+		t.Fatal("expected remote list error, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to list remote downloads") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResolveDownloadID_LocalModeFallsBackToDBWhenRemoteListFails(t *testing.T) {
+	setupIsolatedCmdState(t)
+
+	entry := types.DownloadEntry{
+		ID:       "99aabbcc-1234-5678-90ab-cdef12345678",
+		Filename: "fallback.bin",
+	}
+	if err := state.AddToMasterList(entry); err != nil {
+		t.Fatalf("failed to seed db entry: %v", err)
+	}
+
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/list" {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	_, portStr, _ := net.SplitHostPort(server.Listener.Addr().String())
+	var port int
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
+	saveActivePort(port)
+	t.Cleanup(removeActivePort)
+
+	full, err := resolveDownloadID("99aabb")
+	if err != nil {
+		t.Fatalf("resolveDownloadID failed: %v", err)
+	}
+	if full != entry.ID {
+		t.Fatalf("expected fallback to DB id %s, got %s", entry.ID, full)
+	}
+}
+
 // TestLsCmd_Alias verify 'l' alias exists
 func TestLsCmd_Alias(t *testing.T) {
 	found := false

@@ -166,6 +166,8 @@ func printDownloads(jsonOutput bool, baseURL string, token string, strictRemote 
 }
 
 func showDownloadDetails(partialID string, jsonOutput bool, baseURL string, token string) {
+	strictRemote := resolveHostTarget() != ""
+
 	// Resolve partial ID
 	fullID, err := resolveDownloadID(partialID)
 	if err != nil {
@@ -177,7 +179,12 @@ func showDownloadDetails(partialID string, jsonOutput bool, baseURL string, toke
 	if baseURL != "" {
 		path := fmt.Sprintf("/download?id=%s", url.QueryEscape(fullID))
 		resp, err := doAPIRequest(http.MethodGet, baseURL, token, path, nil)
-		if err == nil {
+		if err != nil {
+			if strictRemote {
+				fmt.Fprintf(os.Stderr, "Error fetching remote download details: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
 			defer func() {
 				if err := resp.Body.Close(); err != nil {
 					utils.Debug("Error closing response body: %v", err)
@@ -185,10 +192,20 @@ func showDownloadDetails(partialID string, jsonOutput bool, baseURL string, toke
 			}()
 			if resp.StatusCode == http.StatusOK {
 				var status types.DownloadStatus
-				if json.NewDecoder(resp.Body).Decode(&status) == nil {
+				if err := json.NewDecoder(resp.Body).Decode(&status); err == nil {
 					printDownloadDetail(status, jsonOutput)
 					return
+				} else if strictRemote {
+					fmt.Fprintf(os.Stderr, "Error decoding remote download details: %v\n", err)
+					os.Exit(1)
 				}
+			} else if strictRemote {
+				if resp.StatusCode == http.StatusNotFound {
+					fmt.Fprintf(os.Stderr, "Error: remote download not found: %s\n", partialID)
+				} else {
+					fmt.Fprintf(os.Stderr, "Error: remote server returned %s\n", resp.Status)
+				}
+				os.Exit(1)
 			}
 		}
 	}

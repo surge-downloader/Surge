@@ -150,18 +150,6 @@ func sendToServer(url string, mirrors []string, outPath string, baseURL string, 
 		return fmt.Errorf("server error: %s - %s", resp.Status, string(body))
 	}
 
-	// Optional: Print response info (ID etc) if needed, but usually caller handles success msg
-	// Or we can parse ID here and return it?
-	// The caller (add.go/root.go) might want to know ID.
-	// For now, keep it simple as error/nil.
-
-	var respData map[string]interface{}
-	_ = json.NewDecoder(resp.Body).Decode(&respData) // Ignore error? safely
-	if id, ok := respData["id"].(string); ok {
-		// Could log debug
-		_ = id
-	}
-
 	return nil
 }
 
@@ -197,17 +185,27 @@ func resolveDownloadID(partialID string) (string, error) {
 		return partialID, nil // Already a full UUID
 	}
 
+	strictRemote := resolveHostTarget() != ""
 	var candidates []string
 
 	// 1. Try to get candidates from running server
-	baseURL, token, _ := resolveAPIConnection(false)
+	baseURL, token, err := resolveAPIConnection(false)
+	if err != nil {
+		return "", err
+	}
 	if baseURL != "" {
 		remoteDownloads, err := GetRemoteDownloads(baseURL, token)
-		if err == nil {
-			for _, d := range remoteDownloads {
-				candidates = append(candidates, d.ID)
+		if err != nil {
+			if strictRemote {
+				return "", fmt.Errorf("failed to list remote downloads: %w", err)
 			}
+		} else {
+			appendCandidateIDs(&candidates, remoteDownloads)
 		}
+	}
+
+	if strictRemote {
+		return resolveIDFromCandidates(partialID, candidates)
 	}
 
 	// 2. Get all downloads from database
@@ -221,6 +219,16 @@ func resolveDownloadID(partialID string) (string, error) {
 		return partialID, nil
 	}
 
+	return resolveIDFromCandidates(partialID, candidates)
+}
+
+func appendCandidateIDs(candidates *[]string, downloads []types.DownloadStatus) {
+	for _, d := range downloads {
+		*candidates = append(*candidates, d.ID)
+	}
+}
+
+func resolveIDFromCandidates(partialID string, candidates []string) (string, error) {
 	// Find matches among all candidates
 	var matches []string
 	seen := make(map[string]bool)
