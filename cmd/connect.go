@@ -16,113 +16,100 @@ import (
 )
 
 var connectCmd = &cobra.Command{
-	Use:   "connect [host:port]",
+	Use:   "connect <host:port>",
 	Short: "Connect TUI to a running Surge daemon",
-	Args:  cobra.MaximumNArgs(1),
+	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		var target string
-		if len(args) > 0 {
-			target = args[0]
-		} else {
-			// Auto-discovery from local port file
-			port := readActivePort()
-			if port > 0 {
-				target = fmt.Sprintf("127.0.0.1:%d", port)
-			} else {
-				fmt.Println("No active Surge daemon found locally.")
-				fmt.Println("Usage: surge connect <host:port>")
-				os.Exit(1)
-			}
-		}
-
-		insecureHTTP, _ := cmd.Flags().GetBool("insecure-http")
-		baseURL, err := resolveConnectBaseURL(target, insecureHTTP)
-		if err != nil {
-			fmt.Println(err.Error())
-			os.Exit(1)
-		}
-
-		// Resolve token
-		tokenFlag, _ := cmd.Flags().GetString("token")
-		token := strings.TrimSpace(tokenFlag)
-		if token == "" {
-			// Allow env override
-			token = strings.TrimSpace(os.Getenv("SURGE_TOKEN"))
-		}
-		if token == "" {
-			// Only reuse local token for loopback targets.
-			host := target
-			if idx := strings.Index(host, ":"); idx != -1 {
-				host = host[:idx]
-			}
-			if isLocalHost(host) {
-				token = ensureAuthToken()
-			} else {
-				fmt.Println("No token provided. Use --token or set SURGE_TOKEN.")
-				os.Exit(1)
-			}
-		}
-
-		fmt.Printf("Connecting to %s...\n", baseURL)
-
-		// Create Remote Service
-		service := core.NewRemoteDownloadService(baseURL, token)
-
-		// Verify connection
-		_, err = service.List()
-		if err != nil {
-			fmt.Printf("Failed to connect: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Event loop
-		stream, cleanup, err := service.StreamEvents(context.Background())
-		if err != nil {
-			fmt.Printf("Failed to start event stream: %v\n", err)
-			os.Exit(1)
-		}
-		defer cleanup()
-
-		// Parse port for display
-		port := 0
-		serverHost := hostnameFromTarget(target)
-		if u, err := url.Parse(baseURL); err == nil {
-			if h := u.Hostname(); h != "" {
-				serverHost = h
-			}
-			if p := u.Port(); p != "" {
-				port, _ = strconv.Atoi(p)
-			}
-		}
-
-		// Initialize TUI
-		// Using false for noResume because resume logic is handled by the server (remote service)
-		// we just want to reflect the state.
-		m := tui.InitialRootModel(port, Version, service, false)
-		m.ServerHost = serverHost
-		m.IsRemote = true
-
-		p := tea.NewProgram(m, tea.WithAltScreen())
-
-		// Pipe events to program
-		go func() {
-			for msg := range stream {
-				p.Send(msg)
-			}
-		}()
-
-		// Run TUI
-		if _, err := p.Run(); err != nil {
-			fmt.Printf("Error running TUI: %v\n", err)
-			os.Exit(1)
-		}
+		connectAndRunTUI(cmd, args[0])
 	},
 }
 
 func init() {
-	connectCmd.Flags().String("token", "", "Bearer token for remote daemon (or set SURGE_TOKEN)")
 	connectCmd.Flags().Bool("insecure-http", false, "Allow plain HTTP for non-loopback targets")
 	rootCmd.AddCommand(connectCmd)
+}
+
+func connectAndRunTUI(cmd *cobra.Command, target string) {
+	insecureHTTP, _ := cmd.Flags().GetBool("insecure-http")
+	baseURL, err := resolveConnectBaseURL(target, insecureHTTP)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
+	token, err := resolveTokenForTarget(target)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
+	fmt.Printf("Connecting to %s...\n", baseURL)
+
+	service := core.NewRemoteDownloadService(baseURL, token)
+	_, err = service.List()
+	if err != nil {
+		fmt.Printf("Failed to connect: %v\n", err)
+		os.Exit(1)
+	}
+
+	stream, cleanup, err := service.StreamEvents(context.Background())
+	if err != nil {
+		fmt.Printf("Failed to start event stream: %v\n", err)
+		os.Exit(1)
+	}
+	defer cleanup()
+
+	port := 0
+	serverHost := hostnameFromTarget(target)
+	if u, err := url.Parse(baseURL); err == nil {
+		if h := u.Hostname(); h != "" {
+			serverHost = h
+		}
+		if p := u.Port(); p != "" {
+			port, _ = strconv.Atoi(p)
+		}
+	}
+
+	m := tui.InitialRootModel(port, Version, service, false)
+	m.ServerHost = serverHost
+	m.IsRemote = true
+
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	go func() {
+		for msg := range stream {
+			p.Send(msg)
+		}
+	}()
+
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Error running TUI: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func resolveTokenForTarget(target string) (string, error) {
+	token := strings.TrimSpace(globalToken)
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("SURGE_TOKEN"))
+	}
+	if token != "" {
+		return token, nil
+	}
+
+	host := target
+	if strings.Contains(target, "://") {
+		u, err := url.Parse(target)
+		if err == nil {
+			host = u.Hostname()
+		}
+	} else {
+		host = hostnameFromTarget(target)
+	}
+
+	if isLocalHost(host) {
+		return ensureAuthToken(), nil
+	}
+	return "", fmt.Errorf("no token provided. Use --token or set SURGE_TOKEN")
 }
 
 func resolveConnectBaseURL(target string, allowInsecureHTTP bool) (string, error) {

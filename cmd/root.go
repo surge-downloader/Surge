@@ -38,7 +38,11 @@ var (
 var activeDownloads int32
 
 // Command line flags
-var verbose bool
+var (
+	verbose     bool
+	globalHost  string
+	globalToken string
+)
 
 // Globals for Unified Backend
 var (
@@ -72,6 +76,15 @@ var rootCmd = &cobra.Command{
 		GlobalPool = download.NewWorkerPool(GlobalProgressCh, settings.Network.MaxConcurrentDownloads)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		if hostTarget := resolveHostTarget(); hostTarget != "" {
+			if len(args) > 0 {
+				fmt.Fprintln(os.Stderr, "Error: URLs cannot be passed when using --host. Use 'surge add <url>' after connecting.")
+				os.Exit(1)
+			}
+			connectAndRunTUI(cmd, hostTarget)
+			return
+		}
+
 		initializeGlobalState()
 
 		// Attempt to acquire lock
@@ -114,7 +127,7 @@ var rootCmd = &cobra.Command{
 		defer removeActivePort()
 
 		// Start HTTP server in background (reuse the listener)
-		go startHTTPServer(listener, port, outputDir, GlobalService)
+		go startHTTPServer(listener, port, outputDir, GlobalService, "")
 
 		// Queue initial downloads if any
 		go func() {
@@ -351,8 +364,13 @@ func removeActivePort() {
 }
 
 // startHTTPServer starts the HTTP server using an existing listener
-func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service core.DownloadService) {
-	authToken := ensureAuthToken()
+func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service core.DownloadService, tokenOverride string) {
+	authToken := strings.TrimSpace(tokenOverride)
+	if authToken == "" {
+		authToken = ensureAuthToken()
+	} else {
+		persistAuthToken(authToken)
+	}
 
 	mux := http.NewServeMux()
 
@@ -650,6 +668,18 @@ func ensureAuthToken() string {
 	return token
 }
 
+func persistAuthToken(token string) {
+	stateTokenFile := filepath.Join(config.GetStateDir(), "token")
+	legacyTokenFile := filepath.Join(config.GetSurgeDir(), "token")
+
+	if err := writeTokenToFile(stateTokenFile, token); err != nil {
+		utils.Debug("Failed to write token file in state dir: %v", err)
+	}
+	if err := writeTokenToFile(legacyTokenFile, token); err != nil {
+		utils.Debug("Failed to write token file in legacy config dir: %v", err)
+	}
+}
+
 func readTokenFromFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -905,12 +935,14 @@ func processDownloads(urls []string, outputDir string, port int) int {
 
 	// If port > 0, we are sending to a remote server
 	if port > 0 {
+		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+		token := resolveLocalToken()
 		for _, arg := range urls {
 			url, mirrors := ParseURLArg(arg)
 			if url == "" {
 				continue
 			}
-			err := sendToServer(url, mirrors, outputDir, port)
+			err := sendToServer(url, mirrors, outputDir, baseURL, token)
 			if err != nil {
 				fmt.Printf("Error adding %s: %v\n", url, err)
 			} else {
@@ -982,6 +1014,8 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
+	rootCmd.PersistentFlags().StringVar(&globalHost, "host", "", "Server host to connect/control (or set SURGE_HOST), e.g. 127.0.0.1:1700")
+	rootCmd.PersistentFlags().StringVar(&globalToken, "token", "", "Bearer token (or set SURGE_TOKEN)")
 	rootCmd.Flags().StringP("batch", "b", "", "File containing URLs to download (one per line)")
 	rootCmd.Flags().IntP("port", "p", 0, "Port to listen on (default: 8080 or first available)")
 	rootCmd.Flags().StringP("output", "o", "", "Default output directory")

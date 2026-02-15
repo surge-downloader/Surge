@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -18,9 +19,45 @@ import (
 )
 
 var serverCmd = &cobra.Command{
-	Use:   "server",
+	Use:   "server [url]...",
 	Short: "Manage the Surge background server (daemon)",
-	Long:  `Start, stop, or check the status of the Surge background server.`,
+	Long:  `Run the Surge background server in headless mode.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		initializeGlobalState()
+
+		// Attempt to acquire lock
+		isMaster, err := AcquireLock()
+		if err != nil {
+			fmt.Printf("Error acquiring lock: %v\n", err)
+			os.Exit(1)
+		}
+
+		if !isMaster {
+			fmt.Fprintln(os.Stderr, "Error: Surge server is already running.")
+			os.Exit(1)
+		}
+		defer func() {
+			if err := ReleaseLock(); err != nil {
+				utils.Debug("Error releasing lock: %v", err)
+			}
+		}()
+
+		msg := runStartupIntegrityCheck()
+		utils.Debug("%s", msg)
+		fmt.Println(msg)
+
+		portFlag, _ := cmd.Flags().GetInt("port")
+		batchFile, _ := cmd.Flags().GetString("batch")
+		outputDir, _ := cmd.Flags().GetString("output")
+		exitWhenDone, _ := cmd.Flags().GetBool("exit-when-done")
+		noResume, _ := cmd.Flags().GetBool("no-resume")
+		tokenFlag, _ := cmd.Flags().GetString("token")
+
+		savePID()
+		defer removePID()
+
+		startServerLogic(cmd, args, portFlag, batchFile, outputDir, exitWhenDone, noResume, tokenFlag)
+	},
 }
 
 var serverStartCmd = &cobra.Command{
@@ -64,7 +101,8 @@ var serverStartCmd = &cobra.Command{
 		// Determine Port
 		// Logic moved to startServerLogic, or we need to pass flags.
 		// Use startServerLogic
-		startServerLogic(cmd, args, portFlag, batchFile, outputDir, exitWhenDone, noResume)
+		tokenFlag, _ := cmd.Flags().GetString("token")
+		startServerLogic(cmd, args, portFlag, batchFile, outputDir, exitWhenDone, noResume, tokenFlag)
 	},
 }
 
@@ -131,11 +169,19 @@ func init() {
 	serverCmd.AddCommand(serverStopCmd)
 	serverCmd.AddCommand(serverStatusCmd)
 
+	serverCmd.Flags().StringP("batch", "b", "", "File containing URLs to download")
+	serverCmd.Flags().IntP("port", "p", 0, "Port to listen on")
+	serverCmd.Flags().StringP("output", "o", "", "Default output directory")
+	serverCmd.Flags().Bool("exit-when-done", false, "Exit when all downloads complete")
+	serverCmd.Flags().Bool("no-resume", false, "Do not auto-resume paused downloads on startup")
+	serverCmd.Flags().String("token", "", "Auth token for API clients (or set SURGE_TOKEN)")
+
 	serverStartCmd.Flags().StringP("batch", "b", "", "File containing URLs to download")
 	serverStartCmd.Flags().IntP("port", "p", 0, "Port to listen on")
 	serverStartCmd.Flags().StringP("output", "o", "", "Default output directory")
 	serverStartCmd.Flags().Bool("exit-when-done", false, "Exit when all downloads complete")
 	serverStartCmd.Flags().Bool("no-resume", false, "Do not auto-resume paused downloads on startup")
+	serverStartCmd.Flags().String("token", "", "Auth token for API clients (or set SURGE_TOKEN)")
 }
 
 func savePID() {
@@ -163,7 +209,7 @@ func readPID() int {
 	return pid
 }
 
-func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile string, outputDir string, exitWhenDone bool, noResume bool) {
+func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile string, outputDir string, exitWhenDone bool, noResume bool, tokenOverride string) {
 	port, listener, err := bindServerListener(portFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -176,7 +222,7 @@ func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile
 	saveActivePort(port)
 	defer removeActivePort()
 
-	go startHTTPServer(listener, port, outputDir, GlobalService)
+	go startHTTPServer(listener, port, outputDir, GlobalService, strings.TrimSpace(tokenOverride))
 
 	// Queue initial downloads
 	go func() {
