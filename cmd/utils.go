@@ -64,6 +64,29 @@ func ParseURLArg(arg string) (string, []string) {
 	return urls[0], urls
 }
 
+func resolveLocalToken() string {
+	if token := strings.TrimSpace(os.Getenv("SURGE_TOKEN")); token != "" {
+		return token
+	}
+	return ensureAuthToken()
+}
+
+func doLocalAPIRequest(method string, port int, path string, body io.Reader) (*http.Response, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d%s", port, path)
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+resolveLocalToken())
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	client := &http.Client{}
+	return client.Do(req)
+}
+
 // sendToServer sends a download request to a running surge server
 func sendToServer(url string, mirrors []string, outPath string, port int) error {
 	reqBody := DownloadRequest{
@@ -76,8 +99,7 @@ func sendToServer(url string, mirrors []string, outPath string, port int) error 
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	serverURL := fmt.Sprintf("http://127.0.0.1:%d/download", port)
-	resp, err := http.Post(serverURL, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := doLocalAPIRequest(http.MethodPost, port, "/download", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}
@@ -109,7 +131,7 @@ func sendToServer(url string, mirrors []string, outPath string, port int) error 
 
 // GetRemoteDownloads fetches all downloads from the running server
 func GetRemoteDownloads(port int) ([]types.DownloadStatus, error) {
-	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/list", port))
+	resp, err := doLocalAPIRequest(http.MethodGet, port, "/list", nil)
 	if err != nil {
 		return nil, err
 	}
