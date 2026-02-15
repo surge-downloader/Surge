@@ -92,8 +92,8 @@ func printDownloads(jsonOutput bool, baseURL string, token string, strictRemote 
 		}
 	}
 
-	// If no server running or no active downloads, fall back to database
-	if len(downloads) == 0 {
+	// Fall back to database only when not explicitly targeting a remote host.
+	if len(downloads) == 0 && !(strictRemote && baseURL != "") {
 		dbDownloads, err := state.ListAllDownloads()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error listing downloads: %v\n", err)

@@ -428,6 +428,36 @@ func TestPrintDownloads_JSONEmpty(t *testing.T) {
 	}
 }
 
+func TestPrintDownloads_StrictRemoteEmpty_DoesNotFallbackToDB(t *testing.T) {
+	setupIsolatedCmdState(t)
+
+	entry := types.DownloadEntry{
+		ID:       "feedface-1234-5678-90ab-cdef12345678",
+		Filename: "local-only.bin",
+		Status:   "completed",
+	}
+	if err := state.AddToMasterList(entry); err != nil {
+		t.Fatalf("failed to seed local db entry: %v", err)
+	}
+
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/list" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[]`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	out := captureStdout(t, func() {
+		printDownloads(true, server.URL, "", true)
+	})
+	if strings.TrimSpace(out) != "[]" {
+		t.Fatalf("expected strict remote empty json array, got %q", strings.TrimSpace(out))
+	}
+}
+
 func TestShowDownloadDetails_UsesDatabaseFallback(t *testing.T) {
 	setupIsolatedCmdState(t)
 	removeActivePort()
