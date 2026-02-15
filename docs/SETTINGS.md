@@ -4,7 +4,8 @@ This document provides a detailed overview of all configuration options and CLI 
 
 ## Configuration File
 
-Surge stores its configuration in a `settings.json` file located in the application data directory:
+You can **access the settings in TUI** or if you prefer
+from the `settings.json` file located in the application data directory:
 - **Windows:** `%APPDATA%\surge\settings.json`
 - **macOS:** `~/Library/Application Support/surge/settings.json`
 - **Linux:** `~/.config/surge/settings.json`
@@ -25,15 +26,10 @@ Surge stores its configuration in a `settings.json` file located in the applicat
 | Key | Type | Description | Default |
 | :--- | :--- | :--- | :--- |
 | `max_connections_per_host` | int | Maximum concurrent connections allowed to a single host (1-64). | `32` |
-| `max_global_connections` | int | Maximum total concurrent connections across all active downloads. | `100` |
 | `max_concurrent_downloads` | int | Maximum number of downloads running simultaneously (requires restart). | `3` |
 | `user_agent` | string | Custom User-Agent string for HTTP requests. Leave empty for default. | `""` |
 | `proxy_url` | string | HTTP/HTTPS proxy URL (e.g., `http://127.0.0.1:8080`). Leave empty to use system settings. | `""` |
 | `sequential_download` | bool | Download file pieces in strict order (Streaming Mode). Useful for previewing media but may be slower. | `false` |
-
-### Chunk Settings
-| Key | Type | Description | Default |
-| :--- | :--- | :--- | :--- |
 | `min_chunk_size` | int64 | Minimum size of a download chunk in bytes (e.g., `2097152` for 2MB). | `2MB` |
 | `worker_buffer_size` | int | I/O buffer size per worker in bytes (e.g., `524288` for 512KB). | `512KB` |
 
