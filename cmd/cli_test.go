@@ -400,6 +400,69 @@ func TestSendToServer_SuccessAndServerError(t *testing.T) {
 	}
 }
 
+func TestSendToServer_UsesBearerTokenFromEnv(t *testing.T) {
+	t.Setenv("SURGE_TOKEN", "env-token-123")
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen failed: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/download", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer env-token-123" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"id":"ok"}`))
+	})
+
+	server := &http.Server{Handler: mux}
+	go func() { _ = server.Serve(ln) }()
+	t.Cleanup(func() { _ = server.Close() })
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	err = sendToServer("https://example.com/file.zip", nil, "", port)
+	if err != nil {
+		t.Fatalf("expected authenticated request to succeed, got error: %v", err)
+	}
+}
+
+func TestGetRemoteDownloads_UsesBearerTokenFromEnv(t *testing.T) {
+	t.Setenv("SURGE_TOKEN", "env-token-123")
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen failed: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/list", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer env-token-123" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"id":"123","filename":"foo.bin","status":"downloading"}]`))
+	})
+
+	server := &http.Server{Handler: mux}
+	go func() { _ = server.Serve(ln) }()
+	t.Cleanup(func() { _ = server.Close() })
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	downloads, err := GetRemoteDownloads(port)
+	if err != nil {
+		t.Fatalf("expected authenticated request to succeed, got error: %v", err)
+	}
+	if len(downloads) != 1 {
+		t.Fatalf("expected 1 download, got %d", len(downloads))
+	}
+}
+
 func TestGetRemoteDownloads_NonOKAndInvalidJSON(t *testing.T) {
 	t.Run("non-200", func(t *testing.T) {
 		server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
