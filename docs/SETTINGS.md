@@ -48,75 +48,41 @@ from the `settings.json` file located in the application data directory:
 
 Surge provides a robust Command Line Interface for automation and scripting.
 
-### `surge [url...]`
-Start the interactive TUI mode. If URLs are provided, they are added to the queue immediately.
+### Command Table
 
-**Flags:**
-- `--batch, -b <file>`: Read URLs from a file (one per line).
-- `--port, -p <port>`: Force the internal server to listen on a specific port.
-- `--output, -o <dir>`: Set a default output directory for this session.
-- `--no-resume`: Do not auto-resume paused downloads on startup.
-- `--exit-when-done`: Automatically exit the application when all downloads complete.
-- `--host <host:port>`: Connect TUI to a remote server instead of starting local mode.
-- `--token <token>`: Bearer token for authentication.
+| Command | What it does | Key flags | Notes |
+| :--- | :--- | :--- | :--- |
+| `surge [url]...` | Launches local TUI. Queues optional URLs. | `--batch, -b`, `--port, -p`, `--output, -o`, `--no-resume`, `--exit-when-done` | If `--host` is set, this becomes remote TUI mode. |
+| `surge server [url]...` | Launches headless server. Queues optional URLs. | `--batch, -b`, `--port, -p`, `--output, -o`, `--exit-when-done`, `--no-resume`, `--token` | Primary headless mode command. |
+| `surge connect <host:port>` | Launches TUI connected to remote server. | `--insecure-http` | Convenience alias for remote TUI usage. |
+| `surge add <url>...` | Queues downloads via CLI/API. | `--batch, -b`, `--output, -o` | Alias: `get`. |
+| `surge ls [id]` | Lists downloads, or shows one download detail. | `--json`, `--watch` | Alias: `l`. |
+| `surge pause <id>` | Pauses a download by ID/prefix. | `--all` | |
+| `surge resume <id>` | Resumes a paused download by ID/prefix. | `--all` | |
+| `surge rm <id>` | Removes a download by ID/prefix. | `--clean` | Alias: `kill`. |
+| `surge token` | Prints current API auth token. | None | Useful for remote clients. |
 
-### `surge add <url>`
-Add a download to the running instance (or start a new one if not running).
+### Server Subcommands (Compatibility)
 
-**Flags:**
-- `--batch, -b <file>`: Add multiple URLs from a file.
-- `--output, -o <dir>`: Specify the output directory for this download.
+| Command | What it does |
+| :--- | :--- |
+| `surge server start [url]...` | Legacy equivalent of `surge server [url]...`. |
+| `surge server stop` | Stops a running server process by PID file. |
+| `surge server status` | Prints running/not-running status from PID/port state. |
 
-### `surge connect <host:port>`
-Connect the TUI to a remote Surge daemon.
+### Global Flags
 
-**Flags:**
-- `--insecure-http`: Allow plain HTTP connections to non-loopback targets.
+These are persistent flags and can be used with all commands.
 
-### `surge ls`
-List all downloads in the queue.
+| Flag | Description |
+| :--- | :--- |
+| `--host <host:port>` | Target server for TUI and CLI actions. |
+| `--token <token>` | Bearer token used for API requests. |
+| `--verbose, -v` | Enable verbose logging. |
 
-**Flags:**
-- `--json`: Output the list in JSON format (useful for scripts).
-- `--watch`: Watch mode (refresh every second).
+### Environment Variables
 
-### `surge pause <id>`
-Pause a specific download by ID (or partial ID).
-
-**Flags:**
-- `--all`: Pause all active downloads.
-
-### `surge resume <id>`
-Resume a specific paused download by ID.
-
-**Flags:**
-- `--all`: Resume all paused downloads.
-
-### `surge rm <id>`
-Remove/Cancel a download.
-
-**Flags:**
-- `--clean`: Remove all completed downloads from the list.
-
-### `surge server [url...]`
-Start Surge in headless server mode (no TUI). Ideal for background services or remote servers.
-
-**Flags:**
-- `--batch, -b <file>`: Load initial URLs from a file.
-- `--port, -p <port>`: Listen on a specific port.
-- `--output, -o <dir>`: Set the default output directory.
-- `--exit-when-done`: Exit when the queue is empty.
-- `--no-resume`: Do not auto-resume paused downloads on startup.
-- `--token <token>`: Set the API auth token for this server.
-
-### Global Connection Flags and Environment Variables
-
-These apply to all commands:
-
-- `--host <host:port>`: target server for TUI and CLI actions.
-- `--token <token>`: bearer token used for API requests.
-
-Environment variables:
-
-- `SURGE_HOST`: default host when `--host` is not provided.
-- `SURGE_TOKEN`: default token when `--token` is not provided.
+| Variable | Description |
+| :--- | :--- |
+| `SURGE_HOST` | Default host when `--host` is not provided. |
+| `SURGE_TOKEN` | Default token when `--token` is not provided. |
