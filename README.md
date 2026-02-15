@@ -65,6 +65,7 @@ Surge is available on multiple platforms. Choose the method that works best for 
 | **Arch Linux (AUR)** | `yay -S surge` | Managed via AUR. |
 | **macOS / Linux (Homebrew)** | `brew install surge-downloader/tap/surge` | Recommended for Mac/Linux users. |
 | **Windows (Winget)** | `winget install surge-downloader.surge` | Recommended for Windows users. |
+| **Dockerfile** | [See instructions](#4-server-mode-with-docker-compose) | Run Surge in server mode with Docker Compose
 | **Go Install** | `go install github.com/surge-downloader/surge@latest` | Requires Go 1.21+. |
 
 ---
@@ -108,10 +109,10 @@ surge server status
 `surge` and `surge server start` bind the HTTP API to `0.0.0.0` (all interfaces) by default.
 This means the server is accessible via `localhost` (127.0.0.1) as well as your local network IP.
 
-The API is token-protected. Generate/read your token from:
+The API is token-protected. Generate/read your token by running:
 
 ```bash
-~/.surge/token
+surge token
 ```
 
 ### 3. Remote TUI

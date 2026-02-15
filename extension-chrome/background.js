@@ -104,6 +104,14 @@ async function authHeaders() {
   return { Authorization: `Bearer ${token}` };
 }
 
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes[AUTH_TOKEN_KEY]) {
+    return;
+  }
+  const nextToken = changes[AUTH_TOKEN_KEY].newValue;
+  cachedAuthToken = typeof nextToken === "string" ? nextToken : "";
+});
+
 // === Port Discovery ===
 
 async function findSurgePort() {
@@ -282,10 +290,6 @@ async function sendToSurge(url, filename, absolutePath) {
       body.headers = headers;
       console.log("[Surge] Forwarding captured headers to Surge");
     }
-
-    // Always skip TUI approval for extension downloads (vetted by user action)
-    // This also bypasses duplicate warnings since extension handles those
-    body.skip_approval = true;
 
     const auth = await authHeaders();
     const response = await fetch(`http://127.0.0.1:${port}/download`, {
@@ -479,9 +483,6 @@ function extractPathInfo(downloadItem) {
 }
 
 // === Download Interception ===
-// Two-phase approach to properly capture user-selected path from Save As dialog:
-// 1. onCreated: Store the download as "pending" if filename not yet determined
-// 2. onChanged: Wait for filename to be determined (after Save As dialog), then intercept
 
 const processedIds = new Set();
 
@@ -517,8 +518,6 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     return;
   }
 
-  // Intercept immediately - we don't wait for Save As / filenames anymore
-  // as user requested to force default directory for everything.
   processedIds.add(downloadItem.id);
   setTimeout(() => processedIds.delete(downloadItem.id), 120000);
 
@@ -545,7 +544,7 @@ async function handleDownloadIntercept(downloadItem) {
     pendingDuplicates.set(pendingId, {
       downloadItem,
       filename,
-      directory,
+      directory: "",
       url: downloadItem.url,
       timestamp: Date.now(),
     });
@@ -593,7 +592,6 @@ async function handleDownloadIntercept(downloadItem) {
     return; // Let browser continue - download is already in progress
   }
 
-  // Extract path info - filename now contains the full path from Save As dialog
   const { filename } = extractPathInfo(downloadItem);
 
   console.log(
@@ -607,7 +605,6 @@ async function handleDownloadIntercept(downloadItem) {
     await chrome.downloads.cancel(downloadItem.id);
     await chrome.downloads.erase({ id: downloadItem.id });
 
-    // Force default directory by passing empty string
     const result = await sendToSurge(downloadItem.url, filename, "");
 
     if (result.success) {
@@ -723,7 +720,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ success: true });
           break;
         }
-
         case "getDownloads": {
           const { list, authError } = await fetchDownloadList();
           sendResponse({
@@ -879,6 +875,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function initialize() {
   console.log("[Surge] Extension initializing...");
+  await loadAuthToken();
   await checkSurgeHealth();
   console.log("[Surge] Extension loaded");
 }

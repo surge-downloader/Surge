@@ -65,11 +65,11 @@ type DownloadModel struct {
 	// No direct state access or polling reporter
 	state *types.ProgressState // Keep for now if needed for details view, but mostly passive
 
-	done          bool
-	err           error
-	paused        bool
-	pausing       bool // UI state: transitioning to pause
-	pendingResume bool // UI state: waiting for async resume
+	done     bool
+	err      error
+	paused   bool
+	pausing  bool // UI state: transitioning to pause
+	resuming bool // UI state: waiting for async resume
 }
 
 type RootModel struct {
@@ -116,12 +116,13 @@ type RootModel struct {
 	logFocused  bool           // Whether the log viewport is focused
 
 	// Settings
-	Settings             *config.Settings // Application settings
-	SettingsActiveTab    int              // Active category tab (0-3)
-	SettingsSelectedRow  int              // Selected setting within current tab
-	SettingsIsEditing    bool             // Whether currently editing a value
-	SettingsInput        textinput.Model  // Input for editing string/int values
-	SettingsFileBrowsing bool             // Whether browsing for a directory
+	Settings              *config.Settings // Application settings
+	SettingsActiveTab     int              // Active category tab (0-3)
+	SettingsSelectedRow   int              // Selected setting within current tab
+	SettingsIsEditing     bool             // Whether currently editing a value
+	SettingsInput         textinput.Model  // Input for editing string/int values
+	SettingsFileBrowsing  bool             // Whether browsing for a directory
+	ExtensionFileBrowsing bool             // Whether browsing for extension prompt path
 
 	// Selection persistence
 	SelectedDownloadID string // ID of the currently selected download
@@ -246,14 +247,14 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 					dm.pausing = true
 				case "paused":
 					if settings.General.AutoResume {
-						dm.pendingResume = true
+						dm.resuming = true
 						dm.paused = true // Will update when resume event received
 					} else {
 						dm.paused = true
 					}
 				case "queued":
 					// Always resume queued items
-					dm.pendingResume = true
+					dm.resuming = true
 					dm.paused = true // Will update when resume event received
 				}
 
@@ -345,7 +346,7 @@ func (m RootModel) Init() tea.Cmd {
 	// Async resume of downloads
 	var resumeIDs []string
 	for _, d := range m.downloads {
-		if d.pendingResume {
+		if d.resuming {
 			resumeIDs = append(resumeIDs, d.ID)
 		}
 	}

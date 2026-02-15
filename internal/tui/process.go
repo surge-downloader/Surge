@@ -13,11 +13,17 @@ func (m *RootModel) processProgressMsg(msg events.ProgressMsg) {
 				break
 			}
 
+			prevDownloaded := d.Downloaded
 			d.Downloaded = msg.Downloaded
 			d.Total = msg.Total
 			d.Speed = msg.Speed
 			d.Elapsed = msg.Elapsed
 			d.Connections = msg.ActiveConnections
+
+			// Keep "Resuming..." visible until we observe actual transfer.
+			if d.resuming && (d.Speed > 0 || d.Downloaded > prevDownloaded) {
+				d.resuming = false
+			}
 
 			// Update Chunk State if provided
 			if msg.BitmapWidth > 0 && len(msg.ChunkBitmap) > 0 {

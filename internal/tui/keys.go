@@ -81,9 +81,11 @@ type DuplicateKeyMap struct {
 
 // ExtensionKeyMap defines keybindings for extension confirmation
 type ExtensionKeyMap struct {
-	Yes    key.Binding
-	No     key.Binding
-	Cancel key.Binding
+	Confirm key.Binding
+	Browse  key.Binding
+	Next    key.Binding
+	Prev    key.Binding
+	Cancel  key.Binding
 }
 
 // SettingsKeyMap defines keybindings for the settings view
@@ -298,13 +300,21 @@ var Keys = KeyMap{
 		),
 	},
 	Extension: ExtensionKeyMap{
-		Yes: key.NewBinding(
-			key.WithKeys("y", "Y"),
-			key.WithHelp("y", "yes"),
+		Confirm: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "confirm"),
 		),
-		No: key.NewBinding(
-			key.WithKeys("n", "N", "esc"),
-			key.WithHelp("n", "no"),
+		Browse: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "browse path"),
+		),
+		Next: key.NewBinding(
+			key.WithKeys("down"),
+			key.WithHelp("↓", "next field"),
+		),
+		Prev: key.NewBinding(
+			key.WithKeys("up"),
+			key.WithHelp("↑", "prev field"),
 		),
 		Cancel: key.NewBinding(
 			key.WithKeys("esc"),
@@ -444,11 +454,11 @@ func (k DuplicateKeyMap) FullHelp() [][]key.Binding {
 }
 
 func (k ExtensionKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Yes, k.No}
+	return []key.Binding{k.Browse, k.Prev, k.Next, k.Confirm, k.Cancel}
 }
 
 func (k ExtensionKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.Yes, k.No}}
+	return [][]key.Binding{{k.Browse, k.Prev, k.Next, k.Confirm, k.Cancel}}
 }
 
 func (k SettingsKeyMap) ShortHelp() []key.Binding {

@@ -104,6 +104,14 @@ async function authHeaders() {
   return { Authorization: `Bearer ${token}` };
 }
 
+browser.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local' || !changes[AUTH_TOKEN_KEY]) {
+    return;
+  }
+  const nextToken = changes[AUTH_TOKEN_KEY].newValue;
+  cachedAuthToken = typeof nextToken === 'string' ? nextToken : '';
+});
+
 // === Port Discovery ===
 
 async function findSurgePort() {
@@ -292,10 +300,6 @@ async function sendToSurge(url, filename, absolutePath) {
       console.log('[Surge] Forwarding captured headers to Surge');
     }
 
-    // Always skip TUI approval for extension downloads (vetted by user action)
-    // This also bypasses duplicate warnings since extension handles those
-    body.skip_approval = true;
-
     const auth = await authHeaders();
     const response = await fetch(`http://127.0.0.1:${port}/download`, {
       method: 'POST',
@@ -464,9 +468,6 @@ function extractPathInfo(downloadItem) {
 }
 
 // === Download Interception ===
-// Firefox doesn't support onDeterminingFilename, so we use a two-phase approach:
-// 1. onCreated: Store the download as "pending" 
-// 2. onChanged: Wait for filename to be determined, then intercept
 
 const processedIds = new Set();
 
@@ -493,7 +494,6 @@ browser.downloads.onCreated.addListener(async (downloadItem) => {
     return;
   }
 
-  // Intercept immediately
   processedIds.add(downloadItem.id);
   setTimeout(() => processedIds.delete(downloadItem.id), 120000);
   
@@ -519,7 +519,7 @@ async function handleDownloadIntercept(downloadItem) {
     pendingDuplicates.set(pendingId, {
       downloadItem,
       filename,
-      directory,
+      directory: '',
       url: downloadItem.url,
       timestamp: Date.now()
     });
@@ -565,11 +565,10 @@ async function handleDownloadIntercept(downloadItem) {
     await browser.downloads.cancel(downloadItem.id);
     await browser.downloads.erase({ id: downloadItem.id });
 
-    // Force default directory by passing empty string
     const result = await sendToSurge(
       downloadItem.url,
       filename,
-      "" 
+      ''
     );
 
     if (result.success) {
@@ -784,6 +783,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
 
 async function initialize() {
   console.log('[Surge] Extension initializing...');
+  await loadAuthToken();
   await checkSurgeHealth();
   console.log('[Surge] Extension loaded');
 }

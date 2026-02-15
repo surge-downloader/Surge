@@ -1,12 +1,14 @@
 package config
 
 import (
-	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 )
+
+// migrationDebugf is intentionally a no-op by default to keep migration silent
+// without introducing a config -> utils dependency (which creates test import cycles).
+var migrationDebugf = func(string, ...any) {}
 
 // GetSurgeDir returns the directory for configuration files (settings.json).
 // Linux: $XDG_CONFIG_HOME/surge or ~/.config/surge
@@ -127,28 +129,23 @@ func MigrateOldPaths() error {
 		if _, err := os.Stat(oldPath); err == nil {
 			if _, err := os.Stat(newPath); os.IsNotExist(err) {
 				if err := os.Rename(oldPath, newPath); err != nil {
-					// Log error but continue?
-					fmt.Fprintf(os.Stderr, "Failed to migrate %s: %v\n", filename, err)
+					migrationDebugf("Failed to migrate %s from %s to %s: %v", filename, oldPath, newPath, err)
 				} else {
-					fmt.Printf("Migrated %s to %s\n", filename, newPath)
+					migrationDebugf("Migrated %s to %s", filename, newPath)
 				}
 			} else {
 				// Never delete potentially newer data (e.g. surge.db) when both
-				// locations contain a file. Only remove known duplicates safely.
+				// locations contain a file. Token now always lives in state dir:
+				// delete legacy token to avoid ambiguity.
 				if filename == "token" {
-					equal, cmpErr := filesEqual(oldPath, newPath)
-					if cmpErr != nil {
-						fmt.Fprintf(os.Stderr, "Failed to compare token files (%s vs %s): %v\n", oldPath, newPath, cmpErr)
-						continue
+					if err := os.Remove(oldPath); err != nil {
+						migrationDebugf("Failed to remove legacy token file %s: %v", oldPath, err)
+					} else {
+						migrationDebugf("Removed legacy token file %s (state token retained at %s)", oldPath, newPath)
 					}
-					if equal {
-						if err := os.Remove(oldPath); err != nil {
-							fmt.Fprintf(os.Stderr, "Failed to remove redundant file %s: %v\n", filename, err)
-						}
-						continue
-					}
+					continue
 				}
-				fmt.Fprintf(os.Stderr, "Skipped migrating %s: both old and new files exist (%s, %s)\n", filename, oldPath, newPath)
+				migrationDebugf("Skipped migrating %s: both old and new files exist (%s, %s)", filename, oldPath, newPath)
 			}
 		}
 	}
@@ -172,7 +169,7 @@ func MigrateOldPaths() error {
 			oldPath := filepath.Join(oldLogs, entry.Name())
 			newPath := filepath.Join(newLogs, entry.Name())
 			if err := os.Rename(oldPath, newPath); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to migrate log file %s: %v\n", entry.Name(), err)
+				migrationDebugf("Failed to migrate log file %s to %s: %v", oldPath, newPath, err)
 			}
 		}
 		_ = os.Remove(oldLogs)
@@ -188,7 +185,7 @@ func MigrateOldPaths() error {
 			oldPath := filepath.Join(oldStateDir, entry.Name())
 			newPath := filepath.Join(stateDir, entry.Name())
 			if err := os.Rename(oldPath, newPath); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to migrate state file %s: %v\n", entry.Name(), err)
+				migrationDebugf("Failed to migrate state file %s to %s: %v", oldPath, newPath, err)
 			}
 		}
 		// Remove empty old state dir
@@ -196,63 +193,4 @@ func MigrateOldPaths() error {
 	}
 
 	return nil
-}
-
-func filesEqual(pathA, pathB string) (bool, error) {
-	infoA, err := os.Stat(pathA)
-	if err != nil {
-		return false, err
-	}
-	infoB, err := os.Stat(pathB)
-	if err != nil {
-		return false, err
-	}
-	if infoA.Size() != infoB.Size() {
-		return false, nil
-	}
-
-	fA, err := os.Open(pathA)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = fA.Close() }()
-
-	fB, err := os.Open(pathB)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = fB.Close() }()
-
-	const chunk = 32 * 1024
-	bufA := make([]byte, chunk)
-	bufB := make([]byte, chunk)
-
-	for {
-		nA, errA := fA.Read(bufA)
-		nB, errB := fB.Read(bufB)
-
-		if nA != nB {
-			return false, nil
-		}
-		if nA > 0 {
-			for i := 0; i < nA; i++ {
-				if bufA[i] != bufB[i] {
-					return false, nil
-				}
-			}
-		}
-
-		if errA == io.EOF && errB == io.EOF {
-			return true, nil
-		}
-		if errA != nil && errA != io.EOF {
-			return false, errA
-		}
-		if errB != nil && errB != io.EOF {
-			return false, errB
-		}
-		if (errA == io.EOF) != (errB == io.EOF) {
-			return false, nil
-		}
-	}
 }

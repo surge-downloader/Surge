@@ -42,6 +42,31 @@ function normalizeToken(token) {
   return token.replace(/\s+/g, '');
 }
 
+function shouldRetryValidation(result) {
+  if (!result || result.ok) return false;
+  if (result.error === 'no_server') return true;
+  if (typeof result.error === 'string') {
+    const msg = result.error.toLowerCase();
+    return msg.includes('timeout') || msg.includes('network') || msg.includes('failed to fetch');
+  }
+  return false;
+}
+
+async function validateAuthWithRetry(maxAttempts = 3) {
+  let lastResult = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    lastResult = await apiCall('validateAuth');
+    if (lastResult && lastResult.ok) {
+      return lastResult;
+    }
+    if (!shouldRetryValidation(lastResult) || attempt === maxAttempts) {
+      return lastResult;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return lastResult;
+}
+
 async function apiCall(action, params = {}) {
   if (isExtensionContext) {
     // Extension mode: use background script
@@ -647,7 +672,7 @@ if (isExtensionContext && saveTokenButton && authTokenInput) {
     saveTokenButton.disabled = true;
     try {
       await apiCall('setAuthToken', { token });
-      const result = await apiCall('validateAuth');
+      const result = await validateAuthWithRetry(3);
       if (result && result.ok) {
         if (authStatus) {
           authStatus.className = 'auth-status ok';
@@ -659,7 +684,11 @@ if (isExtensionContext && saveTokenButton && authTokenInput) {
       } else {
         if (authStatus) {
           authStatus.className = 'auth-status err';
-          authStatus.textContent = 'Token invalid';
+          if (result && result.error === 'no_server') {
+            authStatus.textContent = 'Connect to Surge first';
+          } else {
+            authStatus.textContent = 'Token invalid';
+          }
         }
         await apiCall('setAuthVerified', { verified: false });
         setAuthValid(false);

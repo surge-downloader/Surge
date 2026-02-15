@@ -44,8 +44,8 @@ func TestTUI_Startup_HandlesResume(t *testing.T) {
 	for _, d := range m.downloads { // Access unexported field
 		if d.ID == testID {
 			found = true
-			if !d.pendingResume {
-				t.Error("TUI Model initialized queued download without pendingResume=true")
+			if !d.resuming {
+				t.Error("TUI Model initialized queued download without resuming=true")
 			}
 			// Note: d.paused will be true initially until async resume completes
 			// Verify Filename and Destination are preserved (critical to avoid uniqueFilePath generation)

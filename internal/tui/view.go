@@ -5,9 +5,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/surge-downloader/surge/internal/tui/colors"
 	"github.com/surge-downloader/surge/internal/tui/components"
 	"github.com/surge-downloader/surge/internal/utils"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -67,39 +69,19 @@ func (m RootModel) View() string {
 	// These overlays sit on top of the dashboard or replace it
 
 	if m.state == InputState {
-		labelStyle := lipgloss.NewStyle().Width(10).Foreground(ColorLightGray)
-		// Centered popup - compact layout
-		hintStyle := lipgloss.NewStyle().MarginLeft(1).Foreground(ColorLightGray) // Secondary
-		if m.focusedInput == 2 {
-			hintStyle = lipgloss.NewStyle().MarginLeft(1).Foreground(ColorNeonPink) // Highlighted
+		modal := components.AddDownloadModal{
+			Title:           "Add Download",
+			Inputs:          []textinput.Model{m.inputs[0], m.inputs[1], m.inputs[2], m.inputs[3]},
+			Labels:          []string{"URL:", "Mirrors:", "Path:", "Filename:"},
+			FocusedInput:    m.focusedInput,
+			BrowseHintIndex: 2,
+			Help:            m.help,
+			HelpKeys:        m.keys.Input,
+			BorderColor:     ColorNeonPink,
+			Width:           80,
+			Height:          11,
 		}
-		pathLine := lipgloss.JoinHorizontal(lipgloss.Left,
-			labelStyle.Render("Path:"),
-			m.inputs[2].View(),
-			hintStyle.Render("[Tab] Browse"),
-		)
-
-		// Content layout - removing TitleStyle Render and adding spacers
-		content := lipgloss.JoinVertical(lipgloss.Left,
-			"", // Top spacer
-			lipgloss.JoinHorizontal(lipgloss.Left, labelStyle.Render("URL:"), m.inputs[0].View()),
-			"", // Spacer
-			lipgloss.JoinHorizontal(lipgloss.Left, labelStyle.Render("Mirrors:"), m.inputs[1].View()),
-			"", // Spacer
-			pathLine,
-			"", // Spacer
-			lipgloss.JoinHorizontal(lipgloss.Left, labelStyle.Render("Filename:"), m.inputs[3].View()),
-			"", // Bottom spacer
-			"",
-			// Render dynamic help
-			m.help.View(m.keys.Input),
-		)
-
-		// Apply padding to the content before boxing it
-		paddedContent := lipgloss.NewStyle().Padding(0, 2).Render(content)
-
-		box := renderBtopBox(PaneTitleStyle.Render(" Add Download "), "", paddedContent, 80, 11, ColorNeonPink)
-
+		box := modal.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
 		return m.renderModalWithOverlay(box)
 	}
 
@@ -135,15 +117,24 @@ func (m RootModel) View() string {
 	}
 
 	if m.state == ExtensionConfirmationState {
-		modal := components.ConfirmationModal{
-			Title:       "Extension Download",
-			Message:     "Do you want to add this download?",
-			Detail:      truncateString(m.pendingURL, 50),
-			Keys:        m.keys.Extension,
-			Help:        m.help,
-			BorderColor: ColorNeonCyan,
-			Width:       60,
-			Height:      10,
+		extInputs := []textinput.Model{m.inputs[2], m.inputs[3]}
+		focused := 0
+		if m.focusedInput == 3 {
+			focused = 1
+		}
+		modal := components.AddDownloadModal{
+			Title:           "Extension Download",
+			Inputs:          extInputs,
+			Labels:          []string{"Path:", "Filename:"},
+			FocusedInput:    focused,
+			ShowURL:         true,
+			URL:             truncateString(m.pendingURL, 68),
+			BrowseHintIndex: 0,
+			Help:            m.help,
+			HelpKeys:        m.keys.Extension,
+			BorderColor:     ColorNeonCyan,
+			Width:           86,
+			Height:          13,
 		}
 		box := modal.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
 		return m.renderModalWithOverlay(box)
@@ -817,6 +808,9 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 			speedStr = "N/A"
 		}
 		etaStr = "Done"
+	} else if d.resuming {
+		speedStr = "Resuming..."
+		etaStr = "..."
 	} else if d.paused || d.Speed == 0 {
 		speedStr = "Paused"
 		etaStr = "∞"
@@ -929,6 +923,12 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 }
 
 func getDownloadStatus(d *DownloadModel) string {
+	if d.pausing {
+		return lipgloss.NewStyle().Foreground(colors.StatePaused).Render("⏸ Pausing...")
+	}
+	if d.resuming {
+		return lipgloss.NewStyle().Foreground(colors.StateDownloading).Render("▶ Resuming...")
+	}
 	status := components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded)
 	return status.Render()
 }

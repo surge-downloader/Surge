@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -697,6 +696,17 @@ func (s *LocalDownloadService) Delete(id string) error {
 	}
 
 	removedFilename := ""
+	removedDestPath := ""
+	removedCompleted := false
+
+	// Capture runtime status before cancel; active downloads may not yet be in DB.
+	if st := s.Pool.GetStatus(id); st != nil {
+		if st.Filename != "" {
+			removedFilename = st.Filename
+		}
+		removedDestPath = st.DestPath
+		removedCompleted = st.Status == "completed"
+	}
 
 	s.Pool.Cancel(id)
 
@@ -705,8 +715,11 @@ func (s *LocalDownloadService) Delete(id string) error {
 		removedFilename = entry.Filename
 		_ = state.DeleteState(entry.ID, entry.URL, entry.DestPath)
 		if entry.DestPath != "" && entry.Status != "completed" {
-			_ = os.Remove(entry.DestPath + types.IncompleteSuffix)
+			_ = state.RemoveIncompleteFile(entry.DestPath)
 		}
+	} else if removedDestPath != "" && !removedCompleted {
+		// DB row may not exist yet for active downloads; still remove partial file.
+		_ = state.RemoveIncompleteFile(removedDestPath)
 	}
 
 	if err := state.RemoveFromMasterList(id); err != nil {
