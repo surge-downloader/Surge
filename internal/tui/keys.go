@@ -85,7 +85,7 @@ type ExtensionKeyMap struct {
 	Browse  key.Binding
 	Next    key.Binding
 	Prev    key.Binding
-	Cancel key.Binding
+	Cancel  key.Binding
 }
 
 // SettingsKeyMap defines keybindings for the settings view

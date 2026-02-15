@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/surge-downloader/surge/internal/tui/components"
 	"github.com/surge-downloader/surge/internal/tui/colors"
+	"github.com/surge-downloader/surge/internal/tui/components"
 	"github.com/surge-downloader/surge/internal/utils"
 
 	"github.com/charmbracelet/bubbles/textinput"

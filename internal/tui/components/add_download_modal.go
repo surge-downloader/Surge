@@ -60,4 +60,3 @@ func (m AddDownloadModal) RenderWithBtopBox(
 ) string {
 	return renderBox(titleStyle.Render(" "+m.Title+" "), "", m.View(), m.Width, m.Height, m.BorderColor)
 }
-

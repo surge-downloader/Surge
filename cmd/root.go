@@ -146,11 +146,9 @@ func runStartupIntegrityCheck() string {
 	// also cleans orphan .surge files that no longer have DB entries.
 	if removed, err := state.ValidateIntegrity(); err != nil {
 		msg := fmt.Sprintf("Startup integrity check failed: %v", err)
-		utils.Debug("Integrity check failed: %v", err)
 		return msg
 	} else if removed > 0 {
 		msg := fmt.Sprintf("Startup integrity check: removed %d corrupted/orphaned downloads", removed)
-		utils.Debug("%s", msg)
 		return msg
 	}
 	msg := "Startup integrity check: no issues found"

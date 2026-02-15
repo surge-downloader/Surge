@@ -11,6 +11,7 @@ import (
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/utils"
 )
 
 // TestServer_Startup_HandlesResume verifies that resumePausedDownloads() works for server mode
@@ -71,7 +72,8 @@ func TestStartupIntegrityCheck_RemovesMissingPausedEntry(t *testing.T) {
 		t.Fatalf("failed to remove test .surge file: %v", err)
 	}
 
-	_ = runStartupIntegrityCheck()
+	msg := runStartupIntegrityCheck()
+	utils.Debug("%s", msg)
 
 	entry, err := state.GetDownload(testID)
 	if err != nil {

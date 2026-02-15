@@ -265,19 +265,19 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case events.DownloadStartedMsg:
 		found := false
 		for _, d := range m.downloads {
-				if d.ID == msg.DownloadID {
-					d.Filename = msg.Filename
-					d.FilenameLower = strings.ToLower(msg.Filename)
-					d.Total = msg.Total
-					d.Destination = msg.DestPath
-					d.StartTime = time.Now()
-					d.paused = false
-					d.pausing = false
-					// Keep resuming=true for resumed downloads until real transfer starts.
-					// Update progress bar
-					if d.Total > 0 {
-						d.progress.SetPercent(0)
-					}
+			if d.ID == msg.DownloadID {
+				d.Filename = msg.Filename
+				d.FilenameLower = strings.ToLower(msg.Filename)
+				d.Total = msg.Total
+				d.Destination = msg.DestPath
+				d.StartTime = time.Now()
+				d.paused = false
+				d.pausing = false
+				// Keep resuming=true for resumed downloads until real transfer starts.
+				// Update progress bar
+				if d.Total > 0 {
+					d.progress.SetPercent(0)
+				}
 				if d.state == nil && msg.State != nil {
 					d.state = msg.State
 				}
@@ -670,26 +670,26 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.addLogEntry(LogStyleError.Render("✖ Service unavailable"))
 						return m, nil
 					}
-						if !d.done {
-							if d.paused {
-								// Resume
-								d.paused = false
-								d.resuming = true
-								if err := m.Service.Resume(d.ID); err != nil {
-									m.addLogEntry(LogStyleError.Render("✖ Resume failed: " + err.Error()))
-									d.paused = true // Revert
-									d.resuming = false
-								}
+					if !d.done {
+						if d.paused {
+							// Resume
+							d.paused = false
+							d.resuming = true
+							if err := m.Service.Resume(d.ID); err != nil {
+								m.addLogEntry(LogStyleError.Render("✖ Resume failed: " + err.Error()))
+								d.paused = true // Revert
+								d.resuming = false
+							}
+						} else {
+							// Pause
+							if err := m.Service.Pause(d.ID); err != nil {
+								m.addLogEntry(LogStyleError.Render("✖ Pause failed: " + err.Error()))
 							} else {
-								// Pause
-								if err := m.Service.Pause(d.ID); err != nil {
-									m.addLogEntry(LogStyleError.Render("✖ Pause failed: " + err.Error()))
-								} else {
-									d.resuming = false
-									d.pausing = true
-								}
+								d.resuming = false
+								d.pausing = true
 							}
 						}
+					}
 				}
 				m.UpdateListItems()
 				return m, nil
