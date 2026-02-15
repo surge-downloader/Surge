@@ -14,7 +14,7 @@ import (
 )
 
 // worker downloads tasks from the queue
-func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []string, file *os.File, queue *TaskQueue, totalSize int64, startTime time.Time, client *http.Client) error {
+func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []string, file *os.File, queue *TaskQueue, totalSize int64, client *http.Client) error {
 	// Get pooled buffer
 	bufPtr := d.bufPool.Get().(*[]byte)
 	defer d.bufPool.Put(bufPtr)
