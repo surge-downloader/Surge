@@ -94,7 +94,7 @@ func TestGetRemoteDownloads(t *testing.T) {
 	var port int
 	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
-	downloads, err := GetRemoteDownloads(port)
+	downloads, err := GetRemoteDownloads(fmt.Sprintf("http://127.0.0.1:%d", port), "")
 	if err != nil {
 		t.Fatalf("Failed to get downloads: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestPrintDownloads_FromDatabase_TableAndJSON(t *testing.T) {
 	}
 
 	tableOut := captureStdout(t, func() {
-		printDownloads(false)
+		printDownloads(false, "", "")
 	})
 	if !strings.Contains(tableOut, "ID") {
 		t.Fatalf("expected table header in output, got: %s", tableOut)
@@ -295,7 +295,7 @@ func TestPrintDownloads_FromDatabase_TableAndJSON(t *testing.T) {
 	}
 
 	jsonOut := captureStdout(t, func() {
-		printDownloads(true)
+		printDownloads(true, "", "")
 	})
 	var infos []downloadInfo
 	if err := json.Unmarshal([]byte(jsonOut), &infos); err != nil {
@@ -311,7 +311,7 @@ func TestPrintDownloads_JSONEmpty(t *testing.T) {
 	removeActivePort()
 
 	out := captureStdout(t, func() {
-		printDownloads(true)
+		printDownloads(true, "", "")
 	})
 	if strings.TrimSpace(out) != "[]" {
 		t.Fatalf("expected empty json array, got %q", strings.TrimSpace(out))
@@ -335,7 +335,7 @@ func TestShowDownloadDetails_UsesDatabaseFallback(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		showDownloadDetails("87654321", true)
+		showDownloadDetails("87654321", true, "", "")
 	})
 
 	var decoded types.DownloadStatus
@@ -389,7 +389,7 @@ func TestSendToServer_SuccessAndServerError(t *testing.T) {
 			})
 
 			port := ln.Addr().(*net.TCPAddr).Port
-			err = sendToServer("https://example.com/file.zip", nil, "", port)
+			err = sendToServer("https://example.com/file.zip", nil, "", fmt.Sprintf("http://127.0.0.1:%d", port), "")
 			if tt.wantErr && err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -424,7 +424,7 @@ func TestSendToServer_UsesBearerTokenFromEnv(t *testing.T) {
 	t.Cleanup(func() { _ = server.Close() })
 
 	port := ln.Addr().(*net.TCPAddr).Port
-	err = sendToServer("https://example.com/file.zip", nil, "", port)
+	err = sendToServer("https://example.com/file.zip", nil, "", fmt.Sprintf("http://127.0.0.1:%d", port), resolveLocalToken())
 	if err != nil {
 		t.Fatalf("expected authenticated request to succeed, got error: %v", err)
 	}
@@ -454,7 +454,7 @@ func TestGetRemoteDownloads_UsesBearerTokenFromEnv(t *testing.T) {
 	t.Cleanup(func() { _ = server.Close() })
 
 	port := ln.Addr().(*net.TCPAddr).Port
-	downloads, err := GetRemoteDownloads(port)
+	downloads, err := GetRemoteDownloads(fmt.Sprintf("http://127.0.0.1:%d", port), resolveLocalToken())
 	if err != nil {
 		t.Fatalf("expected authenticated request to succeed, got error: %v", err)
 	}
@@ -474,7 +474,7 @@ func TestGetRemoteDownloads_NonOKAndInvalidJSON(t *testing.T) {
 		var port int
 		_, _ = fmt.Sscanf(portStr, "%d", &port)
 
-		_, err := GetRemoteDownloads(port)
+		_, err := GetRemoteDownloads(fmt.Sprintf("http://127.0.0.1:%d", port), "")
 		if err == nil {
 			t.Fatal("expected error for non-200 response")
 		}
@@ -491,7 +491,7 @@ func TestGetRemoteDownloads_NonOKAndInvalidJSON(t *testing.T) {
 		var port int
 		_, _ = fmt.Sscanf(portStr, "%d", &port)
 
-		_, err := GetRemoteDownloads(port)
+		_, err := GetRemoteDownloads(fmt.Sprintf("http://127.0.0.1:%d", port), "")
 		if err == nil {
 			t.Fatal("expected json decode error")
 		}

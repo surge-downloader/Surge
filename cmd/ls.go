@@ -27,9 +27,15 @@ var lsCmd = &cobra.Command{
 		jsonOutput, _ := cmd.Flags().GetBool("json")
 		watch, _ := cmd.Flags().GetBool("watch")
 
+		baseURL, token, err := resolveAPIConnection(false)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 		// If ID provided, show details for that download
 		if len(args) == 1 {
-			showDownloadDetails(args[0], jsonOutput)
+			showDownloadDetails(args[0], jsonOutput, baseURL, token)
 			return
 		}
 
@@ -37,11 +43,11 @@ var lsCmd = &cobra.Command{
 			for {
 				// Clear screen first for watch mode
 				fmt.Print("\033[H\033[2J")
-				printDownloads(jsonOutput)
+				printDownloads(jsonOutput, baseURL, token)
 				time.Sleep(1 * time.Second)
 			}
 		} else {
-			printDownloads(jsonOutput)
+			printDownloads(jsonOutput, baseURL, token)
 		}
 	},
 }
@@ -58,13 +64,12 @@ type downloadInfo struct {
 	Speed      float64 `json:"speed,omitempty"`
 }
 
-func printDownloads(jsonOutput bool) {
+func printDownloads(jsonOutput bool, baseURL string, token string) {
 	var downloads []downloadInfo
 
 	// Try to get from running server first
-	port := readActivePort()
-	if port > 0 {
-		serverDownloads, err := GetRemoteDownloads(port)
+	if baseURL != "" {
+		serverDownloads, err := GetRemoteDownloads(baseURL, token)
 		if err == nil {
 			for _, s := range serverDownloads {
 				downloads = append(downloads, downloadInfo{
@@ -153,7 +158,7 @@ func printDownloads(jsonOutput bool) {
 	_ = w.Flush()
 }
 
-func showDownloadDetails(partialID string, jsonOutput bool) {
+func showDownloadDetails(partialID string, jsonOutput bool, baseURL string, token string) {
 	// Resolve partial ID
 	fullID, err := resolveDownloadID(partialID)
 	if err != nil {
@@ -162,10 +167,9 @@ func showDownloadDetails(partialID string, jsonOutput bool) {
 	}
 
 	// Try to get from running server first
-	port := readActivePort()
-	if port > 0 {
+	if baseURL != "" {
 		path := fmt.Sprintf("/download?id=%s", url.QueryEscape(fullID))
-		resp, err := doLocalAPIRequest(http.MethodGet, port, path, nil)
+		resp, err := doAPIRequest(http.MethodGet, baseURL, token, path, nil)
 		if err == nil {
 			defer func() {
 				if err := resp.Body.Close(); err != nil {

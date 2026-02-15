@@ -25,10 +25,9 @@ var pauseCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		port := readActivePort()
-		if port == 0 {
-			fmt.Fprintln(os.Stderr, "Error: Surge should be running.")
-			fmt.Fprintln(os.Stderr, "Start it with 'surge server start' and try again.")
+		baseURL, token, err := resolveAPIConnection(true)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -41,7 +40,7 @@ var pauseCmd = &cobra.Command{
 		id := args[0]
 
 		// Resolve partial ID to full ID
-		id, err := resolveDownloadID(id)
+		id, err = resolveDownloadID(id)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -49,7 +48,7 @@ var pauseCmd = &cobra.Command{
 
 		// Send to running server
 		path := fmt.Sprintf("/pause?id=%s", url.QueryEscape(id))
-		resp, err := doLocalAPIRequest(http.MethodPost, port, path, nil)
+		resp, err := doAPIRequest(http.MethodPost, baseURL, token, path, nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error connecting to server: %v\n", err)
 			os.Exit(1)
