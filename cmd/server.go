@@ -51,7 +51,7 @@ var serverCmd = &cobra.Command{
 		outputDir, _ := cmd.Flags().GetString("output")
 		exitWhenDone, _ := cmd.Flags().GetBool("exit-when-done")
 		noResume, _ := cmd.Flags().GetBool("no-resume")
-		tokenFlag, _ := cmd.Flags().GetString("token")
+		tokenFlag := resolveServerToken(cmd)
 
 		savePID()
 		defer removePID()
@@ -101,7 +101,7 @@ var serverStartCmd = &cobra.Command{
 		// Determine Port
 		// Logic moved to startServerLogic, or we need to pass flags.
 		// Use startServerLogic
-		tokenFlag, _ := cmd.Flags().GetString("token")
+		tokenFlag := resolveServerToken(cmd)
 		startServerLogic(cmd, args, portFlag, batchFile, outputDir, exitWhenDone, noResume, tokenFlag)
 	},
 }
@@ -296,4 +296,12 @@ func startServerLogic(cmd *cobra.Command, args []string, portFlag int, batchFile
 
 	fmt.Printf("\nReceived %s. Shutting down...\n", sig)
 	_ = executeGlobalShutdown(fmt.Sprintf("server signal: %s", sig))
+}
+
+func resolveServerToken(cmd *cobra.Command) string {
+	tokenFlag, _ := cmd.Flags().GetString("token")
+	if strings.TrimSpace(tokenFlag) != "" {
+		return strings.TrimSpace(tokenFlag)
+	}
+	return strings.TrimSpace(os.Getenv("SURGE_TOKEN"))
 }

@@ -39,15 +39,17 @@ var lsCmd = &cobra.Command{
 			return
 		}
 
+		strictRemote := resolveHostTarget() != ""
+
 		if watch {
 			for {
 				// Clear screen first for watch mode
 				fmt.Print("\033[H\033[2J")
-				printDownloads(jsonOutput, baseURL, token)
+				printDownloads(jsonOutput, baseURL, token, strictRemote)
 				time.Sleep(1 * time.Second)
 			}
 		} else {
-			printDownloads(jsonOutput, baseURL, token)
+			printDownloads(jsonOutput, baseURL, token, strictRemote)
 		}
 	},
 }
@@ -64,13 +66,18 @@ type downloadInfo struct {
 	Speed      float64 `json:"speed,omitempty"`
 }
 
-func printDownloads(jsonOutput bool, baseURL string, token string) {
+func printDownloads(jsonOutput bool, baseURL string, token string, strictRemote bool) {
 	var downloads []downloadInfo
 
 	// Try to get from running server first
 	if baseURL != "" {
 		serverDownloads, err := GetRemoteDownloads(baseURL, token)
-		if err == nil {
+		if err != nil {
+			if strictRemote {
+				fmt.Fprintf(os.Stderr, "Error listing remote downloads: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
 			for _, s := range serverDownloads {
 				downloads = append(downloads, downloadInfo{
 					ID:         s.ID,

@@ -1153,3 +1153,26 @@ func TestServerCmd_HasSubcommands(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveServerToken_UsesEnvWhenFlagEmpty(t *testing.T) {
+	t.Setenv("SURGE_TOKEN", "env-token-abc")
+	_ = serverCmd.Flags().Set("token", "")
+
+	got := resolveServerToken(serverCmd)
+	if got != "env-token-abc" {
+		t.Fatalf("resolveServerToken() = %q, want %q", got, "env-token-abc")
+	}
+}
+
+func TestResolveServerToken_FlagOverridesEnv(t *testing.T) {
+	t.Setenv("SURGE_TOKEN", "env-token-abc")
+	_ = serverCmd.Flags().Set("token", "flag-token-xyz")
+	t.Cleanup(func() {
+		_ = serverCmd.Flags().Set("token", "")
+	})
+
+	got := resolveServerToken(serverCmd)
+	if got != "flag-token-xyz" {
+		t.Fatalf("resolveServerToken() = %q, want %q", got, "flag-token-xyz")
+	}
+}

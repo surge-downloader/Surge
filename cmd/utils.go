@@ -217,8 +217,8 @@ func resolveDownloadID(partialID string) (string, error) {
 		for _, d := range downloads {
 			candidates = append(candidates, d.ID)
 		}
-	} else {
-		// Only return error if we couldn't check server AND db failed
+	} else if len(candidates) == 0 {
+		// Only short-circuit when both remote and DB are unavailable.
 		return partialID, nil
 	}
 

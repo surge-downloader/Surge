@@ -68,6 +68,42 @@ func TestResolveDownloadID_Remote(t *testing.T) {
 	}
 }
 
+func TestResolveDownloadID_RemoteStillWorksWhenDBUnavailable(t *testing.T) {
+	downloads := []types.DownloadStatus{
+		{ID: "ddeeff00-1234-5678-90ab-cdef12345678", Filename: "test_remote_db_fail.zip"},
+	}
+
+	server := testutil.NewHTTPServerT(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/list" {
+			_ = json.NewEncoder(w).Encode(downloads)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	_, portStr, _ := net.SplitHostPort(server.Listener.Addr().String())
+	origHost := globalHost
+	origToken := globalToken
+	globalHost = "127.0.0.1:" + portStr
+	globalToken = "test-token"
+	t.Cleanup(func() {
+		globalHost = origHost
+		globalToken = origToken
+	})
+
+	state.CloseDB()
+	state.Configure(filepath.Join(t.TempDir(), "missing", "surge.db")) // Intentionally invalid path
+
+	full, err := resolveDownloadID("ddeeff")
+	if err != nil {
+		t.Fatalf("resolveDownloadID failed: %v", err)
+	}
+	if full != downloads[0].ID {
+		t.Fatalf("expected %s, got %s", downloads[0].ID, full)
+	}
+}
+
 // TestLsCmd_Alias verify 'l' alias exists
 func TestLsCmd_Alias(t *testing.T) {
 	found := false
@@ -279,7 +315,7 @@ func TestPrintDownloads_FromDatabase_TableAndJSON(t *testing.T) {
 	}
 
 	tableOut := captureStdout(t, func() {
-		printDownloads(false, "", "")
+		printDownloads(false, "", "", false)
 	})
 	if !strings.Contains(tableOut, "ID") {
 		t.Fatalf("expected table header in output, got: %s", tableOut)
@@ -295,7 +331,7 @@ func TestPrintDownloads_FromDatabase_TableAndJSON(t *testing.T) {
 	}
 
 	jsonOut := captureStdout(t, func() {
-		printDownloads(true, "", "")
+		printDownloads(true, "", "", false)
 	})
 	var infos []downloadInfo
 	if err := json.Unmarshal([]byte(jsonOut), &infos); err != nil {
@@ -311,7 +347,7 @@ func TestPrintDownloads_JSONEmpty(t *testing.T) {
 	removeActivePort()
 
 	out := captureStdout(t, func() {
-		printDownloads(true, "", "")
+		printDownloads(true, "", "", false)
 	})
 	if strings.TrimSpace(out) != "[]" {
 		t.Fatalf("expected empty json array, got %q", strings.TrimSpace(out))
