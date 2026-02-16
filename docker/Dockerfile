@@ -1,4 +1,4 @@
-FROM alpine:latest
+FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates curl jq
 
@@ -8,7 +8,7 @@ RUN ARCH=$(uname -m) && \
     case ${ARCH} in \
         x86_64) SURGE_ARCH="amd64" ;; \
         aarch64) SURGE_ARCH="arm64" ;; \
-        armv7l) SURGE_ARCH="arm64" ;; \
+        armv7l) SURGE_ARCH="arm" ;; \
         *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
     esac && \
     if [ -z "$SURGE_VERSION" ]; then \
@@ -26,9 +26,13 @@ RUN ARCH=$(uname -m) && \
     echo "Installed surge v${SURGE_VERSION}" && \
     apk del curl jq
 
-RUN mkdir -p /root/.surge /downloads
+RUN mkdir -p /root/.local/state/surge/logs /downloads
 
 WORKDIR /downloads
+
+LABEL org.opencontainers.image.source="https://github.com/surge-downloader/surge"
+LABEL org.opencontainers.image.description="Surge download manager"
+LABEL org.opencontainers.image.licenses="MIT"
 
 EXPOSE 1700
 
