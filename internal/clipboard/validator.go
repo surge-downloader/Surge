@@ -7,19 +7,18 @@ import (
 	"github.com/atotto/clipboard"
 )
 
-// Validator checks and extracts valid downloadable URLs from text
+var clipboardReadAll = clipboard.ReadAll
+
 type Validator struct {
 	allowedSchemes map[string]bool
 }
 
-// NewValidator creates a new URL validator
 func NewValidator() *Validator {
 	return &Validator{
 		allowedSchemes: map[string]bool{"http": true, "https": true},
 	}
 }
 
-// ExtractURL validates and returns a clean URL, or empty string if invalid
 func (v *Validator) ExtractURL(text string) string {
 	text = strings.TrimSpace(text)
 
@@ -41,9 +40,8 @@ func (v *Validator) ExtractURL(text string) string {
 	return parsed.String()
 }
 
-// ReadURL reads the clipboard and returns a valid URL if found, or empty string otherwise
 func ReadURL() string {
-	text, err := clipboard.ReadAll()
+	text, err := clipboardReadAll()
 	if err != nil {
 		return ""
 	}
