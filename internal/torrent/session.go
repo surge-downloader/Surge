@@ -62,10 +62,12 @@ func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Sessio
 func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 	out := make(chan net.TCPAddr, 256)
 	const peerRetryWindow = 20 * time.Second
+	var producers sync.WaitGroup
+	producers.Add(2)
 
 	// tracker stream
 	go func() {
-		defer close(out)
+		defer producers.Done()
 		seen := make(map[string]time.Time)
 		type trackerRetryState struct {
 			next    time.Time
@@ -165,6 +167,7 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 
 	// dht stream
 	go func() {
+		defer producers.Done()
 		svc, err := dht.NewService(dht.ServiceConfig{
 			ListenAddr: s.cfg.ListenAddr,
 			Bootstrap:  s.cfg.BootstrapNodes,
@@ -187,6 +190,11 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 				return
 			}
 		}
+	}()
+
+	go func() {
+		producers.Wait()
+		close(out)
 	}()
 
 	return out

@@ -170,7 +170,6 @@ func NewDownloadModel(id string, url string, filename string, total int64) *Down
 		Filename:      filename,
 		FilenameLower: strings.ToLower(filename),
 		Total:         total,
-		StartTime:     time.Now(),
 		progress:      progress.New(progress.WithSpringOptions(0.5, 0.1)),
 		state:         state,
 	}
@@ -251,6 +250,7 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 					dm.progress.SetPercent(1.0)
 				case "pausing":
 					dm.pausing = true
+					dm.StartTime = time.Now()
 				case "paused":
 					if settings.General.AutoResume {
 						dm.pendingResume = true
@@ -262,6 +262,8 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 					// Always resume queued items
 					dm.pendingResume = true
 					dm.paused = true // Will update when resume event received
+				case "downloading", "connecting":
+					dm.StartTime = time.Now()
 				}
 
 				if s.TotalSize > 0 {

@@ -30,6 +30,33 @@ func TestManagerStartStop(t *testing.T) {
 	m.CloseAll()
 }
 
+func TestDiscoverPeersChannelClosesOnCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Keep tracker list empty to avoid network tracker announces in test.
+	s := &Session{
+		trackers: nil,
+		cfg: SessionConfig{
+			ListenAddr: "invalid-listen-addr",
+		},
+	}
+
+	out := s.DiscoverPeers(ctx)
+	cancel()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-out:
+			if !ok {
+				return
+			}
+		case <-deadline:
+			t.Fatal("discover peers channel did not close after cancellation")
+		}
+	}
+}
+
 func peerManagerForTest() *peer.Manager {
 	var ih [20]byte
 	var pid [20]byte

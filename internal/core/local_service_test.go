@@ -107,6 +107,18 @@ func TestLocalDownloadService_Shutdown_Idempotent(t *testing.T) {
 	}
 }
 
+func TestLocalDownloadService_AddRejectsUnsupportedURL(t *testing.T) {
+	ch := make(chan interface{}, 1)
+	pool := download.NewWorkerPool(ch, 1)
+	svc := NewLocalDownloadServiceWithInput(pool, ch)
+	defer func() { _ = svc.Shutdown() }()
+
+	_, err := svc.Add("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567", t.TempDir(), "file", nil, nil)
+	if err == nil {
+		t.Fatal("expected unsupported URL error for magnet link")
+	}
+}
+
 func TestLocalDownloadService_Shutdown_PersistsPausedState(t *testing.T) {
 	tempDir := t.TempDir()
 	state.CloseDB()

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,6 +93,47 @@ func TestUniqueFilePath(t *testing.T) {
 				t.Errorf("uniqueFilePath() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTUIDownloadRejectsMagnet(t *testing.T) {
+	cfg := &types.DownloadConfig{
+		ID:         "magnet-test",
+		URL:        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
+		OutputPath: t.TempDir(),
+	}
+
+	err := TUIDownload(context.Background(), cfg)
+	if err == nil {
+		t.Fatal("expected magnet URL to be rejected")
+	}
+	if !strings.Contains(err.Error(), "magnet links are not supported yet") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestTorrentDownloadRejectsMagnetBeforeStartEvent(t *testing.T) {
+	progressCh := make(chan any, 1)
+	cfg := &types.DownloadConfig{
+		ID:         "torrent-magnet-test",
+		URL:        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
+		OutputPath: t.TempDir(),
+		ProgressCh: progressCh,
+		State:      types.NewProgressState("torrent-magnet-test", 0),
+	}
+
+	err := TorrentDownload(context.Background(), cfg)
+	if err == nil {
+		t.Fatal("expected magnet URL to be rejected")
+	}
+	if !strings.Contains(err.Error(), "magnet links are not supported yet") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	select {
+	case msg := <-progressCh:
+		t.Fatalf("unexpected progress event emitted for rejected magnet: %T", msg)
+	default:
 	}
 }
 

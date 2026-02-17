@@ -177,6 +177,21 @@ func TestUpdate_ResumeResultErrorKeepsFlags(t *testing.T) {
 	}
 }
 
+func TestIsActiveDownload_QueuedModelNotActive(t *testing.T) {
+	d := NewDownloadModel("id-queued", "https://example.com/file", "Queued", 0)
+	if isActiveDownload(d) {
+		t.Fatal("queued model should not be considered active")
+	}
+}
+
+func TestIsActiveDownload_StartedModelActive(t *testing.T) {
+	d := NewDownloadModel("id-active", "https://example.com/file", "file", 100)
+	d.StartTime = time.Now()
+	if !isActiveDownload(d) {
+		t.Fatal("started model should be considered active")
+	}
+}
+
 func TestUpdate_DownloadStartedClearsFlags(t *testing.T) {
 	dm := NewDownloadModel("id-1", "http://example.com/file", "file", 0)
 	dm.paused = true

@@ -82,7 +82,11 @@ func uniqueFilePath(path string) string {
 // TUIDownload is the main entry point for TUI downloads
 func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 
-	if source.IsMagnet(cfg.URL) || source.IsTorrentURL(cfg.URL) {
+	if source.IsMagnet(cfg.URL) {
+		return fmt.Errorf("magnet links are not supported yet")
+	}
+
+	if source.IsTorrentURL(cfg.URL) {
 		return TorrentDownload(ctx, cfg)
 	}
 

@@ -370,6 +370,22 @@ func TestHandleDownload_PathTraversal(t *testing.T) {
 	}
 }
 
+func TestHandleDownload_UnsupportedURL(t *testing.T) {
+	body := `{"url":"magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"}`
+	req := httptest.NewRequest(http.MethodPost, "/download", bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+
+	svc := core.NewLocalDownloadService(nil)
+	handleDownload(rec, req, "", svc)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d", rec.Code)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("Unsupported URL")) {
+		t.Error("Expected 'Unsupported URL' in response body")
+	}
+}
+
 // func TestHandleDownload_StatusQuery(t *testing.T) {
 // 	// Setup mock download
 // 	id := "test-status-id"

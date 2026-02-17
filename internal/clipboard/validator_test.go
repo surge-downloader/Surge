@@ -57,9 +57,9 @@ func TestValidator_ExtractURL(t *testing.T) {
 			expected: "https://example.com/file.torrent",
 		},
 		{
-			name:     "Magnet",
+			name:     "Magnet unsupported",
 			input:    "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
-			expected: "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
+			expected: "",
 		},
 
 		// Trimming

@@ -14,6 +14,7 @@ import (
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/source"
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
@@ -441,6 +442,9 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 func (s *LocalDownloadService) Add(url string, path string, filename string, mirrors []string, headers map[string]string) (string, error) {
 	if s.Pool == nil {
 		return "", fmt.Errorf("worker pool not initialized")
+	}
+	if !source.IsSupported(url) {
+		return "", fmt.Errorf("unsupported URL")
 	}
 
 	s.settingsMu.RLock()

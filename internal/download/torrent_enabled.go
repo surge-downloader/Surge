@@ -22,6 +22,9 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("nil config")
 	}
+	if source.IsMagnet(cfg.URL) {
+		return fmt.Errorf("magnet links are not supported yet")
+	}
 
 	outPath := cfg.OutputPath
 	if outPath == "" {
@@ -69,14 +72,6 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	}
 
 	var meta *torrent.TorrentMeta
-	if source.IsMagnet(cfg.URL) {
-		mag, err := torrent.ParseMagnet(cfg.URL)
-		if err != nil {
-			return err
-		}
-		return fmt.Errorf("magnet metadata fetch not implemented (infohash %x)", mag.InfoHash)
-	}
-
 	m, err := torrent.FetchTorrent(downloadCtx, cfg.URL, cfg.Headers)
 	if err != nil {
 		return err

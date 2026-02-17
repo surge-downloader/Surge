@@ -69,7 +69,12 @@ func KindOf(raw string) Kind {
 }
 
 func IsSupported(raw string) bool {
-	return KindOf(raw) != KindUnknown
+	switch KindOf(raw) {
+	case KindHTTP, KindTorrentURL:
+		return true
+	default:
+		return false
+	}
 }
 
 func CanonicalKey(raw string) (Kind, string) {
