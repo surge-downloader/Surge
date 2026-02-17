@@ -54,16 +54,28 @@ func (s *ProgressStore) VerifyPiece(pieceIndex int64) (bool, error) {
 	if !ok || err != nil {
 		return ok, err
 	}
+	return s.markPieceVerified(pieceIndex)
+}
+
+func (s *ProgressStore) VerifyPieceData(pieceIndex int64, data []byte) (bool, error) {
+	ok, err := s.layout.VerifyPieceData(pieceIndex, data)
+	if !ok || err != nil {
+		return ok, err
+	}
+	return s.markPieceVerified(pieceIndex)
+}
+
+func (s *ProgressStore) markPieceVerified(pieceIndex int64) (bool, error) {
 	pieceSize := s.layout.PieceSize(pieceIndex)
 	if pieceSize <= 0 {
-		return ok, nil
+		return true, nil
 	}
 
 	var notify func(int)
 	s.mu.Lock()
 	if s.verified[pieceIndex] {
 		s.mu.Unlock()
-		return ok, nil
+		return true, nil
 	}
 	s.verified[pieceIndex] = true
 	if len(s.bitfield) > 0 {
@@ -79,7 +91,7 @@ func (s *ProgressStore) VerifyPiece(pieceIndex int64) (bool, error) {
 	if notify != nil {
 		notify(int(pieceIndex))
 	}
-	return ok, nil
+	return true, nil
 }
 
 func (s *ProgressStore) HasPiece(pieceIndex int64) bool {

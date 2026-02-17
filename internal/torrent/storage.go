@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
+	"sync"
 )
 
 type FileSpan struct {
@@ -18,6 +21,12 @@ type FileLayout struct {
 	BaseDir     string
 	Info        Info
 	TotalLength int64
+
+	ensureOnce sync.Once
+	ensureErr  error
+
+	fileMu    sync.Mutex
+	openFiles map[string]*os.File
 }
 
 func NewFileLayout(baseDir string, info Info) (*FileLayout, error) {
@@ -30,15 +39,109 @@ func NewFileLayout(baseDir string, info Info) (*FileLayout, error) {
 	if info.Name == "" {
 		return nil, fmt.Errorf("invalid name")
 	}
-	total := info.TotalLength()
+	baseDir = filepath.Clean(baseDir)
+	if abs, err := filepath.Abs(baseDir); err == nil {
+		baseDir = abs
+	}
+
+	safeInfo, err := sanitizeInfo(info)
+	if err != nil {
+		return nil, err
+	}
+
+	total := safeInfo.TotalLength()
 	if total <= 0 {
 		return nil, fmt.Errorf("invalid total length")
 	}
 	return &FileLayout{
 		BaseDir:     baseDir,
-		Info:        info,
+		Info:        safeInfo,
 		TotalLength: total,
+		openFiles:   make(map[string]*os.File),
 	}, nil
+}
+
+func sanitizeInfo(info Info) (Info, error) {
+	name, err := sanitizePathComponent(info.Name)
+	if err != nil {
+		return Info{}, fmt.Errorf("invalid torrent name: %w", err)
+	}
+
+	safe := info
+	safe.Name = name
+
+	if safe.Length > 0 {
+		return safe, nil
+	}
+
+	files := make([]FileEntry, 0, len(safe.Files))
+	for _, f := range safe.Files {
+		if f.Length <= 0 {
+			return Info{}, fmt.Errorf("invalid file length")
+		}
+		if len(f.Path) == 0 {
+			return Info{}, fmt.Errorf("invalid file path")
+		}
+		parts := make([]string, 0, len(f.Path))
+		for _, part := range f.Path {
+			clean, err := sanitizePathComponent(part)
+			if err != nil {
+				return Info{}, fmt.Errorf("invalid file path component %q: %w", part, err)
+			}
+			parts = append(parts, clean)
+		}
+		files = append(files, FileEntry{
+			Path:   parts,
+			Length: f.Length,
+		})
+	}
+	safe.Files = files
+	return safe, nil
+}
+
+func sanitizePathComponent(part string) (string, error) {
+	if part == "" {
+		return "", fmt.Errorf("empty path component")
+	}
+	if strings.Contains(part, "\x00") {
+		return "", fmt.Errorf("path contains null byte")
+	}
+
+	normalized := strings.ReplaceAll(part, "\\", "/")
+	cleaned := path.Clean(normalized)
+
+	if cleaned == "." || cleaned == "/" || cleaned == ".." {
+		return "", fmt.Errorf("invalid path component")
+	}
+	if strings.HasPrefix(cleaned, "/") {
+		return "", fmt.Errorf("absolute paths are not allowed")
+	}
+	if strings.Contains(cleaned, "/") {
+		return "", fmt.Errorf("nested separators are not allowed in components")
+	}
+	return cleaned, nil
+}
+
+func safeJoin(base string, parts ...string) (string, error) {
+	full := filepath.Join(append([]string{base}, parts...)...)
+
+	absBase, err := filepath.Abs(base)
+	if err != nil {
+		return "", err
+	}
+	absFull, err := filepath.Abs(full)
+	if err != nil {
+		return "", err
+	}
+
+	rel, err := filepath.Rel(absBase, absFull)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("resolved path escapes base directory")
+	}
+	return absFull, nil
 }
 
 func (fl *FileLayout) PieceSize(pieceIndex int64) int64 {
@@ -61,16 +164,23 @@ func (fl *FileLayout) FilePath(i int) (string, error) {
 		if i != 0 {
 			return "", fmt.Errorf("single-file torrent index out of range")
 		}
-		return filepath.Join(fl.BaseDir, fl.Info.Name), nil
+		return safeJoin(fl.BaseDir, fl.Info.Name)
 	}
 	if i < 0 || i >= len(fl.Info.Files) {
 		return "", fmt.Errorf("file index out of range")
 	}
-	parts := append([]string{fl.BaseDir, fl.Info.Name}, fl.Info.Files[i].Path...)
-	return filepath.Join(parts...), nil
+	parts := append([]string{fl.Info.Name}, fl.Info.Files[i].Path...)
+	return safeJoin(fl.BaseDir, parts...)
 }
 
 func (fl *FileLayout) ensureFiles() error {
+	fl.ensureOnce.Do(func() {
+		fl.ensureErr = fl.ensureFilesOnce()
+	})
+	return fl.ensureErr
+}
+
+func (fl *FileLayout) ensureFilesOnce() error {
 	if fl.Info.Length > 0 {
 		path, err := fl.FilePath(0)
 		if err != nil {
@@ -164,7 +274,7 @@ func (fl *FileLayout) writeAt(globalOffset int64, data []byte) error {
 		if err != nil {
 			return err
 		}
-		return writeAtFile(path, globalOffset, data)
+		return fl.writeAtFile(path, globalOffset, data)
 	}
 	remaining := data
 	offset := globalOffset
@@ -183,7 +293,7 @@ func (fl *FileLayout) writeAt(globalOffset int64, data []byte) error {
 		if n > f.Length-offset {
 			n = f.Length - offset
 		}
-		if err := writeAtFile(path, offset, remaining[:n]); err != nil {
+		if err := fl.writeAtFile(path, offset, remaining[:n]); err != nil {
 			return err
 		}
 		remaining = remaining[n:]
@@ -198,12 +308,27 @@ func (fl *FileLayout) writeAt(globalOffset int64, data []byte) error {
 	return nil
 }
 
-func writeAtFile(path string, offset int64, data []byte) error {
+func (fl *FileLayout) getFile(path string) (*os.File, error) {
+	fl.fileMu.Lock()
+	defer fl.fileMu.Unlock()
+
+	if f, ok := fl.openFiles[path]; ok {
+		return f, nil
+	}
+
 	f, err := os.OpenFile(path, os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	fl.openFiles[path] = f
+	return f, nil
+}
+
+func (fl *FileLayout) writeAtFile(path string, offset int64, data []byte) error {
+	f, err := fl.getFile(path)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
 	_, err = f.WriteAt(data, offset)
 	return err
 }
@@ -227,7 +352,7 @@ func (fl *FileLayout) readAt(globalOffset int64, out []byte) error {
 		if err != nil {
 			return err
 		}
-		return readAtFile(path, globalOffset, out)
+		return fl.readAtFile(path, globalOffset, out)
 	}
 	remaining := out
 	offset := globalOffset
@@ -244,7 +369,7 @@ func (fl *FileLayout) readAt(globalOffset int64, out []byte) error {
 		if n > f.Length-offset {
 			n = f.Length - offset
 		}
-		if err := readAtFile(path, offset, remaining[:n]); err != nil {
+		if err := fl.readAtFile(path, offset, remaining[:n]); err != nil {
 			return err
 		}
 		remaining = remaining[n:]
@@ -259,28 +384,49 @@ func (fl *FileLayout) readAt(globalOffset int64, out []byte) error {
 	return nil
 }
 
-func readAtFile(path string, offset int64, out []byte) error {
-	f, err := os.Open(path)
+func (fl *FileLayout) readAtFile(path string, offset int64, out []byte) error {
+	f, err := fl.getFile(path)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
 	_, err = f.ReadAt(out, offset)
 	return err
 }
 
+func (fl *FileLayout) Close() error {
+	fl.fileMu.Lock()
+	files := fl.openFiles
+	fl.openFiles = make(map[string]*os.File)
+	fl.fileMu.Unlock()
+
+	var firstErr error
+	for _, f := range files {
+		if err := f.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 func (fl *FileLayout) VerifyPiece(pieceIndex int64) (bool, error) {
-	piece := fl.PieceSize(pieceIndex)
-	if piece == 0 {
+	data, err := fl.ReadPiece(pieceIndex)
+	if err != nil {
+		return false, err
+	}
+	return fl.VerifyPieceData(pieceIndex, data)
+}
+
+func (fl *FileLayout) VerifyPieceData(pieceIndex int64, data []byte) (bool, error) {
+	pieceSize := fl.PieceSize(pieceIndex)
+	if pieceSize == 0 {
 		return false, fmt.Errorf("invalid piece index")
+	}
+	if int64(len(data)) != pieceSize {
+		return false, fmt.Errorf("invalid piece data length")
 	}
 	hashIndex := pieceIndex * 20
 	if int64(len(fl.Info.Pieces)) < hashIndex+20 {
 		return false, fmt.Errorf("missing piece hash")
-	}
-	data, err := fl.ReadPiece(pieceIndex)
-	if err != nil {
-		return false, err
 	}
 	sum := sha1.Sum(data)
 	expected := fl.Info.Pieces[hashIndex : hashIndex+20]

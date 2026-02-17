@@ -12,6 +12,7 @@ type Session struct {
 }
 
 func NewFromConn(conn net.Conn) *Session {
+	tuneTCPConn(conn)
 	return &Session{conn: conn}
 }
 
@@ -21,6 +22,7 @@ func Dial(ctx context.Context, addr net.TCPAddr, infoHash [20]byte, peerID [20]b
 	if err != nil {
 		return nil, err
 	}
+	tuneTCPConn(conn)
 	_ = conn.SetDeadline(time.Now().Add(8 * time.Second))
 	if err := WriteHandshake(conn, Handshake{InfoHash: infoHash, PeerID: peerID}); err != nil {
 		_ = conn.Close()
@@ -44,4 +46,16 @@ func (s *Session) Close() error {
 		return nil
 	}
 	return s.conn.Close()
+}
+
+func tuneTCPConn(conn net.Conn) {
+	tcp, ok := conn.(*net.TCPConn)
+	if !ok {
+		return
+	}
+	_ = tcp.SetNoDelay(true)
+	_ = tcp.SetKeepAlive(true)
+	_ = tcp.SetKeepAlivePeriod(30 * time.Second)
+	_ = tcp.SetReadBuffer(1 << 20)
+	_ = tcp.SetWriteBuffer(1 << 20)
 }

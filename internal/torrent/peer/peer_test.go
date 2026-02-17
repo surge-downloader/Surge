@@ -70,3 +70,41 @@ func TestDialHandshakeSelf(t *testing.T) {
 	_ = s.Close()
 	<-done
 }
+
+func TestSimplePipelineIgnoresDuplicateBlocks(t *testing.T) {
+	p := newSimplePipeline(2*defaultBlockSize, 4)
+
+	b0, l0, ok := p.NextRequest()
+	if !ok {
+		t.Fatalf("expected first request")
+	}
+	b1, l1, ok := p.NextRequest()
+	if !ok {
+		t.Fatalf("expected second request")
+	}
+
+	p.OnBlock(b0, l0)
+	p.OnBlock(b0, l0) // duplicate should be ignored
+	if p.Completed() {
+		t.Fatalf("piece should not complete with duplicate first block only")
+	}
+
+	p.OnBlock(b1, l1)
+	if !p.Completed() {
+		t.Fatalf("expected completion after second unique block")
+	}
+}
+
+func TestSimplePipelineIgnoresUnexpectedBlock(t *testing.T) {
+	p := newSimplePipeline(defaultBlockSize, 1)
+
+	_, _, ok := p.NextRequest()
+	if !ok {
+		t.Fatalf("expected request")
+	}
+
+	p.OnBlock(defaultBlockSize, defaultBlockSize) // not requested begin
+	if p.Completed() {
+		t.Fatalf("unexpected block should not complete piece")
+	}
+}

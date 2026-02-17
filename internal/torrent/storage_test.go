@@ -2,8 +2,10 @@ package torrent
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -74,5 +76,100 @@ func TestFileLayout_MultiFileWriteRead(t *testing.T) {
 	}
 	if !bytes.Equal(got, []byte("ABCD")) {
 		t.Fatalf("piece0 mismatch")
+	}
+}
+
+func TestNewFileLayoutRejectsTraversalName(t *testing.T) {
+	info := Info{
+		Name:        "../escape",
+		PieceLength: 4,
+		Length:      4,
+		Pieces:      make([]byte, 20),
+	}
+
+	_, err := NewFileLayout(t.TempDir(), info)
+	if err == nil {
+		t.Fatalf("expected traversal name to be rejected")
+	}
+}
+
+func TestNewFileLayoutRejectsTraversalFilePath(t *testing.T) {
+	info := Info{
+		Name:        "dir",
+		PieceLength: 4,
+		Pieces:      make([]byte, 20),
+		Files: []FileEntry{
+			{
+				Path:   []string{"..", "escape.bin"},
+				Length: 4,
+			},
+		},
+	}
+
+	_, err := NewFileLayout(t.TempDir(), info)
+	if err == nil {
+		t.Fatalf("expected traversal file path to be rejected")
+	}
+}
+
+func TestFilePathAlwaysInsideBaseDir(t *testing.T) {
+	dir := t.TempDir()
+	info := Info{
+		Name:        "safe",
+		PieceLength: 4,
+		Pieces:      make([]byte, 20),
+		Files: []FileEntry{
+			{
+				Path:   []string{"nested", "a.bin"},
+				Length: 4,
+			},
+		},
+	}
+
+	fl, err := NewFileLayout(dir, info)
+	if err != nil {
+		t.Fatalf("layout err: %v", err)
+	}
+	got, err := fl.FilePath(0)
+	if err != nil {
+		t.Fatalf("filepath err: %v", err)
+	}
+
+	rel, err := filepath.Rel(dir, got)
+	if err != nil {
+		t.Fatalf("rel err: %v", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		t.Fatalf("path escaped base dir: %s", got)
+	}
+}
+
+func TestVerifyPieceData(t *testing.T) {
+	data := []byte("ABCD")
+	hash := sha1.Sum(data)
+
+	info := Info{
+		Name:        "piece.bin",
+		PieceLength: int64(len(data)),
+		Length:      int64(len(data)),
+		Pieces:      hash[:],
+	}
+
+	fl, err := NewFileLayout(t.TempDir(), info)
+	if err != nil {
+		t.Fatalf("layout err: %v", err)
+	}
+
+	ok, err := fl.VerifyPieceData(0, data)
+	if err != nil || !ok {
+		t.Fatalf("expected piece data to verify, ok=%v err=%v", ok, err)
+	}
+
+	ok, err = fl.VerifyPieceData(0, []byte("WXYZ"))
+	if err != nil {
+		t.Fatalf("unexpected verify error: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected invalid piece data to fail verification")
 	}
 }

@@ -14,7 +14,8 @@ type simplePipeline struct {
 	pieceSize   int64
 	blockOffset int64
 	received    int64
-	inFlight    int
+	inFlight    map[int64]int64
+	receivedAt  map[int64]struct{}
 	maxInFlight int
 	completed   bool
 }
@@ -25,6 +26,8 @@ func newSimplePipeline(pieceSize int64, maxInFlight int) *simplePipeline {
 	}
 	return &simplePipeline{
 		pieceSize:   pieceSize,
+		inFlight:    make(map[int64]int64),
+		receivedAt:  make(map[int64]struct{}),
 		maxInFlight: maxInFlight,
 	}
 }
@@ -33,7 +36,7 @@ func (p *simplePipeline) NextRequest() (begin int64, length int64, ok bool) {
 	if p.completed {
 		return 0, 0, false
 	}
-	if p.inFlight >= p.maxInFlight {
+	if len(p.inFlight) >= p.maxInFlight {
 		return 0, 0, false
 	}
 	if p.blockOffset >= p.pieceSize {
@@ -45,14 +48,29 @@ func (p *simplePipeline) NextRequest() (begin int64, length int64, ok bool) {
 		length = p.pieceSize - begin
 	}
 	p.blockOffset += length
-	p.inFlight++
+	p.inFlight[begin] = length
 	return begin, length, true
 }
 
 func (p *simplePipeline) OnBlock(begin int64, length int64) {
-	if p.inFlight > 0 {
-		p.inFlight--
+	expected, ok := p.inFlight[begin]
+	if !ok {
+		return
 	}
+	delete(p.inFlight, begin)
+
+	if _, seen := p.receivedAt[begin]; seen {
+		return
+	}
+	p.receivedAt[begin] = struct{}{}
+
+	if expected > 0 && length > expected {
+		length = expected
+	}
+	if length < 0 {
+		length = 0
+	}
+
 	p.received += length
 	if p.received >= p.pieceSize {
 		p.completed = true

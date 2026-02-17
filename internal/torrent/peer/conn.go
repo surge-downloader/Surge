@@ -21,6 +21,7 @@ type Conn struct {
 	pipeline    Pipeline
 	maxInFlight int
 	piece       int
+	pieceBuf    []byte
 	onClose     func()
 	startedAt   time.Time
 	lastPieceAt time.Time
@@ -43,14 +44,22 @@ type Picker interface {
 	Requeue(piece int)
 }
 
+type BitfieldAwarePicker interface {
+	NextFromBitfield(bitfield []byte) (int, bool)
+	ObserveBitfield(bitfield []byte)
+	ObserveHave(piece int)
+}
+
 type PieceLayout interface {
 	PieceSize(pieceIndex int64) int64
+	VerifyPieceData(pieceIndex int64, data []byte) (bool, error)
 }
 
 type Storage interface {
 	WriteAtPiece(pieceIndex int64, pieceOffset int64, data []byte) error
 	ReadAtPiece(pieceIndex int64, pieceOffset int64, length int64) ([]byte, error)
 	VerifyPiece(pieceIndex int64) (bool, error)
+	VerifyPieceData(pieceIndex int64, data []byte) (bool, error)
 	HasPiece(pieceIndex int64) bool
 	Bitfield() []byte
 }
@@ -137,8 +146,23 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest) {
 		requestNext = true
 	case MsgBitfield:
 		c.bitfield = append([]byte(nil), msg.Payload...)
+		if bp, ok := c.picker.(BitfieldAwarePicker); ok {
+			bp.ObserveBitfield(c.bitfield)
+		}
+		requestNext = true
 	case MsgHave:
-		// TODO: update bitfield (needs piece index parse)
+		idx, err := ParseHave(msg)
+		if err != nil {
+			break
+		}
+		if c.pl != nil && c.pl.PieceSize(int64(idx)) <= 0 {
+			break
+		}
+		c.markHaveLocked(int(idx))
+		if bp, ok := c.picker.(BitfieldAwarePicker); ok {
+			bp.ObserveHave(int(idx))
+		}
+		requestNext = true
 	case MsgRequest:
 		index, begin, length, err := ParseRequest(msg)
 		if err != nil {
@@ -154,19 +178,41 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest) {
 	case MsgPiece:
 		index, begin, block, err := ParsePiece(msg)
 		if err == nil && c.store != nil && c.pipeline != nil {
-			_ = c.store.WriteAtPiece(int64(index), int64(begin), block)
+			if !c.bufferPieceBlockLocked(int64(index), int64(begin), block) {
+				break
+			}
 			c.observeBlockLocked(int64(len(block)))
 			c.pipeline.OnBlock(int64(begin), int64(len(block)))
 			if c.pipeline.Completed() {
-				ok, _ := c.store.VerifyPiece(int64(index))
-				if ok {
+				if len(c.pieceBuf) == 0 {
+					c.resetCurrentPieceLocked()
+					requestNext = true
+					break
+				}
+
+				ok, err := c.pl.VerifyPieceData(int64(index), c.pieceBuf)
+				if err != nil || !ok {
+					c.resetCurrentPieceLocked()
+					requestNext = true
+					break
+				}
+
+				if err := c.store.WriteAtPiece(int64(index), 0, c.pieceBuf); err != nil {
+					c.resetCurrentPieceLocked()
+					requestNext = true
+					break
+				}
+
+				ok, err = c.store.VerifyPieceData(int64(index), c.pieceBuf)
+				if err == nil && ok {
 					if c.picker != nil {
 						c.picker.Done(int(index))
 					}
+					c.pieceBuf = nil
 					c.advancePiece()
 				} else if c.pl != nil {
 					// Re-request the piece if verification fails
-					c.pipeline = newSimplePipeline(c.pl.PieceSize(int64(index)), c.maxInFlight)
+					c.resetCurrentPieceLocked()
 				}
 			}
 			requestNext = true
@@ -202,9 +248,28 @@ func (c *Conn) advancePiece() bool {
 	if c.picker == nil || c.pl == nil {
 		return false
 	}
-	piece, ok := c.picker.Next()
-	if !ok {
-		return false
+
+	var (
+		piece int
+		ok    bool
+	)
+
+	if len(c.bitfield) > 0 {
+		if bp, has := c.picker.(interface {
+			NextFromBitfield(bitfield []byte) (int, bool)
+		}); has {
+			piece, ok = bp.NextFromBitfield(c.bitfield)
+		} else {
+			piece, ok = c.picker.Next()
+		}
+		if !ok {
+			return false
+		}
+	} else {
+		piece, ok = c.picker.Next()
+		if !ok {
+			return false
+		}
 	}
 	size := c.pl.PieceSize(int64(piece))
 	if size <= 0 {
@@ -212,6 +277,11 @@ func (c *Conn) advancePiece() bool {
 	}
 	c.piece = piece
 	c.pipeline = newSimplePipeline(size, c.maxInFlight)
+	if size > int64(maxInt) {
+		c.pieceBuf = nil
+		return false
+	}
+	c.pieceBuf = make([]byte, int(size))
 	return true
 }
 
@@ -350,3 +420,56 @@ func (c *Conn) Performance() Perf {
 func (c *Conn) Close() {
 	_ = c.sess.Close()
 }
+
+func (c *Conn) markHaveLocked(piece int) {
+	if piece < 0 {
+		return
+	}
+	byteIndex := piece / 8
+	if byteIndex < 0 {
+		return
+	}
+	if byteIndex >= len(c.bitfield) {
+		expanded := make([]byte, byteIndex+1)
+		copy(expanded, c.bitfield)
+		c.bitfield = expanded
+	}
+	mask := byte(1 << (7 - (piece % 8)))
+	c.bitfield[byteIndex] |= mask
+}
+
+func (c *Conn) bufferPieceBlockLocked(index int64, begin int64, block []byte) bool {
+	if c.piece < 0 || int64(c.piece) != index {
+		return false
+	}
+	if begin < 0 || len(block) == 0 {
+		return false
+	}
+	if len(c.pieceBuf) == 0 {
+		return false
+	}
+	end := begin + int64(len(block))
+	if end > int64(len(c.pieceBuf)) {
+		return false
+	}
+	copy(c.pieceBuf[int(begin):int(end)], block)
+	return true
+}
+
+func (c *Conn) resetCurrentPieceLocked() {
+	if c.pl == nil || c.piece < 0 {
+		return
+	}
+	size := c.pl.PieceSize(int64(c.piece))
+	if size <= 0 {
+		return
+	}
+	c.pipeline = newSimplePipeline(size, c.maxInFlight)
+	if size > int64(maxInt) {
+		c.pieceBuf = nil
+		return
+	}
+	c.pieceBuf = make([]byte, int(size))
+}
+
+const maxInt = int(^uint(0) >> 1)

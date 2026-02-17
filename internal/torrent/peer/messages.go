@@ -1,7 +1,6 @@
 package peer
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -25,10 +24,11 @@ type Message struct {
 }
 
 func ReadMessage(r io.Reader) (*Message, error) {
-	var length uint32
-	if err := binary.Read(r, binary.BigEndian, &length); err != nil {
+	var lenBuf [4]byte
+	if _, err := io.ReadFull(r, lenBuf[:]); err != nil {
 		return nil, err
 	}
+	length := binary.BigEndian.Uint32(lenBuf[:])
 	if length == 0 {
 		return &Message{ID: 255}, nil
 	}
@@ -43,48 +43,51 @@ func WriteMessage(w io.Writer, msg *Message) error {
 	if msg == nil {
 		return fmt.Errorf("nil msg")
 	}
-	length := uint32(1 + len(msg.Payload))
 	if msg.ID == 255 {
-		length = 0
-	}
-	if err := binary.Write(w, binary.BigEndian, length); err != nil {
+		_, err := w.Write([]byte{0, 0, 0, 0})
 		return err
 	}
-	if length == 0 {
-		return nil
-	}
-	if _, err := w.Write([]byte{msg.ID}); err != nil {
-		return err
-	}
+
+	length := uint32(1 + len(msg.Payload))
+	buf := make([]byte, 4+length)
+	binary.BigEndian.PutUint32(buf[:4], length)
+	buf[4] = msg.ID
 	if len(msg.Payload) > 0 {
-		_, err := w.Write(msg.Payload)
-		return err
+		copy(buf[5:], msg.Payload)
 	}
-	return nil
+	_, err := w.Write(buf)
+	return err
 }
 
 func MakeRequest(index, begin, length uint32) *Message {
-	buf := bytes.NewBuffer(nil)
-	_ = binary.Write(buf, binary.BigEndian, index)
-	_ = binary.Write(buf, binary.BigEndian, begin)
-	_ = binary.Write(buf, binary.BigEndian, length)
-	return &Message{ID: MsgRequest, Payload: buf.Bytes()}
+	payload := make([]byte, 12)
+	binary.BigEndian.PutUint32(payload[0:4], index)
+	binary.BigEndian.PutUint32(payload[4:8], begin)
+	binary.BigEndian.PutUint32(payload[8:12], length)
+	return &Message{ID: MsgRequest, Payload: payload}
 }
 
 func MakeHave(index uint32) *Message {
-	buf := bytes.NewBuffer(nil)
-	_ = binary.Write(buf, binary.BigEndian, index)
-	return &Message{ID: MsgHave, Payload: buf.Bytes()}
+	payload := make([]byte, 4)
+	binary.BigEndian.PutUint32(payload, index)
+	return &Message{ID: MsgHave, Payload: payload}
 }
 
 func MakePiece(index, begin uint32, block []byte) *Message {
-	buf := bytes.NewBuffer(nil)
-	_ = binary.Write(buf, binary.BigEndian, index)
-	_ = binary.Write(buf, binary.BigEndian, begin)
+	payload := make([]byte, 8+len(block))
+	binary.BigEndian.PutUint32(payload[0:4], index)
+	binary.BigEndian.PutUint32(payload[4:8], begin)
 	if len(block) > 0 {
-		_, _ = buf.Write(block)
+		copy(payload[8:], block)
 	}
-	return &Message{ID: MsgPiece, Payload: buf.Bytes()}
+	return &Message{ID: MsgPiece, Payload: payload}
+}
+
+func ParseHave(msg *Message) (index uint32, err error) {
+	if msg.ID != MsgHave || len(msg.Payload) < 4 {
+		return 0, fmt.Errorf("invalid have msg")
+	}
+	return binary.BigEndian.Uint32(msg.Payload[0:4]), nil
 }
 
 func ParsePiece(msg *Message) (index, begin uint32, block []byte, err error) {

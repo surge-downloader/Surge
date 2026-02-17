@@ -50,6 +50,13 @@ func NewRunner(meta *TorrentMeta, baseDir string, cfg SessionConfig, state *type
 }
 
 func (r *Runner) Start(ctx context.Context) {
+	if r.layout != nil {
+		go func() {
+			<-ctx.Done()
+			_ = r.layout.Close()
+		}()
+	}
+
 	if r.peers != nil && r.session != nil {
 		if addr, err := r.peers.StartInbound(ctx, r.session.cfg.ListenAddr); err == nil && addr != nil {
 			r.listenAddr = addr
