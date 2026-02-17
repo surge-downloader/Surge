@@ -454,8 +454,8 @@ func (m *RootModel) setTorrentSetting(key, value, typ string) error {
 		if v, err := strconv.Atoi(value); err == nil {
 			if v < 1 {
 				v = 1
-			} else if v > 500 {
-				v = 500
+			} else if v > 1000 {
+				v = 1000
 			}
 			m.Settings.Torrent.MaxConnectionsPerTorrent = v
 		}
@@ -463,8 +463,8 @@ func (m *RootModel) setTorrentSetting(key, value, typ string) error {
 		if v, err := strconv.Atoi(value); err == nil {
 			if v < 0 {
 				v = 0
-			} else if v > 50 {
-				v = 50
+			} else if v > 200 {
+				v = 200
 			}
 			m.Settings.Torrent.UploadSlotsPerTorrent = v
 		}
@@ -472,8 +472,8 @@ func (m *RootModel) setTorrentSetting(key, value, typ string) error {
 		if v, err := strconv.Atoi(value); err == nil {
 			if v < 1 {
 				v = 1
-			} else if v > 64 {
-				v = 64
+			} else if v > 256 {
+				v = 256
 			}
 			m.Settings.Torrent.RequestPipelineDepth = v
 		}

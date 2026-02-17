@@ -120,21 +120,21 @@ func (r *RuntimeConfig) GetWorkerBufferSize() int {
 
 func (r *RuntimeConfig) GetTorrentMaxConnections() int {
 	if r == nil || r.TorrentMaxConnections <= 0 {
-		return 32
+		return 128
 	}
 	return r.TorrentMaxConnections
 }
 
 func (r *RuntimeConfig) GetTorrentUploadSlots() int {
 	if r == nil || r.TorrentUploadSlots < 0 {
-		return 4
+		return 16
 	}
 	return r.TorrentUploadSlots
 }
 
 func (r *RuntimeConfig) GetTorrentRequestPipeline() int {
 	if r == nil || r.TorrentRequestPipeline <= 0 {
-		return 8
+		return 32
 	}
 	return r.TorrentRequestPipeline
 }

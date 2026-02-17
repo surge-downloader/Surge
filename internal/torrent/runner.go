@@ -119,6 +119,7 @@ func (r *Runner) monitorPeerPressure(ctx context.Context) {
 	if r == nil || r.peers == nil || r.session == nil {
 		return
 	}
+	lowPeerThreshold := computeLowPeerThreshold(r.session.cfg.MaxPeers)
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -127,7 +128,21 @@ func (r *Runner) monitorPeerPressure(ctx context.Context) {
 			return
 		case <-ticker.C:
 			active := r.peers.Count()
-			r.session.SetLowPeerMode(active < 8)
+			r.session.SetLowPeerMode(active < lowPeerThreshold)
 		}
 	}
+}
+
+func computeLowPeerThreshold(maxPeers int) int {
+	if maxPeers <= 0 {
+		maxPeers = defaultSessionMaxPeers
+	}
+	threshold := maxPeers / 3
+	if threshold < 8 {
+		threshold = 8
+	}
+	if threshold > 48 {
+		threshold = 48
+	}
+	return threshold
 }

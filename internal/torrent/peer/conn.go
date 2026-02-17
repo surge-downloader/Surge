@@ -7,6 +7,12 @@ import (
 	"time"
 )
 
+const (
+	minAdaptiveInFlight = 4
+	maxAdaptiveInFlight = 128
+	tuneWindow          = 1 * time.Second
+)
+
 type Conn struct {
 	sess        *Session
 	addr        net.TCPAddr
@@ -66,7 +72,7 @@ type Storage interface {
 
 func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, store Storage, pipeline Pipeline, maxInFlight int, onClose func()) *Conn {
 	if maxInFlight <= 0 {
-		maxInFlight = 1
+		maxInFlight = minAdaptiveInFlight
 	}
 	return &Conn{
 		sess:        sess,
@@ -360,7 +366,7 @@ func (c *Conn) observeBlockLocked(n int64) {
 	}
 
 	elapsed := now.Sub(c.lastTuneAt)
-	if elapsed < 2*time.Second {
+	if elapsed < tuneWindow {
 		return
 	}
 
@@ -372,18 +378,24 @@ func (c *Conn) observeBlockLocked(n int64) {
 
 	target := c.maxInFlight
 	switch {
+	case rate > 48*1024*1024:
+		target += 8
+	case rate > 24*1024*1024:
+		target += 6
 	case rate > 12*1024*1024:
-		target += 2
+		target += 4
 	case rate > 4*1024*1024:
-		target++
-	case rate < 512*1024:
-		target--
+		target += 2
+	case rate < 256*1024:
+		target -= 4
+	case rate < 1024*1024:
+		target -= 2
 	}
-	if target < 2 {
-		target = 2
+	if target < minAdaptiveInFlight {
+		target = minAdaptiveInFlight
 	}
-	if target > 32 {
-		target = 32
+	if target > maxAdaptiveInFlight {
+		target = maxAdaptiveInFlight
 	}
 	c.maxInFlight = target
 	if c.pipeline != nil {

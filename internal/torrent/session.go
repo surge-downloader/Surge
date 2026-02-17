@@ -11,6 +11,17 @@ import (
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
+const (
+	defaultTrackerInterval   = 5 * time.Second
+	defaultSessionMaxPeers   = 128
+	peerDiscoverBufferSize   = 1024
+	peerRetryWindow          = 8 * time.Second
+	trackerRetryBackoffStart = 1 * time.Second
+	trackerRetryBackoffMax   = 30 * time.Second
+	minTrackerInterval       = 3 * time.Second
+	maxLowPeerInterval       = 10 * time.Second
+)
+
 type SessionConfig struct {
 	ListenAddr      string
 	BootstrapNodes  []string
@@ -45,10 +56,13 @@ var fallbackTrackers = []string{
 
 func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Session {
 	if cfg.TrackerInterval == 0 {
-		cfg.TrackerInterval = 10 * time.Second
+		cfg.TrackerInterval = defaultTrackerInterval
 	}
 	if cfg.TotalLength <= 0 {
 		cfg.TotalLength = 1
+	}
+	if cfg.MaxPeers <= 0 {
+		cfg.MaxPeers = defaultSessionMaxPeers
 	}
 	return &Session{
 		infoHash: infoHash,
@@ -60,8 +74,7 @@ func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Sessio
 
 // DiscoverPeers merges tracker and DHT peer streams.
 func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
-	out := make(chan net.TCPAddr, 256)
-	const peerRetryWindow = 20 * time.Second
+	out := make(chan net.TCPAddr, peerDiscoverBufferSize)
 	var producers sync.WaitGroup
 	producers.Add(2)
 
@@ -95,15 +108,15 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 					Port:     s.announcePort(),
 					Left:     s.cfg.TotalLength,
 					Event:    startedEvent(started),
-					NumWant:  50,
+					NumWant:  s.trackerNumWant(),
 				})
 				if err != nil {
 					if st.backoff <= 0 {
-						st.backoff = 2 * time.Second
+						st.backoff = trackerRetryBackoffStart
 					} else {
 						st.backoff *= 2
-						if st.backoff > 2*time.Minute {
-							st.backoff = 2 * time.Minute
+						if st.backoff > trackerRetryBackoffMax {
+							st.backoff = trackerRetryBackoffMax
 						}
 					}
 					st.next = now.Add(st.backoff)
@@ -119,8 +132,8 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 				next := s.currentTrackerInterval()
 				if resp != nil && resp.Interval > 0 {
 					trackerNext := time.Duration(resp.Interval) * time.Second
-					if trackerNext < 5*time.Second {
-						trackerNext = 5 * time.Second
+					if trackerNext < minTrackerInterval {
+						trackerNext = minTrackerInterval
 					}
 					if trackerNext > 10*time.Minute {
 						trackerNext = 10 * time.Minute
@@ -235,17 +248,38 @@ func (s *Session) currentTrackerInterval() time.Duration {
 	defer s.mu.Unlock()
 	base := s.cfg.TrackerInterval
 	if base <= 0 {
-		base = 10 * time.Second
+		base = defaultTrackerInterval
 	}
 	if s.lowPeerMode {
-		if base > 15*time.Second {
-			return 15 * time.Second
+		if base > maxLowPeerInterval {
+			return maxLowPeerInterval
 		}
-		if base < 5*time.Second {
-			return 5 * time.Second
+		if base < minTrackerInterval {
+			return minTrackerInterval
 		}
 	}
 	return base
+}
+
+func (s *Session) trackerNumWant() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	maxPeers := s.cfg.MaxPeers
+	if maxPeers <= 0 {
+		maxPeers = defaultSessionMaxPeers
+	}
+	target := maxPeers * 2
+	if target < 80 {
+		target = 80
+	}
+	if s.lowPeerMode && target < 200 {
+		target = 200
+	}
+	if target > 300 {
+		target = 300
+	}
+	return target
 }
 
 func startedEvent(initial bool) string {

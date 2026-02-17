@@ -9,6 +9,19 @@ import (
 	"time"
 )
 
+const (
+	defaultMaxPeers         = 128
+	defaultRequestPipeline  = 32
+	minDialWorkers          = 16
+	maxDialWorkers          = 192
+	managerDialTimeout      = 3 * time.Second
+	maintainInterval        = 2 * time.Second
+	evictionCooldown        = 3 * time.Second
+	minEvictionUptime       = 8 * time.Second
+	idleEvictionThreshold   = 10 * time.Second
+	evictionKeepRateMinimum = 512 * 1024
+)
+
 type Manager struct {
 	infoHash [20]byte
 	peerID   [20]byte
@@ -46,20 +59,20 @@ type Stats struct {
 
 func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceLayout, store Storage, maxPeers int, uploadSlots int, requestPipeline int) *Manager {
 	if maxPeers <= 0 {
-		maxPeers = 32
+		maxPeers = defaultMaxPeers
 	}
 	if uploadSlots < 0 {
 		uploadSlots = 0
 	}
 	if requestPipeline <= 0 {
-		requestPipeline = 8
+		requestPipeline = defaultRequestPipeline
 	}
 	dialWorkers := maxPeers
-	if dialWorkers < 8 {
-		dialWorkers = 8
+	if dialWorkers < minDialWorkers {
+		dialWorkers = minDialWorkers
 	}
-	if dialWorkers > 64 {
-		dialWorkers = 64
+	if dialWorkers > maxDialWorkers {
+		dialWorkers = maxDialWorkers
 	}
 	return &Manager{
 		infoHash:        infoHash,
@@ -212,7 +225,7 @@ func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 	m.dialAttempts++
 	m.mu.Unlock()
 
-	dialCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	dialCtx, cancel := context.WithTimeout(ctx, managerDialTimeout)
 	defer cancel()
 	sess, err := Dial(dialCtx, addr, m.infoHash, m.peerID)
 	if err != nil {
@@ -323,7 +336,7 @@ func (m *Manager) CloseAll() {
 }
 
 func (m *Manager) maintain(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(maintainInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -344,7 +357,7 @@ func (m *Manager) pickEvictionCandidateLocked() *Conn {
 	if len(m.active) < m.maxPeers {
 		return nil
 	}
-	if !m.lastEvictAt.IsZero() && time.Since(m.lastEvictAt) < 8*time.Second {
+	if !m.lastEvictAt.IsZero() && time.Since(m.lastEvictAt) < evictionCooldown {
 		return nil
 	}
 
@@ -352,10 +365,10 @@ func (m *Manager) pickEvictionCandidateLocked() *Conn {
 	bestRate := 1e18
 	for _, c := range m.active {
 		p := c.Performance()
-		if p.Uptime < 15*time.Second {
+		if p.Uptime < minEvictionUptime {
 			continue
 		}
-		if p.IdleFor > 20*time.Second {
+		if p.IdleFor > idleEvictionThreshold {
 			victim = c
 			bestRate = -1
 			break
@@ -369,7 +382,7 @@ func (m *Manager) pickEvictionCandidateLocked() *Conn {
 		return nil
 	}
 	// Avoid evicting decent peers.
-	if bestRate > 128*1024 && bestRate != -1 {
+	if bestRate > evictionKeepRateMinimum && bestRate != -1 {
 		return nil
 	}
 	m.lastEvictAt = time.Now()

@@ -124,9 +124,9 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 			{Key: "worker_buffer_size", Label: "Worker Buffer Size", Description: "I/O buffer size per worker in KB (e.g., 512).", Type: "int"},
 		},
 		"Torrent": {
-			{Key: "max_connections_per_torrent", Label: "Max Connections/Torrent", Description: "Maximum peer connections per torrent (1-500).", Type: "int"},
-			{Key: "upload_slots_per_torrent", Label: "Upload Slots/Torrent", Description: "Maximum upload slots per torrent (0-50).", Type: "int"},
-			{Key: "request_pipeline_depth", Label: "Request Pipeline Depth", Description: "Max in-flight block requests per peer (1-64). Higher values improve high-latency throughput.", Type: "int"},
+			{Key: "max_connections_per_torrent", Label: "Max Connections/Torrent", Description: "Maximum peer connections per torrent (1-1000).", Type: "int"},
+			{Key: "upload_slots_per_torrent", Label: "Upload Slots/Torrent", Description: "Maximum upload slots per torrent (0-200).", Type: "int"},
+			{Key: "request_pipeline_depth", Label: "Request Pipeline Depth", Description: "Max in-flight block requests per peer (1-256). Higher values improve high-latency throughput.", Type: "int"},
 			{Key: "listen_port", Label: "Listen Port", Description: "Inbound TCP port for torrent peers (1-65535). Requires firewall/NAT forwarding for best results.", Type: "int"},
 		},
 		"Performance": {
@@ -190,9 +190,9 @@ func DefaultSettings() *Settings {
 			WorkerBufferSize:       512 * KB,
 		},
 		Torrent: TorrentSettings{
-			MaxConnectionsPerTorrent: 32,
-			UploadSlotsPerTorrent:    4,
-			RequestPipelineDepth:     8,
+			MaxConnectionsPerTorrent: 128,
+			UploadSlotsPerTorrent:    16,
+			RequestPipelineDepth:     32,
 			ListenPort:               6881,
 		},
 		Performance: PerformanceSettings{
