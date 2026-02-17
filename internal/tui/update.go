@@ -286,6 +286,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !found {
 			newDownload := NewDownloadModel(msg.DownloadID, msg.URL, msg.Filename, msg.Total)
 			newDownload.Destination = msg.DestPath
+			newDownload.StartTime = time.Now()
 			if msg.State != nil {
 				newDownload.state = msg.State
 			}

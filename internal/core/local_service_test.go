@@ -119,6 +119,65 @@ func TestLocalDownloadService_AddRejectsUnsupportedURL(t *testing.T) {
 	}
 }
 
+func TestLocalDownloadService_ListKeepsQueuedStatus(t *testing.T) {
+	tempDir := t.TempDir()
+	state.CloseDB()
+	state.Configure(filepath.Join(tempDir, "surge.db"))
+	defer state.CloseDB()
+
+	ch := make(chan interface{}, 100)
+	pool := download.NewWorkerPool(ch, 1) // Force queueing for the second download.
+	svc := NewLocalDownloadServiceWithInput(pool, ch)
+	defer func() { _ = svc.Shutdown() }()
+
+	server := testutil.NewStreamingMockServerT(t,
+		500*1024*1024,
+		testutil.WithRangeSupport(true),
+		testutil.WithLatency(10*time.Millisecond),
+	)
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	id1, err := svc.Add(server.URL(), outputDir, "first.bin", nil, nil)
+	if err != nil {
+		t.Fatalf("failed to add first download: %v", err)
+	}
+	id2, err := svc.Add(server.URL(), outputDir, "second.bin", nil, nil)
+	if err != nil {
+		t.Fatalf("failed to add second download: %v", err)
+	}
+
+	// Wait until first download is no longer queued, so the second one is definitely waiting in queue.
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		st := pool.GetStatus(id1)
+		if st != nil && st.Status != "queued" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	statuses, err := svc.List()
+	if err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+
+	foundSecond := false
+	for _, st := range statuses {
+		if st.ID != id2 {
+			continue
+		}
+		foundSecond = true
+		if st.Status != "queued" {
+			t.Fatalf("second download status = %q, want queued", st.Status)
+		}
+		break
+	}
+	if !foundSecond {
+		t.Fatalf("second download %s not found in list", id2)
+	}
+}
+
 func TestLocalDownloadService_Shutdown_PersistsPausedState(t *testing.T) {
 	tempDir := t.TempDir()
 	state.CloseDB()

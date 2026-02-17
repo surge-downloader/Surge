@@ -229,6 +229,43 @@ func TestUpdate_DownloadStartedClearsFlags(t *testing.T) {
 	}
 }
 
+func TestUpdate_DownloadStartedNewRowSetsStartTime(t *testing.T) {
+	m := RootModel{
+		downloads:   []*DownloadModel{},
+		list:        NewDownloadList(80, 20),
+		logViewport: viewport.New(40, 5),
+	}
+
+	msg := events.DownloadStartedMsg{
+		DownloadID: "id-new",
+		URL:        "http://example.com/file",
+		Filename:   "file",
+		Total:      100,
+		DestPath:   "/tmp/file",
+		State:      types.NewProgressState("id-new", 100),
+	}
+
+	updated, _ := m.Update(msg)
+	m2 := updated.(RootModel)
+
+	var d *DownloadModel
+	for _, dl := range m2.downloads {
+		if dl.ID == "id-new" {
+			d = dl
+			break
+		}
+	}
+	if d == nil {
+		t.Fatal("Expected new download to be created")
+	}
+	if d.StartTime.IsZero() {
+		t.Fatal("Expected StartTime to be set for newly started download")
+	}
+	if !isActiveDownload(d) {
+		t.Fatal("Expected newly started download to be classified as active")
+	}
+}
+
 func TestUpdate_PauseResumeEventsNormalizeFlags(t *testing.T) {
 	m := RootModel{
 		downloads: []*DownloadModel{

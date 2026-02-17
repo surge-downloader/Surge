@@ -338,7 +338,7 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 				ID:       cfg.ID,
 				URL:      cfg.URL,
 				Filename: cfg.Filename,
-				Status:   "downloading",
+				Status:   "queued",
 			}
 
 			if cfg.State != nil {
@@ -373,8 +373,10 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 					status.Status = "paused"
 				} else if cfg.State.Done.Load() {
 					status.Status = "completed"
-				} else if sessionDownloaded <= 0 {
+				} else if connections > 0 && sessionDownloaded <= 0 {
 					status.Status = "connecting"
+				} else if sessionDownloaded > 0 {
+					status.Status = "downloading"
 				}
 
 				// Calculate speed from progress only while actively downloading.
