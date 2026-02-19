@@ -24,6 +24,7 @@ const (
 	evictionKeepRateMinimum = 512 * 1024
 	lowRateCullFactor       = 0.3
 	healthRedialBlock       = 2 * time.Minute
+	healthCullMaxPerTick    = 2
 	dialBackoffBase         = 15 * time.Second
 	dialBackoffMax          = 10 * time.Minute
 )
@@ -404,6 +405,10 @@ func (m *Manager) maintain(ctx context.Context) {
 }
 
 func (m *Manager) collectHealthEvictionsLocked() []string {
+	if m.maxPeers > 0 && len(m.active) < m.maxPeers {
+		// Do not churn peers while we still have room to grow.
+		return nil
+	}
 	if len(m.active) < 2 {
 		return nil
 	}
@@ -416,7 +421,11 @@ func (m *Manager) collectHealthEvictionsLocked() []string {
 			Uptime:  p.Uptime,
 		})
 	}
-	return health.BelowRelativeMean(samples, minEvictionUptime, lowRateCullFactor)
+	keys := health.BelowRelativeMean(samples, minEvictionUptime, lowRateCullFactor)
+	if len(keys) > healthCullMaxPerTick {
+		keys = keys[:healthCullMaxPerTick]
+	}
+	return keys
 }
 
 func (m *Manager) pickEvictionCandidateLocked() *Conn {

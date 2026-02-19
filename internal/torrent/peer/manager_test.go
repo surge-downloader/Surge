@@ -98,3 +98,32 @@ func TestHealthEvictionBlocksImmediateRedial(t *testing.T) {
 		t.Fatalf("expected redial to be allowed after health cooldown")
 	}
 }
+
+func TestCollectHealthEvictionsLockedOnlyWhenSaturated(t *testing.T) {
+	now := time.Now()
+	mature := minEvictionUptime + 2*time.Second
+	makeConn := func(rateBps int64) *Conn {
+		return &Conn{
+			startedAt: now.Add(-mature),
+			received:  rateBps * int64(mature.Seconds()),
+		}
+	}
+
+	m := &Manager{
+		maxPeers: 4,
+		active: map[string]*Conn{
+			"fast": makeConn(2 * 1024 * 1024),
+			"mid":  makeConn(1024 * 1024),
+			"slow": makeConn(64 * 1024),
+		},
+	}
+
+	if victims := m.collectHealthEvictionsLocked(); len(victims) != 0 {
+		t.Fatalf("expected no victims when not saturated, got=%v", victims)
+	}
+
+	m.maxPeers = 3
+	if victims := m.collectHealthEvictionsLocked(); len(victims) == 0 {
+		t.Fatalf("expected victims when saturated")
+	}
+}
