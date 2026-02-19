@@ -108,7 +108,7 @@ func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Sessio
 func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 	out := make(chan net.TCPAddr, peerDiscoverBufferSize)
 	var producers sync.WaitGroup
-	producers.Add(2)
+	producers.Add(3)
 
 	// tracker stream
 	go func() {
@@ -225,6 +225,26 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 		seen := make(map[string]time.Time)
 		for p := range svc.DiscoverPeers(ctx, s.infoHash) {
 			addr := net.TCPAddr{IP: p.IP, Port: p.Port}
+			key := addr.String()
+			if !shouldEmitPeer(seen, key, peerRetryWindow) {
+				continue
+			}
+			select {
+			case out <- addr:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	// local service discovery (BEP14) stream
+	go func() {
+		defer producers.Done()
+		if !s.cfg.LSDEnabled {
+			return
+		}
+		seen := make(map[string]time.Time)
+		for addr := range discoverLocalPeers(ctx, s.infoHash, s.announcePort()) {
 			key := addr.String()
 			if !shouldEmitPeer(seen, key, peerRetryWindow) {
 				continue
