@@ -22,6 +22,8 @@ type ProgressMsg struct {
 	PeerDialSuccess   int
 	PeerDialFailures  int
 	PeerInbound       int
+	PeerHealthCull    int
+	PeerProtocolClose int
 	ChunkBitmap       []byte
 	BitmapWidth       int
 	ActualChunkSize   int64

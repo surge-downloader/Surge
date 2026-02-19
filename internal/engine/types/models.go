@@ -74,6 +74,8 @@ type DownloadStatus struct {
 	PeerDialSuccess  int     `json:"peer_dial_success"`
 	PeerDialFailures int     `json:"peer_dial_failures"`
 	PeerInbound      int     `json:"peer_inbound"`
+	PeerHealthCull   int     `json:"peer_health_cull"`
+	PeerProtoClose   int     `json:"peer_proto_close"`
 	AddedAt          int64   `json:"added_at"`   // Unix timestamp when added
 	TimeTaken        int64   `json:"time_taken"` // Duration in milliseconds (completed only)
 	AvgSpeed         float64 `json:"avg_speed"`  // Average speed in bytes/sec (completed only)

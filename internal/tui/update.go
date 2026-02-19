@@ -1557,6 +1557,8 @@ func (m *RootModel) applyProgressUpdate(msg events.ProgressMsg) (bool, []tea.Cmd
 		d.PeerDialSuccess = msg.PeerDialSuccess
 		d.PeerDialFailures = msg.PeerDialFailures
 		d.PeerInbound = msg.PeerInbound
+		d.PeerHealthCull = msg.PeerHealthCull
+		d.PeerProtoClose = msg.PeerProtocolClose
 
 		// Update Chunk State if provided
 		if msg.BitmapWidth > 0 && len(msg.ChunkBitmap) > 0 {

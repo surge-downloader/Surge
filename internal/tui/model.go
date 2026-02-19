@@ -60,6 +60,8 @@ type DownloadModel struct {
 	PeerDialSuccess  int
 	PeerDialFailures int
 	PeerInbound      int
+	PeerHealthCull   int
+	PeerProtoClose   int
 
 	StartTime time.Time
 	Elapsed   time.Duration
@@ -277,6 +279,8 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 				dm.PeerDialSuccess = s.PeerDialSuccess
 				dm.PeerDialFailures = s.PeerDialFailures
 				dm.PeerInbound = s.PeerInbound
+				dm.PeerHealthCull = s.PeerHealthCull
+				dm.PeerProtoClose = s.PeerProtoClose
 				if s.AvgSpeed > 0 {
 					dm.Speed = s.AvgSpeed
 				} else if s.Speed > 0 {

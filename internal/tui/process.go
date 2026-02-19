@@ -25,6 +25,8 @@ func (m *RootModel) processProgressMsg(msg events.ProgressMsg) {
 			d.PeerDialSuccess = msg.PeerDialSuccess
 			d.PeerDialFailures = msg.PeerDialFailures
 			d.PeerInbound = msg.PeerInbound
+			d.PeerHealthCull = msg.PeerHealthCull
+			d.PeerProtoClose = msg.PeerProtocolClose
 
 			// Keep "Resuming..." visible until we observe actual transfer.
 			if d.resuming && (d.Speed > 0 || d.Downloaded > prevDownloaded) {

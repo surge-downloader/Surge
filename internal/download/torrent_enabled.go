@@ -162,6 +162,8 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 					DialSuccess:     ps.DialSuccess,
 					DialFailures:    ps.DialFailures,
 					InboundAccepted: ps.InboundAccepted,
+					HealthEvictions: ps.HealthEvictions,
+					ProtocolCloses:  ps.ProtocolCloses,
 				})
 				downloaded := cfg.State.VerifiedProgress.Load()
 				if downloaded >= meta.Info.TotalLength() {

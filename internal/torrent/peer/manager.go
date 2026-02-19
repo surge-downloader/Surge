@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -83,6 +84,8 @@ type Manager struct {
 	dialSuccess     int
 	dialFailures    int
 	inboundAccepted int
+	healthEvictions int
+	protocolCloses  int
 	lastEvictAt     time.Time
 	lastHealthCull  time.Time
 
@@ -107,6 +110,8 @@ type Stats struct {
 	DialSuccess     int
 	DialFailures    int
 	InboundAccepted int
+	HealthEvictions int
+	ProtocolCloses  int
 }
 
 func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceLayout, store Storage, maxPeers int, uploadSlots int, requestPipeline int, cfg ManagerConfig) *Manager {
@@ -335,8 +340,8 @@ func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 	var pipe Pipeline
 	conn := NewConn(sess, addr, m.picker, m.layout, m.store, pipe, m.requestPipeline, func(pexAddr net.TCPAddr) {
 		m.onPEXPeer(ctx, pexAddr)
-	}, func() {
-		m.onClose(key)
+	}, func(closeErr error) {
+		m.onClose(key, closeErr)
 	})
 	conn.Start(ctx)
 
@@ -398,8 +403,8 @@ func (m *Manager) acceptInboundConn(ctx context.Context, raw net.Conn) {
 	sess := NewFromConnWithConfig(raw, hs.SupportsExtensionProtocol(), m.peerReadTimeout, m.peerKeepaliveSend)
 	conn := NewConn(sess, *addr, m.picker, m.layout, m.store, pipe, m.requestPipeline, func(pexAddr net.TCPAddr) {
 		m.onPEXPeer(ctx, pexAddr)
-	}, func() {
-		m.onClose(key)
+	}, func(closeErr error) {
+		m.onClose(key, closeErr)
 	})
 	conn.Start(ctx)
 
@@ -597,6 +602,8 @@ func (m *Manager) Stats() Stats {
 		DialSuccess:     m.dialSuccess,
 		DialFailures:    m.dialFailures,
 		InboundAccepted: m.inboundAccepted,
+		HealthEvictions: m.healthEvictions,
+		ProtocolCloses:  m.protocolCloses,
 	}
 }
 
@@ -619,13 +626,16 @@ func (m *Manager) BroadcastHave(pieceIndex int) {
 	}
 }
 
-func (m *Manager) onClose(key string) {
+func (m *Manager) onClose(key string, closeErr error) {
 	m.mu.Lock()
 	if m.uploading[key] {
 		m.unchoked--
 		delete(m.uploading, key)
 	}
 	delete(m.active, key)
+	if isUnexpectedPeerClose(closeErr) {
+		m.protocolCloses++
+	}
 	m.mu.Unlock()
 }
 
@@ -679,6 +689,7 @@ func (m *Manager) noteHealthEvictionLocked(key string, now time.Time) {
 		st.failures = 1
 	}
 	m.retry[key] = st
+	m.healthEvictions++
 }
 
 func dialBackoffDuration(failures int) time.Duration {
@@ -703,4 +714,18 @@ func withDefaultDuration(v time.Duration, fallback time.Duration) time.Duration 
 		return fallback
 	}
 	return v
+}
+
+func isUnexpectedPeerClose(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, net.ErrClosed) {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "use of closed network connection") {
+		return false
+	}
+	return true
 }

@@ -407,6 +407,8 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 	status.PeerDialSuccess = peerStats.DialSuccess
 	status.PeerDialFailures = peerStats.DialFailures
 	status.PeerInbound = peerStats.InboundAccepted
+	status.PeerHealthCull = peerStats.HealthEvictions
+	status.PeerProtoClose = peerStats.ProtocolCloses
 
 	if ad.config.State.IsPausing() {
 		status.Status = "pausing"

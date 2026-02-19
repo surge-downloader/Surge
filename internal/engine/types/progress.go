@@ -54,6 +54,8 @@ type TorrentPeerCounters struct {
 	DialSuccess     int
 	DialFailures    int
 	InboundAccepted int
+	HealthEvictions int
+	ProtocolCloses  int
 }
 
 func (ps *ProgressState) SetDestPath(path string) {

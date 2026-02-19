@@ -31,7 +31,7 @@ type Conn struct {
 	pieceBuf    []byte
 	utPexID     byte
 	onPEXPeer   func(net.TCPAddr)
-	onClose     func()
+	onClose     func(error)
 	startedAt   time.Time
 	lastPieceAt time.Time
 	received    int64
@@ -73,7 +73,7 @@ type Storage interface {
 	Bitfield() []byte
 }
 
-func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, store Storage, pipeline Pipeline, maxInFlight int, onPEXPeer func(net.TCPAddr), onClose func()) *Conn {
+func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, store Storage, pipeline Pipeline, maxInFlight int, onPEXPeer func(net.TCPAddr), onClose func(error)) *Conn {
 	if maxInFlight <= 0 {
 		maxInFlight = minAdaptiveInFlight
 	}
@@ -129,6 +129,7 @@ func (c *Conn) keepAliveLoop(ctx context.Context) {
 }
 
 func (c *Conn) readLoop(ctx context.Context) {
+	var closeErr error
 	defer func() {
 		c.mu.Lock()
 		if c.picker != nil && c.piece >= 0 && c.pipeline != nil && !c.pipeline.Completed() {
@@ -137,7 +138,7 @@ func (c *Conn) readLoop(ctx context.Context) {
 		c.mu.Unlock()
 		_ = c.sess.Close()
 		if c.onClose != nil {
-			c.onClose()
+			c.onClose(closeErr)
 		}
 	}()
 	for {
@@ -157,6 +158,7 @@ func (c *Conn) readLoop(ctx context.Context) {
 			if errors.As(err, &ne) && ne.Timeout() {
 				continue
 			}
+			closeErr = err
 			return
 		}
 		shouldRequest, uploadReq, pexPeers := c.handle(msg)

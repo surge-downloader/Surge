@@ -206,6 +206,8 @@ func (s *LocalDownloadService) reportProgressLoop() {
 				PeerDialSuccess:   peers.DialSuccess,
 				PeerDialFailures:  peers.DialFailures,
 				PeerInbound:       peers.InboundAccepted,
+				PeerHealthCull:    peers.HealthEvictions,
+				PeerProtocolClose: peers.ProtocolCloses,
 			}
 
 			// Add Chunk Bitmap for visualization (if initialized)
@@ -364,6 +366,8 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 				status.PeerDialSuccess = peerStats.DialSuccess
 				status.PeerDialFailures = peerStats.DialFailures
 				status.PeerInbound = peerStats.InboundAccepted
+				status.PeerHealthCull = peerStats.HealthEvictions
+				status.PeerProtoClose = peerStats.ProtocolCloses
 
 				// Update status based on state
 				if cfg.State.IsPausing() {
