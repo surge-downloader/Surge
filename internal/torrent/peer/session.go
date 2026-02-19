@@ -11,6 +11,8 @@ const (
 	peerDialTimeout     = 3 * time.Second
 	peerHandshakeWindow = 5 * time.Second
 	peerKeepAlivePeriod = 15 * time.Second
+	peerReadTimeout     = 45 * time.Second
+	peerKeepAliveSend   = 30 * time.Second
 	peerSocketBuffer    = 4 << 20
 )
 

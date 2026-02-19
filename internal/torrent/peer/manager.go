@@ -18,9 +18,9 @@ const (
 	maxDialWorkers          = 192
 	managerDialTimeout      = 3 * time.Second
 	maintainInterval        = 2 * time.Second
-	evictionCooldown        = 3 * time.Second
-	minEvictionUptime       = 8 * time.Second
-	idleEvictionThreshold   = 10 * time.Second
+	evictionCooldown        = 5 * time.Second
+	minEvictionUptime       = 20 * time.Second
+	idleEvictionThreshold   = 45 * time.Second
 	evictionKeepRateMinimum = 512 * 1024
 	lowRateCullFactor       = 0.3
 	healthRedialBlock       = 2 * time.Minute

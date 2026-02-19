@@ -2,6 +2,7 @@ package peer
 
 import (
 	"context"
+	"errors"
 	"net"
 	"sync"
 	"time"
@@ -95,6 +96,7 @@ func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, sto
 
 func (c *Conn) Start(ctx context.Context) {
 	go c.readLoop(ctx)
+	go c.keepAliveLoop(ctx)
 	if c.sess != nil && c.sess.SupportsExtensionProtocol() {
 		c.sendExtendedHandshake()
 	}
@@ -104,6 +106,19 @@ func (c *Conn) Start(ctx context.Context) {
 		}
 	}
 	c.write(&Message{ID: MsgInterested})
+}
+
+func (c *Conn) keepAliveLoop(ctx context.Context) {
+	ticker := time.NewTicker(peerKeepAliveSend)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.write(&Message{ID: 255})
+		}
+	}
 }
 
 func (c *Conn) readLoop(ctx context.Context) {
@@ -124,9 +139,13 @@ func (c *Conn) readLoop(ctx context.Context) {
 			return
 		default:
 		}
-		_ = c.sess.conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+		_ = c.sess.conn.SetReadDeadline(time.Now().Add(peerReadTimeout))
 		msg, err := ReadMessage(c.sess.conn)
 		if err != nil {
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() {
+				continue
+			}
 			return
 		}
 		shouldRequest, uploadReq, pexPeers := c.handle(msg)
