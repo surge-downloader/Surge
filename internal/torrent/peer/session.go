@@ -19,17 +19,29 @@ const (
 type Session struct {
 	conn                net.Conn
 	supportsExtProtocol bool
+	readTimeout         time.Duration
+	keepAliveSend       time.Duration
 }
 
 func NewFromConn(conn net.Conn, supportsExtProtocol bool) *Session {
+	return NewFromConnWithConfig(conn, supportsExtProtocol, peerReadTimeout, peerKeepAliveSend)
+}
+
+func NewFromConnWithConfig(conn net.Conn, supportsExtProtocol bool, readTimeout time.Duration, keepAliveSend time.Duration) *Session {
 	tuneTCPConn(conn)
 	return &Session{
 		conn:                conn,
 		supportsExtProtocol: supportsExtProtocol,
+		readTimeout:         normalizeDuration(readTimeout, peerReadTimeout),
+		keepAliveSend:       normalizeDuration(keepAliveSend, peerKeepAliveSend),
 	}
 }
 
 func Dial(ctx context.Context, addr net.TCPAddr, infoHash [20]byte, peerID [20]byte) (*Session, error) {
+	return DialWithConfig(ctx, addr, infoHash, peerID, peerReadTimeout, peerKeepAliveSend)
+}
+
+func DialWithConfig(ctx context.Context, addr net.TCPAddr, infoHash [20]byte, peerID [20]byte, readTimeout time.Duration, keepAliveSend time.Duration) (*Session, error) {
 	dialer := net.Dialer{Timeout: peerDialTimeout}
 	conn, err := dialer.DialContext(ctx, "tcp", addr.String())
 	if err != nil {
@@ -54,6 +66,8 @@ func Dial(ctx context.Context, addr net.TCPAddr, infoHash [20]byte, peerID [20]b
 	return &Session{
 		conn:                conn,
 		supportsExtProtocol: hs.SupportsExtensionProtocol(),
+		readTimeout:         normalizeDuration(readTimeout, peerReadTimeout),
+		keepAliveSend:       normalizeDuration(keepAliveSend, peerKeepAliveSend),
 	}, nil
 }
 
@@ -71,6 +85,20 @@ func (s *Session) SupportsExtensionProtocol() bool {
 	return s.supportsExtProtocol
 }
 
+func (s *Session) ReadTimeout() time.Duration {
+	if s == nil {
+		return peerReadTimeout
+	}
+	return normalizeDuration(s.readTimeout, peerReadTimeout)
+}
+
+func (s *Session) KeepAliveSendInterval() time.Duration {
+	if s == nil {
+		return peerKeepAliveSend
+	}
+	return normalizeDuration(s.keepAliveSend, peerKeepAliveSend)
+}
+
 func tuneTCPConn(conn net.Conn) {
 	tcp, ok := conn.(*net.TCPConn)
 	if !ok {
@@ -81,4 +109,11 @@ func tuneTCPConn(conn net.Conn) {
 	_ = tcp.SetKeepAlivePeriod(peerKeepAlivePeriod)
 	_ = tcp.SetReadBuffer(peerSocketBuffer)
 	_ = tcp.SetWriteBuffer(peerSocketBuffer)
+}
+
+func normalizeDuration(v time.Duration, fallback time.Duration) time.Duration {
+	if v <= 0 {
+		return fallback
+	}
+	return v
 }

@@ -33,7 +33,19 @@ func NewRunner(meta *TorrentMeta, baseDir string, cfg SessionConfig, state *type
 		progressStore = NewProgressStore(layout, state)
 		store = progressStore
 	}
-	mgr := peer.NewManager(meta.InfoHash, sess.peerID, picker, layout, store, cfg.MaxPeers, cfg.UploadSlots, cfg.RequestPipeline)
+	mgr := peer.NewManager(meta.InfoHash, sess.peerID, picker, layout, store, cfg.MaxPeers, cfg.UploadSlots, cfg.RequestPipeline, peer.ManagerConfig{
+		HealthEnabled:          cfg.HealthEnabled,
+		LowRateCullFactor:      cfg.LowRateCullFactor,
+		HealthMinUptime:        cfg.HealthMinUptime,
+		HealthCullMaxPerTick:   cfg.HealthCullMaxPerTick,
+		HealthRedialBlock:      cfg.HealthRedialBlock,
+		EvictionCooldown:       cfg.EvictionCooldown,
+		EvictionMinUptime:      cfg.EvictionMinUptime,
+		IdleEvictionThreshold:  cfg.IdleEvictionThreshold,
+		EvictionKeepRateMinBps: cfg.EvictionKeepRateMinBps,
+		PeerReadTimeout:        cfg.PeerReadTimeout,
+		PeerKeepaliveSend:      cfg.PeerKeepaliveSend,
+	})
 	if progressStore != nil {
 		progressStore.SetOnVerified(func(pieceIndex int) {
 			mgr.BroadcastHave(pieceIndex)

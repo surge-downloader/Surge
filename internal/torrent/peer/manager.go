@@ -18,13 +18,24 @@ const (
 	maxDialWorkers          = 192
 	managerDialTimeout      = 3 * time.Second
 	maintainInterval        = 2 * time.Second
-	evictionCooldown        = 5 * time.Second
-	minEvictionUptime       = 20 * time.Second
-	idleEvictionThreshold   = 45 * time.Second
-	evictionKeepRateMinimum = 512 * 1024
-	lowRateCullFactor       = 0.3
-	healthRedialBlock       = 2 * time.Minute
-	healthCullMaxPerTick    = 2
+	defaultEvictionCooldown = 5 * time.Second
+	defaultEvictionUptime   = 20 * time.Second
+	defaultIdleThreshold    = 45 * time.Second
+	defaultEvictionMinRate  = 512 * 1024
+	defaultLowRateCull      = 0.3
+	defaultHealthRedial     = 2 * time.Minute
+	defaultHealthCullMax    = 2
+	defaultPeerReadTimeout  = 45 * time.Second
+	defaultKeepAliveSend    = 30 * time.Second
+
+	// Compatibility aliases for tests.
+	evictionCooldown        = defaultEvictionCooldown
+	minEvictionUptime       = defaultEvictionUptime
+	idleEvictionThreshold   = defaultIdleThreshold
+	evictionKeepRateMinimum = defaultEvictionMinRate
+	lowRateCullFactor       = defaultLowRateCull
+	healthRedialBlock       = defaultHealthRedial
+	healthCullMaxPerTick    = defaultHealthCullMax
 	dialBackoffBase         = 15 * time.Second
 	dialBackoffMax          = 10 * time.Minute
 )
@@ -32,6 +43,20 @@ const (
 type dialRetryState struct {
 	failures    int
 	nextAttempt time.Time
+}
+
+type ManagerConfig struct {
+	HealthEnabled          bool
+	LowRateCullFactor      float64
+	HealthMinUptime        time.Duration
+	HealthCullMaxPerTick   int
+	HealthRedialBlock      time.Duration
+	EvictionCooldown       time.Duration
+	EvictionMinUptime      time.Duration
+	IdleEvictionThreshold  time.Duration
+	EvictionKeepRateMinBps int64
+	PeerReadTimeout        time.Duration
+	PeerKeepaliveSend      time.Duration
 }
 
 type Manager struct {
@@ -58,6 +83,18 @@ type Manager struct {
 	dialFailures    int
 	inboundAccepted int
 	lastEvictAt     time.Time
+
+	healthEnabled          bool
+	lowRateCullFactor      float64
+	healthMinUptime        time.Duration
+	healthCullMaxPerTick   int
+	healthRedialBlock      time.Duration
+	evictionCooldown       time.Duration
+	evictionMinUptime      time.Duration
+	idleEvictionThreshold  time.Duration
+	evictionKeepRateMinBps float64
+	peerReadTimeout        time.Duration
+	peerKeepaliveSend      time.Duration
 }
 
 type Stats struct {
@@ -70,7 +107,7 @@ type Stats struct {
 	InboundAccepted int
 }
 
-func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceLayout, store Storage, maxPeers int, uploadSlots int, requestPipeline int) *Manager {
+func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceLayout, store Storage, maxPeers int, uploadSlots int, requestPipeline int, cfg ManagerConfig) *Manager {
 	if maxPeers <= 0 {
 		maxPeers = defaultMaxPeers
 	}
@@ -87,6 +124,28 @@ func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceL
 	if dialWorkers > maxDialWorkers {
 		dialWorkers = maxDialWorkers
 	}
+	healthEnabled := cfg.HealthEnabled
+	if !healthEnabled && cfg.LowRateCullFactor == 0 && cfg.HealthMinUptime == 0 && cfg.HealthCullMaxPerTick == 0 && cfg.HealthRedialBlock == 0 {
+		healthEnabled = true
+	}
+	lowRateCullFactor := cfg.LowRateCullFactor
+	if lowRateCullFactor <= 0 {
+		lowRateCullFactor = defaultLowRateCull
+	}
+	if lowRateCullFactor > 1 {
+		lowRateCullFactor = 1
+	}
+	healthCullMax := cfg.HealthCullMaxPerTick
+	if healthCullMax <= 0 {
+		healthCullMax = defaultHealthCullMax
+	}
+	if healthCullMax > 16 {
+		healthCullMax = 16
+	}
+	evictionMinRate := cfg.EvictionKeepRateMinBps
+	if evictionMinRate <= 0 {
+		evictionMinRate = defaultEvictionMinRate
+	}
 	return &Manager{
 		infoHash:        infoHash,
 		peerID:          peerID,
@@ -102,6 +161,18 @@ func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceL
 		retry:           make(map[string]dialRetryState),
 		uploading:       make(map[string]bool),
 		dialSem:         make(chan struct{}, dialWorkers),
+
+		healthEnabled:          healthEnabled,
+		lowRateCullFactor:      lowRateCullFactor,
+		healthMinUptime:        withDefaultDuration(cfg.HealthMinUptime, defaultEvictionUptime),
+		healthCullMaxPerTick:   healthCullMax,
+		healthRedialBlock:      withDefaultDuration(cfg.HealthRedialBlock, defaultHealthRedial),
+		evictionCooldown:       withDefaultDuration(cfg.EvictionCooldown, defaultEvictionCooldown),
+		evictionMinUptime:      withDefaultDuration(cfg.EvictionMinUptime, defaultEvictionUptime),
+		idleEvictionThreshold:  withDefaultDuration(cfg.IdleEvictionThreshold, defaultIdleThreshold),
+		evictionKeepRateMinBps: float64(evictionMinRate),
+		peerReadTimeout:        withDefaultDuration(cfg.PeerReadTimeout, defaultPeerReadTimeout),
+		peerKeepaliveSend:      withDefaultDuration(cfg.PeerKeepaliveSend, defaultKeepAliveSend),
 	}
 }
 
@@ -246,7 +317,7 @@ func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 
 	dialCtx, cancel := context.WithTimeout(ctx, managerDialTimeout)
 	defer cancel()
-	sess, err := Dial(dialCtx, addr, m.infoHash, m.peerID)
+	sess, err := DialWithConfig(dialCtx, addr, m.infoHash, m.peerID, m.peerReadTimeout, m.peerKeepaliveSend)
 	if err != nil {
 		m.mu.Lock()
 		m.dialFailures++
@@ -322,7 +393,7 @@ func (m *Manager) acceptInboundConn(ctx context.Context, raw net.Conn) {
 	m.mu.Unlock()
 
 	var pipe Pipeline
-	sess := NewFromConn(raw, hs.SupportsExtensionProtocol())
+	sess := NewFromConnWithConfig(raw, hs.SupportsExtensionProtocol(), m.peerReadTimeout, m.peerKeepaliveSend)
 	conn := NewConn(sess, *addr, m.picker, m.layout, m.store, pipe, m.requestPipeline, func(pexAddr net.TCPAddr) {
 		m.onPEXPeer(ctx, pexAddr)
 	}, func() {
@@ -405,6 +476,13 @@ func (m *Manager) maintain(ctx context.Context) {
 }
 
 func (m *Manager) collectHealthEvictionsLocked() []string {
+	healthEnabled := m.healthEnabled
+	if !healthEnabled && m.lowRateCullFactor == 0 && m.healthMinUptime == 0 && m.healthCullMaxPerTick == 0 {
+		healthEnabled = true
+	}
+	if !healthEnabled {
+		return nil
+	}
 	if m.maxPeers > 0 && len(m.active) < m.maxPeers {
 		// Do not churn peers while we still have room to grow.
 		return nil
@@ -421,9 +499,21 @@ func (m *Manager) collectHealthEvictionsLocked() []string {
 			Uptime:  p.Uptime,
 		})
 	}
-	keys := health.BelowRelativeMean(samples, minEvictionUptime, lowRateCullFactor)
-	if len(keys) > healthCullMaxPerTick {
-		keys = keys[:healthCullMaxPerTick]
+	minUptime := withDefaultDuration(m.healthMinUptime, defaultEvictionUptime)
+	factor := m.lowRateCullFactor
+	if factor <= 0 {
+		factor = defaultLowRateCull
+	}
+	if factor > 1 {
+		factor = 1
+	}
+	maxCull := m.healthCullMaxPerTick
+	if maxCull <= 0 {
+		maxCull = defaultHealthCullMax
+	}
+	keys := health.BelowRelativeMean(samples, minUptime, factor)
+	if len(keys) > maxCull {
+		keys = keys[:maxCull]
 	}
 	return keys
 }
@@ -432,18 +522,25 @@ func (m *Manager) pickEvictionCandidateLocked() *Conn {
 	if len(m.active) < m.maxPeers {
 		return nil
 	}
+	evictionCooldown := withDefaultDuration(m.evictionCooldown, defaultEvictionCooldown)
 	if !m.lastEvictAt.IsZero() && time.Since(m.lastEvictAt) < evictionCooldown {
 		return nil
+	}
+	minUptime := withDefaultDuration(m.evictionMinUptime, defaultEvictionUptime)
+	idleThreshold := withDefaultDuration(m.idleEvictionThreshold, defaultIdleThreshold)
+	minKeepRate := m.evictionKeepRateMinBps
+	if minKeepRate <= 0 {
+		minKeepRate = defaultEvictionMinRate
 	}
 
 	var victim *Conn
 	bestRate := 1e18
 	for _, c := range m.active {
 		p := c.Performance()
-		if p.Uptime < minEvictionUptime {
+		if p.Uptime < minUptime {
 			continue
 		}
-		if p.IdleFor > idleEvictionThreshold {
+		if p.IdleFor > idleThreshold {
 			victim = c
 			bestRate = -1
 			break
@@ -457,7 +554,7 @@ func (m *Manager) pickEvictionCandidateLocked() *Conn {
 		return nil
 	}
 	// Avoid evicting decent peers.
-	if bestRate > evictionKeepRateMinimum && bestRate != -1 {
+	if bestRate > minKeepRate && bestRate != -1 {
 		return nil
 	}
 	m.lastEvictAt = time.Now()
@@ -548,7 +645,8 @@ func (m *Manager) noteHealthEvictionLocked(key string, now time.Time) {
 		return
 	}
 	st := m.retry[key]
-	until := now.Add(healthRedialBlock)
+	block := withDefaultDuration(m.healthRedialBlock, defaultHealthRedial)
+	until := now.Add(block)
 	if st.nextAttempt.Before(until) {
 		st.nextAttempt = until
 	}
@@ -573,4 +671,11 @@ func dialBackoffDuration(failures int) time.Duration {
 		}
 	}
 	return backoff
+}
+
+func withDefaultDuration(v time.Duration, fallback time.Duration) time.Duration {
+	if v <= 0 {
+		return fallback
+	}
+	return v
 }

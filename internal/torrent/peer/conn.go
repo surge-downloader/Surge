@@ -109,7 +109,14 @@ func (c *Conn) Start(ctx context.Context) {
 }
 
 func (c *Conn) keepAliveLoop(ctx context.Context) {
-	ticker := time.NewTicker(peerKeepAliveSend)
+	interval := peerKeepAliveSend
+	if c.sess != nil {
+		interval = c.sess.KeepAliveSendInterval()
+	}
+	if interval <= 0 {
+		return
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -139,7 +146,11 @@ func (c *Conn) readLoop(ctx context.Context) {
 			return
 		default:
 		}
-		_ = c.sess.conn.SetReadDeadline(time.Now().Add(peerReadTimeout))
+		readTimeout := peerReadTimeout
+		if c.sess != nil {
+			readTimeout = c.sess.ReadTimeout()
+		}
+		_ = c.sess.conn.SetReadDeadline(time.Now().Add(readTimeout))
 		msg, err := ReadMessage(c.sess.conn)
 		if err != nil {
 			var ne net.Error

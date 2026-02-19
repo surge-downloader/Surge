@@ -30,6 +30,23 @@ type SessionConfig struct {
 	MaxPeers        int
 	UploadSlots     int
 	RequestPipeline int
+
+	HealthEnabled          bool
+	LowRateCullFactor      float64
+	HealthMinUptime        time.Duration
+	HealthCullMaxPerTick   int
+	HealthRedialBlock      time.Duration
+	EvictionCooldown       time.Duration
+	EvictionMinUptime      time.Duration
+	IdleEvictionThreshold  time.Duration
+	EvictionKeepRateMinBps int64
+	PeerReadTimeout        time.Duration
+	PeerKeepaliveSend      time.Duration
+	TrackerIntervalNormal  time.Duration
+	TrackerIntervalLowPeer time.Duration
+	TrackerNumWantNormal   int
+	TrackerNumWantLowPeer  int
+	LSDEnabled             bool
 }
 
 type PeerSource interface {
@@ -58,11 +75,26 @@ func NewSession(infoHash [20]byte, trackers []string, cfg SessionConfig) *Sessio
 	if cfg.TrackerInterval == 0 {
 		cfg.TrackerInterval = defaultTrackerInterval
 	}
+	if cfg.TrackerIntervalNormal <= 0 {
+		cfg.TrackerIntervalNormal = cfg.TrackerInterval
+	}
+	if cfg.TrackerIntervalLowPeer <= 0 {
+		cfg.TrackerIntervalLowPeer = minTrackerInterval
+	}
+	if cfg.TrackerNumWantNormal <= 0 {
+		cfg.TrackerNumWantNormal = 256
+	}
+	if cfg.TrackerNumWantLowPeer <= 0 {
+		cfg.TrackerNumWantLowPeer = 300
+	}
 	if cfg.TotalLength <= 0 {
 		cfg.TotalLength = 1
 	}
 	if cfg.MaxPeers <= 0 {
 		cfg.MaxPeers = defaultSessionMaxPeers
+	}
+	if !cfg.HealthEnabled && cfg.LowRateCullFactor == 0 && cfg.HealthMinUptime == 0 {
+		cfg.HealthEnabled = true
 	}
 	return &Session{
 		infoHash: infoHash,
@@ -246,17 +278,22 @@ func (s *Session) isLowPeerMode() bool {
 func (s *Session) currentTrackerInterval() time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	base := s.cfg.TrackerInterval
+	base := s.cfg.TrackerIntervalNormal
 	if base <= 0 {
 		base = defaultTrackerInterval
 	}
 	if s.lowPeerMode {
-		if base > maxLowPeerInterval {
-			return maxLowPeerInterval
+		low := s.cfg.TrackerIntervalLowPeer
+		if low <= 0 {
+			low = minTrackerInterval
 		}
-		if base < minTrackerInterval {
-			return minTrackerInterval
+		if low < minTrackerInterval {
+			low = minTrackerInterval
 		}
+		if low > maxLowPeerInterval {
+			low = maxLowPeerInterval
+		}
+		return low
 	}
 	return base
 }
@@ -265,19 +302,22 @@ func (s *Session) trackerNumWant() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	maxPeers := s.cfg.MaxPeers
-	if maxPeers <= 0 {
-		maxPeers = defaultSessionMaxPeers
+	target := s.cfg.TrackerNumWantNormal
+	if target <= 0 {
+		target = 256
 	}
-	target := maxPeers * 2
-	if target < 80 {
-		target = 80
+	if s.lowPeerMode {
+		low := s.cfg.TrackerNumWantLowPeer
+		if low <= 0 {
+			low = 300
+		}
+		target = low
 	}
-	if s.lowPeerMode && target < 200 {
-		target = 200
+	if target < 50 {
+		target = 50
 	}
-	if target > 300 {
-		target = 300
+	if target > 1000 {
+		target = 1000
 	}
 	return target
 }

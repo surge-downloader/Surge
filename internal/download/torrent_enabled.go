@@ -102,17 +102,30 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	}
 
 	runtime := cfg.Runtime
-	if runtime == nil {
-		runtime = &types.RuntimeConfig{}
-	}
 
 	runner, err := torrent.NewRunner(meta, outPath, torrent.SessionConfig{
-		ListenAddr:      fmt.Sprintf("0.0.0.0:%d", runtime.GetTorrentListenPort()),
-		BootstrapNodes:  []string{"router.bittorrent.com:6881", "dht.transmissionbt.com:6881"},
-		TotalLength:     meta.Info.TotalLength(),
-		MaxPeers:        runtime.GetTorrentMaxConnections(),
-		UploadSlots:     runtime.GetTorrentUploadSlots(),
-		RequestPipeline: runtime.GetTorrentRequestPipeline(),
+		ListenAddr:             fmt.Sprintf("0.0.0.0:%d", runtime.GetTorrentListenPort()),
+		BootstrapNodes:         []string{"router.bittorrent.com:6881", "dht.transmissionbt.com:6881"},
+		TotalLength:            meta.Info.TotalLength(),
+		MaxPeers:               runtime.GetTorrentMaxConnections(),
+		UploadSlots:            runtime.GetTorrentUploadSlots(),
+		RequestPipeline:        runtime.GetTorrentRequestPipeline(),
+		HealthEnabled:          runtime.GetTorrentHealthEnabled(),
+		LowRateCullFactor:      runtime.GetTorrentLowRateCullFactor(),
+		HealthMinUptime:        runtime.GetTorrentHealthMinUptime(),
+		HealthCullMaxPerTick:   runtime.GetTorrentHealthCullMaxPerTick(),
+		HealthRedialBlock:      runtime.GetTorrentHealthRedialBlock(),
+		EvictionCooldown:       runtime.GetTorrentEvictionCooldown(),
+		EvictionMinUptime:      runtime.GetTorrentEvictionMinUptime(),
+		IdleEvictionThreshold:  runtime.GetTorrentIdleEvictionThreshold(),
+		EvictionKeepRateMinBps: runtime.GetTorrentEvictionKeepRateMinimumBps(),
+		PeerReadTimeout:        runtime.GetTorrentPeerReadTimeout(),
+		PeerKeepaliveSend:      runtime.GetTorrentPeerKeepAliveSendInterval(),
+		TrackerIntervalNormal:  runtime.GetTorrentTrackerIntervalNormal(),
+		TrackerIntervalLowPeer: runtime.GetTorrentTrackerIntervalLowPeer(),
+		TrackerNumWantNormal:   runtime.GetTorrentTrackerNumWantNormal(),
+		TrackerNumWantLowPeer:  runtime.GetTorrentTrackerNumWantLowPeer(),
+		LSDEnabled:             runtime.GetTorrentLSDEnabled(),
 	}, cfg.State)
 	if err != nil {
 		return err
