@@ -342,6 +342,10 @@ func TestUpdateStatus(t *testing.T) {
 	if err := AddToMasterList(entry); err != nil {
 		t.Fatalf("AddToMasterList failed: %v", err)
 	}
+	d := getDBHelper()
+	if _, err := d.Exec("INSERT INTO tasks (download_id, offset, length) VALUES (?, ?, ?)", entry.ID, 0, 100); err != nil {
+		t.Fatalf("failed to seed task row: %v", err)
+	}
 
 	// Update status to paused
 	if err := UpdateStatus(id, "paused"); err != nil {
@@ -669,6 +673,15 @@ func TestValidateIntegrity_MissingFile(t *testing.T) {
 	if dl != nil {
 		t.Error("Entry should have been removed after integrity check")
 	}
+
+	d := getDBHelper()
+	var taskCount int
+	if err := d.QueryRow("SELECT COUNT(*) FROM tasks WHERE download_id = ?", entry.ID).Scan(&taskCount); err != nil {
+		t.Fatalf("failed to count tasks: %v", err)
+	}
+	if taskCount != 0 {
+		t.Errorf("expected tasks to be removed, got %d", taskCount)
+	}
 }
 
 func TestValidateIntegrity_ValidFile(t *testing.T) {
@@ -808,6 +821,112 @@ func TestValidateIntegrity_CompletedIgnored(t *testing.T) {
 	dl, _ := GetDownload("integrity-completed")
 	if dl == nil {
 		t.Error("Completed entry should not have been affected")
+	}
+}
+
+func TestValidateIntegrity_QueuedWithoutPartialFilePreserved(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	defer CloseDB()
+
+	destPath := filepath.Join(tmpDir, "queued-never-started.bin")
+
+	if err := AddToMasterList(types.DownloadEntry{
+		ID:         "integrity-queued-fresh",
+		URL:        "https://example.com/queued-never-started.bin",
+		DestPath:   destPath,
+		Filename:   "queued-never-started.bin",
+		Status:     "queued",
+		TotalSize:  0,
+		Downloaded: 0,
+	}); err != nil {
+		t.Fatalf("AddToMasterList failed: %v", err)
+	}
+
+	removed, err := ValidateIntegrity()
+	if err != nil {
+		t.Fatalf("ValidateIntegrity failed: %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("ValidateIntegrity removed = %d, want 0", removed)
+	}
+
+	dl, err := GetDownload("integrity-queued-fresh")
+	if err != nil {
+		t.Fatalf("GetDownload failed: %v", err)
+	}
+	if dl == nil {
+		t.Fatal("queued entry should be preserved when no partial file exists yet")
+	}
+}
+
+func TestValidateIntegrity_DeletesOrphanSurgeFile(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	defer CloseDB()
+
+	// Seed one normal completed entry so tmpDir is a known download directory.
+	if err := AddToMasterList(types.DownloadEntry{
+		ID:          "integrity-known-dir",
+		URL:         "https://example.com/known.zip",
+		DestPath:    filepath.Join(tmpDir, "known.zip"),
+		Filename:    "known.zip",
+		Status:      "completed",
+		CompletedAt: time.Now().Unix(),
+	}); err != nil {
+		t.Fatalf("AddToMasterList failed: %v", err)
+	}
+
+	orphanPath := filepath.Join(tmpDir, "orphan.bin"+types.IncompleteSuffix)
+	if err := os.WriteFile(orphanPath, []byte("orphan"), 0o644); err != nil {
+		t.Fatalf("failed to create orphan .surge file: %v", err)
+	}
+
+	removed, err := ValidateIntegrity()
+	if err != nil {
+		t.Fatalf("ValidateIntegrity failed: %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("ValidateIntegrity removed = %d, want 0 (no paused/queued DB entries removed)", removed)
+	}
+
+	if _, err := os.Stat(orphanPath); !os.IsNotExist(err) {
+		t.Errorf("orphan .surge file should be removed, stat err: %v", err)
+	}
+}
+
+func TestValidateIntegrity_PreservesNonCompletedSurgeFile(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	defer CloseDB()
+
+	destPath := filepath.Join(tmpDir, "active.bin")
+	surgePath := destPath + types.IncompleteSuffix
+
+	if err := AddToMasterList(types.DownloadEntry{
+		ID:       "integrity-active",
+		URL:      "https://example.com/active.bin",
+		DestPath: destPath,
+		Filename: "active.bin",
+		Status:   "downloading",
+	}); err != nil {
+		t.Fatalf("AddToMasterList failed: %v", err)
+	}
+
+	if err := os.WriteFile(surgePath, []byte("partial"), 0o644); err != nil {
+		t.Fatalf("failed to create active .surge file: %v", err)
+	}
+
+	removed, err := ValidateIntegrity()
+	if err != nil {
+		t.Fatalf("ValidateIntegrity failed: %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("ValidateIntegrity removed = %d, want 0", removed)
+	}
+
+	if _, err := os.Stat(surgePath); err != nil {
+		t.Fatalf("active .surge file should be preserved, stat err: %v", err)
 	}
 }
 

@@ -445,7 +445,7 @@ func TestWorkerPool_Cancel_MarksDone(t *testing.T) {
 	}
 }
 
-func TestWorkerPool_Cancel_RemovesIncompleteFile(t *testing.T) {
+func TestWorkerPool_Cancel_DoesNotRemoveIncompleteFile(t *testing.T) {
 	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
@@ -476,8 +476,8 @@ func TestWorkerPool_Cancel_RemovesIncompleteFile(t *testing.T) {
 		t.Fatal("expected removal message")
 	}
 
-	if _, err := os.Stat(incompletePath); !os.IsNotExist(err) {
-		t.Fatalf("expected .surge file to be removed, stat err: %v", err)
+	if _, err := os.Stat(incompletePath); err != nil {
+		t.Fatalf("expected .surge file to remain for centralized delete cleanup, stat err: %v", err)
 	}
 }
 
@@ -871,5 +871,32 @@ func TestWorkerPool_PauseResume_Idempotency(t *testing.T) {
 		t.Error("Did not expect second resume message")
 	default:
 		// OK
+	}
+}
+
+func TestWorkerPool_GetStatus_IncludesDestPath(t *testing.T) {
+	ch := make(chan any, 10)
+	pool := NewWorkerPool(ch, 1)
+
+	destPath := "/tmp/status-dest.bin"
+	st := types.NewProgressState("status-id", 1024)
+	st.DestPath = destPath
+
+	pool.mu.Lock()
+	pool.downloads["status-id"] = &activeDownload{
+		config: types.DownloadConfig{
+			ID:    "status-id",
+			URL:   "https://example.com/file.bin",
+			State: st,
+		},
+	}
+	pool.mu.Unlock()
+
+	got := pool.GetStatus("status-id")
+	if got == nil {
+		t.Fatal("expected status, got nil")
+	}
+	if got.DestPath != destPath {
+		t.Fatalf("dest_path = %q, want %q", got.DestPath, destPath)
 	}
 }

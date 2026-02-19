@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"text/tabwriter"
 	"time"
@@ -26,21 +27,29 @@ var lsCmd = &cobra.Command{
 		jsonOutput, _ := cmd.Flags().GetBool("json")
 		watch, _ := cmd.Flags().GetBool("watch")
 
+		baseURL, token, err := resolveAPIConnection(false)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 		// If ID provided, show details for that download
 		if len(args) == 1 {
-			showDownloadDetails(args[0], jsonOutput)
+			showDownloadDetails(args[0], jsonOutput, baseURL, token)
 			return
 		}
+
+		strictRemote := resolveHostTarget() != ""
 
 		if watch {
 			for {
 				// Clear screen first for watch mode
 				fmt.Print("\033[H\033[2J")
-				printDownloads(jsonOutput)
+				printDownloads(jsonOutput, baseURL, token, strictRemote)
 				time.Sleep(1 * time.Second)
 			}
 		} else {
-			printDownloads(jsonOutput)
+			printDownloads(jsonOutput, baseURL, token, strictRemote)
 		}
 	},
 }
@@ -57,14 +66,18 @@ type downloadInfo struct {
 	Speed      float64 `json:"speed,omitempty"`
 }
 
-func printDownloads(jsonOutput bool) {
+func printDownloads(jsonOutput bool, baseURL string, token string, strictRemote bool) {
 	var downloads []downloadInfo
 
 	// Try to get from running server first
-	port := readActivePort()
-	if port > 0 {
-		serverDownloads, err := GetRemoteDownloads(port)
-		if err == nil {
+	if baseURL != "" {
+		serverDownloads, err := GetRemoteDownloads(baseURL, token)
+		if err != nil {
+			if strictRemote {
+				fmt.Fprintf(os.Stderr, "Error listing remote downloads: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
 			for _, s := range serverDownloads {
 				downloads = append(downloads, downloadInfo{
 					ID:         s.ID,
@@ -79,8 +92,8 @@ func printDownloads(jsonOutput bool) {
 		}
 	}
 
-	// If no server running or no active downloads, fall back to database
-	if len(downloads) == 0 {
+	// Fall back to database only when not explicitly targeting a remote host.
+	if len(downloads) == 0 && !(strictRemote && baseURL != "") {
 		dbDownloads, err := state.ListAllDownloads()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error listing downloads: %v\n", err)
@@ -152,7 +165,9 @@ func printDownloads(jsonOutput bool) {
 	_ = w.Flush()
 }
 
-func showDownloadDetails(partialID string, jsonOutput bool) {
+func showDownloadDetails(partialID string, jsonOutput bool, baseURL string, token string) {
+	strictRemote := resolveHostTarget() != ""
+
 	// Resolve partial ID
 	fullID, err := resolveDownloadID(partialID)
 	if err != nil {
@@ -161,10 +176,15 @@ func showDownloadDetails(partialID string, jsonOutput bool) {
 	}
 
 	// Try to get from running server first
-	port := readActivePort()
-	if port > 0 {
-		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/download?id=%s", port, fullID))
-		if err == nil {
+	if baseURL != "" {
+		path := fmt.Sprintf("/download?id=%s", url.QueryEscape(fullID))
+		resp, err := doAPIRequest(http.MethodGet, baseURL, token, path, nil)
+		if err != nil {
+			if strictRemote {
+				fmt.Fprintf(os.Stderr, "Error fetching remote download details: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
 			defer func() {
 				if err := resp.Body.Close(); err != nil {
 					utils.Debug("Error closing response body: %v", err)
@@ -172,10 +192,20 @@ func showDownloadDetails(partialID string, jsonOutput bool) {
 			}()
 			if resp.StatusCode == http.StatusOK {
 				var status types.DownloadStatus
-				if json.NewDecoder(resp.Body).Decode(&status) == nil {
+				if err := json.NewDecoder(resp.Body).Decode(&status); err == nil {
 					printDownloadDetail(status, jsonOutput)
 					return
+				} else if strictRemote {
+					fmt.Fprintf(os.Stderr, "Error decoding remote download details: %v\n", err)
+					os.Exit(1)
 				}
+			} else if strictRemote {
+				if resp.StatusCode == http.StatusNotFound {
+					fmt.Fprintf(os.Stderr, "Error: remote download not found: %s\n", partialID)
+				} else {
+					fmt.Fprintf(os.Stderr, "Error: remote server returned %s\n", resp.Status)
+				}
+				os.Exit(1)
 			}
 		}
 	}

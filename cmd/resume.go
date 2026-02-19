@@ -3,10 +3,10 @@ package cmd
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
@@ -25,55 +25,44 @@ var resumeCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		port := readActivePort()
+		baseURL, token, err := resolveAPIConnection(true)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 
 		if all {
-			if port > 0 {
-				fmt.Println("Resuming all downloads is not yet implemented for running server.")
-			} else {
-				if err := state.ResumeAllDownloads(); err != nil {
-					fmt.Fprintf(os.Stderr, "Error resuming downloads: %v\n", err)
-					os.Exit(1)
-				}
-				fmt.Println("All downloads resumed. Start Surge to begin downloading.")
-			}
+			fmt.Println("Resuming all downloads is not yet implemented for running server.")
 			return
 		}
 
 		id := args[0]
 
 		// Resolve partial ID to full ID
-		id, err := resolveDownloadID(id)
+		id, err = resolveDownloadID(id)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 
-		if port > 0 {
-			// Send to running server
-			resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/resume?id=%s", port, id), "application/json", nil)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error connecting to server: %v\n", err)
-				os.Exit(1)
-			}
-			defer func() {
-				if err := resp.Body.Close(); err != nil {
-					utils.Debug("Error closing response body: %v", err)
-				}
-			}()
-
-			if resp.StatusCode != http.StatusOK {
-				fmt.Fprintf(os.Stderr, "Error: server returned %s\n", resp.Status)
-				os.Exit(1)
-			}
-			fmt.Printf("Resumed download %s\n", id[:8])
-		} else {
-			if err := state.UpdateStatus(id, "queued"); err != nil {
-				fmt.Fprintf(os.Stderr, "Error resuming download: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("Resumed download %s (offline mode). Start Surge to begin downloading.\n", id[:8])
+		// Send to running server
+		path := fmt.Sprintf("/resume?id=%s", url.QueryEscape(id))
+		resp, err := doAPIRequest(http.MethodPost, baseURL, token, path, nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error connecting to server: %v\n", err)
+			os.Exit(1)
 		}
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				utils.Debug("Error closing response body: %v", err)
+			}
+		}()
+
+		if resp.StatusCode != http.StatusOK {
+			fmt.Fprintf(os.Stderr, "Error: server returned %s\n", resp.Status)
+			os.Exit(1)
+		}
+		fmt.Printf("Resumed download %s\n", id[:8])
 	},
 }
 

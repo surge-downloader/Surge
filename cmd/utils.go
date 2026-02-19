@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -55,8 +56,66 @@ func ParseURLArg(arg string) (string, []string) {
 	return source.ParseCommaArg(arg)
 }
 
-// sendToServer sends a download request to a running surge server
-func sendToServer(url string, mirrors []string, outPath string, port int) error {
+func resolveLocalToken() string {
+	if token := strings.TrimSpace(globalToken); token != "" {
+		return token
+	}
+	if token := strings.TrimSpace(os.Getenv("SURGE_TOKEN")); token != "" {
+		return token
+	}
+	return ensureAuthToken()
+}
+
+func resolveHostTarget() string {
+	if host := strings.TrimSpace(globalHost); host != "" {
+		return host
+	}
+	return strings.TrimSpace(os.Getenv("SURGE_HOST"))
+}
+
+func resolveAPIConnection(requireServer bool) (string, string, error) {
+	target := resolveHostTarget()
+	if target == "" {
+		port := readActivePort()
+		if port > 0 {
+			return fmt.Sprintf("http://127.0.0.1:%d", port), resolveLocalToken(), nil
+		}
+		if !requireServer {
+			return "", "", nil
+		}
+		return "", "", errors.New("surge is not running locally. start it or pass --host (or set SURGE_HOST)")
+	}
+
+	baseURL, err := resolveConnectBaseURL(target, false)
+	if err != nil {
+		return "", "", err
+	}
+	token, err := resolveTokenForTarget(target)
+	if err != nil {
+		return "", "", err
+	}
+	return baseURL, token, nil
+}
+
+func doAPIRequest(method string, baseURL string, token string, path string, body io.Reader) (*http.Response, error) {
+	reqURL := fmt.Sprintf("%s%s", strings.TrimRight(baseURL, "/"), path)
+	req, err := http.NewRequest(method, reqURL, body)
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.TrimSpace(token) != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	client := &http.Client{}
+	return client.Do(req)
+}
+
+func sendToServer(url string, mirrors []string, outPath string, baseURL string, token string) error {
 	reqBody := DownloadRequest{
 		URL:     url,
 		Mirrors: mirrors,
@@ -67,8 +126,7 @@ func sendToServer(url string, mirrors []string, outPath string, port int) error 
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	serverURL := fmt.Sprintf("http://127.0.0.1:%d/download", port)
-	resp, err := http.Post(serverURL, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := doAPIRequest(http.MethodPost, baseURL, token, "/download", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}
@@ -83,24 +141,12 @@ func sendToServer(url string, mirrors []string, outPath string, port int) error 
 		return fmt.Errorf("server error: %s - %s", resp.Status, string(body))
 	}
 
-	// Optional: Print response info (ID etc) if needed, but usually caller handles success msg
-	// Or we can parse ID here and return it?
-	// The caller (add.go/root.go) might want to know ID.
-	// For now, keep it simple as error/nil.
-
-	var respData map[string]interface{}
-	_ = json.NewDecoder(resp.Body).Decode(&respData) // Ignore error? safely
-	if id, ok := respData["id"].(string); ok {
-		// Could log debug
-		_ = id
-	}
-
 	return nil
 }
 
 // GetRemoteDownloads fetches all downloads from the running server
-func GetRemoteDownloads(port int) ([]types.DownloadStatus, error) {
-	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/list", port))
+func GetRemoteDownloads(baseURL string, token string) ([]types.DownloadStatus, error) {
+	resp, err := doAPIRequest(http.MethodGet, baseURL, token, "/list", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -130,17 +176,27 @@ func resolveDownloadID(partialID string) (string, error) {
 		return partialID, nil // Already a full UUID
 	}
 
+	strictRemote := resolveHostTarget() != ""
 	var candidates []string
 
 	// 1. Try to get candidates from running server
-	port := readActivePort()
-	if port > 0 {
-		remoteDownloads, err := GetRemoteDownloads(port)
-		if err == nil {
-			for _, d := range remoteDownloads {
-				candidates = append(candidates, d.ID)
+	baseURL, token, err := resolveAPIConnection(false)
+	if err != nil {
+		return "", err
+	}
+	if baseURL != "" {
+		remoteDownloads, err := GetRemoteDownloads(baseURL, token)
+		if err != nil {
+			if strictRemote {
+				return "", fmt.Errorf("failed to list remote downloads: %w", err)
 			}
+		} else {
+			appendCandidateIDs(&candidates, remoteDownloads)
 		}
+	}
+
+	if strictRemote {
+		return resolveIDFromCandidates(partialID, candidates)
 	}
 
 	// 2. Get all downloads from database
@@ -149,11 +205,21 @@ func resolveDownloadID(partialID string) (string, error) {
 		for _, d := range downloads {
 			candidates = append(candidates, d.ID)
 		}
-	} else if port == 0 {
-		// Only return error if we couldn't check server AND db failed
+	} else if len(candidates) == 0 {
+		// Only short-circuit when both remote and DB are unavailable.
 		return partialID, nil
 	}
 
+	return resolveIDFromCandidates(partialID, candidates)
+}
+
+func appendCandidateIDs(candidates *[]string, downloads []types.DownloadStatus) {
+	for _, d := range downloads {
+		*candidates = append(*candidates, d.ID)
+	}
+}
+
+func resolveIDFromCandidates(partialID string, candidates []string) (string, error) {
 	// Find matches among all candidates
 	var matches []string
 	seen := make(map[string]bool)

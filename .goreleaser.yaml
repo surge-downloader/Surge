@@ -2,7 +2,6 @@ version: 2
 
 builds:
   - env:
-    # Disable cgo to ensure static linking
       - CGO_ENABLED=0
     goos:
       - linux
@@ -11,28 +10,30 @@ builds:
     binary: surge
     main: .
     ldflags:
-      # -s and -w strip debug information to reduce binary size
       - -s -w 
       - -X github.com/surge-downloader/surge/cmd.Version={{.Version}}
       - -X github.com/surge-downloader/surge/cmd.BuildTime={{.Date}}
 
+release:
+  footer: |
+    ---
+    **Enjoying Surge?** Consider supporting the project to keep it blazing fast!
+    - [Buy Me a Coffee](https://buymeacoffee.com/surge.downloader)
+
 changelog:
   sort: asc
+
   filters:
     exclude:
       - "^docs:"
       - "^test:"
 
 archives:
-
-  # Windows zip, rest .tar.gz
   - formats: [ tar.gz ]
     format_overrides:
       - goos: windows
         formats: [ zip ]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    
-    # Add LICENSE and README.md to archive
     files:
       - LICENSE
       - README.md
@@ -44,11 +45,11 @@ homebrew_casks:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/surge-downloader/surge"
-    description: "Surge is a blazing fast, open-source terminal (TUI) download manager built in Go."
+    
+    description: "Blazing fast TUI download manager built in Go for power users"
     license: "MIT"
     hooks:
       post:
-        # hack for macos to remove quarantine
         install: |
           if OS.mac?
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/surge"]

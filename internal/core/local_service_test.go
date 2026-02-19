@@ -85,6 +85,64 @@ func TestLocalDownloadService_Delete_DBOnlyBroadcastsRemoved(t *testing.T) {
 	}
 }
 
+func TestLocalDownloadService_Delete_ActiveWithoutDB_RemovesPartialFile(t *testing.T) {
+	tempDir := t.TempDir()
+	state.CloseDB()
+	state.Configure(filepath.Join(tempDir, "surge.db"))
+	defer state.CloseDB()
+
+	ch := make(chan interface{}, 100)
+	pool := download.NewWorkerPool(ch, 1)
+	svc := NewLocalDownloadServiceWithInput(pool, ch)
+	defer func() { _ = svc.Shutdown() }()
+
+	server := testutil.NewStreamingMockServerT(t,
+		200*1024*1024,
+		testutil.WithRangeSupport(true),
+		testutil.WithLatency(8*time.Millisecond),
+	)
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	const filename = "active-delete.bin"
+	id, err := svc.Add(server.URL(), outputDir, filename, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to add download: %v", err)
+	}
+
+	destPath := filepath.Join(outputDir, filename)
+	incompletePath := destPath + types.IncompleteSuffix
+
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(incompletePath); err == nil {
+			break
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+	if _, err := os.Stat(incompletePath); err != nil {
+		t.Fatalf("expected partial file to exist before delete, stat err: %v", err)
+	}
+
+	// Simulate delete-before-persist path: no DB entry available.
+	_ = state.RemoveFromMasterList(id)
+
+	if err := svc.Delete(id); err != nil {
+		t.Fatalf("delete failed: %v", err)
+	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(incompletePath); os.IsNotExist(err) {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if _, err := os.Stat(incompletePath); !os.IsNotExist(err) {
+		t.Fatalf("expected partial file to be removed, stat err: %v", err)
+	}
+}
+
 func TestLocalDownloadService_Shutdown_Idempotent(t *testing.T) {
 	ch := make(chan interface{}, 1)
 	svc := NewLocalDownloadServiceWithInput(nil, ch)
@@ -263,6 +321,72 @@ func TestLocalDownloadService_Shutdown_PersistsPausedState(t *testing.T) {
 	}
 	if len(saved.Tasks) == 0 {
 		t.Fatal("expected saved state to include remaining tasks")
+	}
+}
+
+func TestLocalDownloadService_Shutdown_PersistsQueuedState(t *testing.T) {
+	tempDir := t.TempDir()
+	state.CloseDB()
+	state.Configure(filepath.Join(tempDir, "surge.db"))
+	defer state.CloseDB()
+
+	ch := make(chan interface{}, 200)
+	pool := download.NewWorkerPool(ch, 1)
+	svc := NewLocalDownloadServiceWithInput(pool, ch)
+	defer func() { _ = svc.Shutdown() }()
+
+	server := testutil.NewStreamingMockServerT(t,
+		500*1024*1024,
+		testutil.WithRangeSupport(true),
+		testutil.WithLatency(15*time.Millisecond),
+	)
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	firstID, err := svc.Add(server.URL()+"?id=1", outputDir, "first.bin", nil, nil)
+	if err != nil {
+		t.Fatalf("failed to add first download: %v", err)
+	}
+	secondID, err := svc.Add(server.URL()+"?id=2", outputDir, "second.bin", nil, nil)
+	if err != nil {
+		t.Fatalf("failed to add second download: %v", err)
+	}
+
+	// Ensure we shut down while one is active and the second is still queued.
+	deadline := time.Now().Add(5 * time.Second)
+	seenFirstActive := false
+	seenSecondQueued := false
+	for time.Now().Before(deadline) {
+		firstStatus, _ := svc.GetStatus(firstID)
+		secondStatus, _ := svc.GetStatus(secondID)
+		if firstStatus != nil && (firstStatus.Status == "downloading" || firstStatus.Status == "pausing") {
+			seenFirstActive = true
+		}
+		if secondStatus != nil && secondStatus.Status == "queued" {
+			seenSecondQueued = true
+		}
+		if seenFirstActive && seenSecondQueued {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if !seenSecondQueued {
+		t.Fatal("expected second download to be queued before shutdown")
+	}
+
+	if err := svc.Shutdown(); err != nil {
+		t.Fatalf("shutdown failed: %v", err)
+	}
+
+	second, err := state.GetDownload(secondID)
+	if err != nil {
+		t.Fatalf("failed to fetch second download: %v", err)
+	}
+	if second == nil {
+		t.Fatal("expected queued download to be persisted on shutdown")
+	}
+	if second.Status != "queued" && second.Status != "paused" && second.Status != "completed" {
+		t.Fatalf("status = %q, want queued/paused/completed", second.Status)
 	}
 }
 

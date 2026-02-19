@@ -5,6 +5,7 @@ const DEFAULT_PORT = 1700;
 const MAX_PORT_SCAN = 100;
 const INTERCEPT_ENABLED_KEY = "interceptEnabled";
 const AUTH_TOKEN_KEY = "authToken";
+const AUTH_VERIFIED_KEY = "authVerified";
 
 // === State ===
 let cachedPort = null;
@@ -89,13 +90,27 @@ async function loadAuthToken() {
     return cachedAuthToken;
   }
   const result = await chrome.storage.local.get(AUTH_TOKEN_KEY);
-  cachedAuthToken = result[AUTH_TOKEN_KEY] || "";
+  cachedAuthToken = normalizeToken(result[AUTH_TOKEN_KEY]);
   return cachedAuthToken;
 }
 
+function normalizeToken(token) {
+  if (typeof token !== "string") return "";
+  return token.replace(/\s+/g, "");
+}
+
 async function setAuthToken(token) {
-  cachedAuthToken = (token || "").replace(/\s+/g, "");
-  await chrome.storage.local.set({ [AUTH_TOKEN_KEY]: cachedAuthToken });
+  const normalized = normalizeToken(token);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await chrome.storage.local.set({ [AUTH_TOKEN_KEY]: normalized });
+    const result = await chrome.storage.local.get(AUTH_TOKEN_KEY);
+    if (normalizeToken(result[AUTH_TOKEN_KEY]) === normalized) {
+      cachedAuthToken = normalized;
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+  }
+  return false;
 }
 
 async function authHeaders() {
@@ -103,6 +118,14 @@ async function authHeaders() {
   if (!token) return {};
   return { Authorization: `Bearer ${token}` };
 }
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes[AUTH_TOKEN_KEY]) {
+    return;
+  }
+  const nextToken = changes[AUTH_TOKEN_KEY].newValue;
+  cachedAuthToken = normalizeToken(nextToken);
+});
 
 // === Port Discovery ===
 
@@ -282,10 +305,6 @@ async function sendToSurge(url, filename, absolutePath) {
       body.headers = headers;
       console.log("[Surge] Forwarding captured headers to Surge");
     }
-
-    // Always skip TUI approval for extension downloads (vetted by user action)
-    // This also bypasses duplicate warnings since extension handles those
-    body.skip_approval = true;
 
     const auth = await authHeaders();
     const response = await fetch(`http://127.0.0.1:${port}/download`, {
@@ -479,9 +498,6 @@ function extractPathInfo(downloadItem) {
 }
 
 // === Download Interception ===
-// Two-phase approach to properly capture user-selected path from Save As dialog:
-// 1. onCreated: Store the download as "pending" if filename not yet determined
-// 2. onChanged: Wait for filename to be determined (after Save As dialog), then intercept
 
 const processedIds = new Set();
 
@@ -517,8 +533,6 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     return;
   }
 
-  // Intercept immediately - we don't wait for Save As / filenames anymore
-  // as user requested to force default directory for everything.
   processedIds.add(downloadItem.id);
   setTimeout(() => processedIds.delete(downloadItem.id), 120000);
 
@@ -545,7 +559,7 @@ async function handleDownloadIntercept(downloadItem) {
     pendingDuplicates.set(pendingId, {
       downloadItem,
       filename,
-      directory,
+      directory: "",
       url: downloadItem.url,
       timestamp: Date.now(),
     });
@@ -593,7 +607,6 @@ async function handleDownloadIntercept(downloadItem) {
     return; // Let browser continue - download is already in progress
   }
 
-  // Extract path info - filename now contains the full path from Save As dialog
   const { filename } = extractPathInfo(downloadItem);
 
   console.log(
@@ -607,7 +620,6 @@ async function handleDownloadIntercept(downloadItem) {
     await chrome.downloads.cancel(downloadItem.id);
     await chrome.downloads.erase({ id: downloadItem.id });
 
-    // Force default directory by passing empty string
     const result = await sendToSurge(downloadItem.url, filename, "");
 
     if (result.success) {
@@ -685,27 +697,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         case "getAuthToken": {
           const token = await loadAuthToken();
-          const result = await chrome.storage.local.get("authVerified");
-          sendResponse({ token, verified: result.authVerified === true });
+          const result = await chrome.storage.local.get(AUTH_VERIFIED_KEY);
+          sendResponse({ token, verified: result[AUTH_VERIFIED_KEY] === true });
           break;
         }
         case "setAuthToken": {
-          await setAuthToken(message.token || "");
+          const persisted = await setAuthToken(message.token || "");
+          if (!persisted) {
+            sendResponse({ success: false, error: "Failed to persist auth token" });
+            break;
+          }
           // Reset verification on token change
-          await chrome.storage.local.set({ authVerified: false });
+          await chrome.storage.local.set({ [AUTH_VERIFIED_KEY]: false });
           sendResponse({ success: true });
           break;
         }
 
         case "getAuthVerified": {
-          const result = await chrome.storage.local.get("authVerified");
-          sendResponse({ verified: result.authVerified === true });
+          const result = await chrome.storage.local.get(AUTH_VERIFIED_KEY);
+          sendResponse({ verified: result[AUTH_VERIFIED_KEY] === true });
           break;
         }
 
         case "setAuthVerified": {
           await chrome.storage.local.set({
-            authVerified: message.verified === true,
+            [AUTH_VERIFIED_KEY]: message.verified === true,
           });
           sendResponse({ success: true });
           break;
@@ -723,7 +739,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ success: true });
           break;
         }
-
         case "getDownloads": {
           const { list, authError } = await fetchDownloadList();
           sendResponse({
@@ -879,8 +894,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function initialize() {
   console.log("[Surge] Extension initializing...");
+  await loadAuthToken();
   await checkSurgeHealth();
   console.log("[Surge] Extension loaded");
 }
+
+chrome.runtime.onInstalled.addListener(() => {
+  initialize().catch((error) =>
+    console.error("[Surge] Initialization on install failed:", error),
+  );
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  initialize().catch((error) =>
+    console.error("[Surge] Initialization on startup failed:", error),
+  );
+});
 
 initialize();

@@ -212,9 +212,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		for _, d := range m.downloads {
 			if d.ID == msg.id {
-				d.pendingResume = false
 				d.paused = false
 				d.pausing = false
+				d.resuming = true
 				break
 			}
 		}
@@ -250,6 +250,13 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingHeaders = msg.Headers
 			m.pendingPath = path
 			m.pendingFilename = msg.Filename
+			m.inputs[2].SetValue(path)
+			m.inputs[3].SetValue(msg.Filename)
+			m.focusedInput = 2
+			for i := range m.inputs {
+				m.inputs[i].Blur()
+			}
+			m.inputs[m.focusedInput].Focus()
 			m.state = ExtensionConfirmationState
 			return m, nil
 		}
@@ -267,7 +274,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d.StartTime = time.Now()
 				d.paused = false
 				d.pausing = false
-				d.pendingResume = false
+				// Keep resuming=true for resumed downloads until real transfer starts.
 				// Update progress bar
 				if d.Total > 0 {
 					d.progress.SetPercent(0)
@@ -330,6 +337,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d.Total = msg.Total
 				d.Downloaded = d.Total
 				d.Elapsed = msg.Elapsed
+				d.Speed = msg.AvgSpeed
 				d.done = true
 				cmds = append(cmds, d.progress.SetPercent(1.0))
 
@@ -361,7 +369,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if d.ID == msg.DownloadID {
 				d.paused = true
 				d.pausing = false
-				d.pendingResume = false
+				d.resuming = false
 				d.Downloaded = msg.Downloaded
 				d.Speed = 0
 				m.addLogEntry(LogStylePaused.Render("⏸ Paused: " + d.Filename))
@@ -376,7 +384,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if d.ID == msg.DownloadID {
 				d.paused = false
 				d.pausing = false
-				d.pendingResume = false
+				d.resuming = true
 				m.addLogEntry(LogStyleStarted.Render("▶ Resumed: " + d.Filename))
 				break
 			}
@@ -407,6 +415,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.addLogEntry(LogStyleError.Render("✖ Removed: " + msg.Filename))
 			}
 			m.UpdateListItems()
+		}
+		return m, tea.Batch(cmds...)
+
+	case events.SystemLogMsg:
+		if msg.Message != "" {
+			m.addLogEntry(LogStyleStarted.Render("ℹ " + msg.Message))
 		}
 		return m, tea.Batch(cmds...)
 
@@ -457,6 +471,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.Settings.General.DefaultDownloadDir = path
 					m.SettingsFileBrowsing = false
 					m.state = SettingsState
+					return m, nil
+				}
+				if m.ExtensionFileBrowsing {
+					m.inputs[2].SetValue(path)
+					m.ExtensionFileBrowsing = false
+					m.state = ExtensionConfirmationState
 					return m, nil
 				}
 				m.inputs[2].SetValue(path)
@@ -685,15 +705,18 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if d.paused {
 							// Resume
 							d.paused = false
+							d.resuming = true
 							if err := m.Service.Resume(d.ID); err != nil {
 								m.addLogEntry(LogStyleError.Render("✖ Resume failed: " + err.Error()))
 								d.paused = true // Revert
+								d.resuming = false
 							}
 						} else {
 							// Pause
 							if err := m.Service.Pause(d.ID); err != nil {
 								m.addLogEntry(LogStyleError.Render("✖ Pause failed: " + err.Error()))
 							} else {
+								d.resuming = false
 								d.pausing = true
 							}
 						}
@@ -912,6 +935,11 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = SettingsState
 					return m, nil
 				}
+				if m.ExtensionFileBrowsing {
+					m.ExtensionFileBrowsing = false
+					m.state = ExtensionConfirmationState
+					return m, nil
+				}
 				m.state = InputState
 				return m, nil
 			}
@@ -935,6 +963,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = SettingsState
 					return m, nil
 				}
+				if m.ExtensionFileBrowsing {
+					m.inputs[2].SetValue(m.filepicker.CurrentDirectory)
+					m.ExtensionFileBrowsing = false
+					m.state = ExtensionConfirmationState
+					return m, nil
+				}
 				m.inputs[2].SetValue(m.filepicker.CurrentDirectory)
 				m.state = InputState
 				return m, nil
@@ -950,6 +984,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.Settings.General.DefaultDownloadDir = path
 					m.SettingsFileBrowsing = false
 					m.state = SettingsState
+					return m, nil
+				}
+				if m.ExtensionFileBrowsing {
+					m.inputs[2].SetValue(path)
+					m.ExtensionFileBrowsing = false
+					m.state = ExtensionConfirmationState
 					return m, nil
 				}
 				// Set the path input value and return to input state
@@ -1015,7 +1055,47 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case ExtensionConfirmationState:
-			if key.Matches(msg, m.keys.Extension.Yes) {
+			if key.Matches(msg, m.keys.Extension.Browse) && m.focusedInput == 2 {
+				m.ExtensionFileBrowsing = true
+				browseDir := strings.TrimSpace(m.inputs[2].Value())
+				if browseDir == "" {
+					browseDir = m.PWD
+				}
+				m.state = FilePickerState
+				m.filepicker = newFilepicker(browseDir)
+				return m, m.filepicker.Init()
+			}
+			if key.Matches(msg, m.keys.Extension.Next) {
+				if m.focusedInput == 2 {
+					m.focusedInput = 3
+				} else {
+					m.focusedInput = 2
+				}
+				for i := range m.inputs {
+					m.inputs[i].Blur()
+				}
+				m.inputs[m.focusedInput].Focus()
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.Extension.Prev) {
+				if m.focusedInput == 3 {
+					m.focusedInput = 2
+				} else {
+					m.focusedInput = 3
+				}
+				for i := range m.inputs {
+					m.inputs[i].Blur()
+				}
+				m.inputs[m.focusedInput].Focus()
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.Extension.Confirm) {
+				m.pendingPath = strings.TrimSpace(m.inputs[2].Value())
+				m.pendingFilename = strings.TrimSpace(m.inputs[3].Value())
+				if m.pendingPath == "" {
+					m.pendingPath = "."
+				}
+
 				// Confirmed - proceed to add (checking for duplicates first)
 				if d := m.checkForDuplicate(m.pendingURL); d != nil {
 					utils.Debug("Duplicate download detected after confirmation: %s", m.pendingURL)
@@ -1028,12 +1108,19 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = DashboardState
 				return m.startDownload(m.pendingURL, nil, m.pendingHeaders, m.pendingPath, m.pendingFilename, "")
 			}
-			if key.Matches(msg, m.keys.Extension.No) {
+			if key.Matches(msg, m.keys.Extension.Cancel) {
 				// Cancelled
+				m.ExtensionFileBrowsing = false
+				for i := range m.inputs {
+					m.inputs[i].Blur()
+				}
 				m.state = DashboardState
 				return m, nil
 			}
-			return m, nil
+
+			var cmd tea.Cmd
+			m.inputs[m.focusedInput], cmd = m.inputs[m.focusedInput].Update(msg)
+			return m, cmd
 
 		case BatchFilePickerState:
 			if key.Matches(msg, m.keys.FilePicker.Cancel) {

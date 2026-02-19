@@ -372,9 +372,6 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 	queue := NewTaskQueue()
 	queue.PushMultiple(tasks)
 
-	// Start time for stats
-	startTime := time.Now()
-
 	// Start balancer goroutine for dynamic chunk splitting
 	balancerCtx, cancelBalancer := context.WithCancel(downloadCtx)
 	defer cancelBalancer()
@@ -490,7 +487,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			err := d.worker(downloadCtx, workerID, workerMirrors, outFile, queue, fileSize, startTime, client)
+			err := d.worker(downloadCtx, workerID, workerMirrors, outFile, queue, fileSize, client)
 			if err != nil && err != context.Canceled {
 				workerErrors <- err
 			}
@@ -536,21 +533,14 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl string, cand
 		computedDownloaded := fileSize - remainingBytes
 
 		// Calculate total elapsed time
-		var totalElapsed time.Duration
+		totalElapsed := d.State.FinalizePauseSession(computedDownloaded)
 		var chunkBitmap []byte
 		var actualChunkSize int64
 
-		if d.State != nil {
-			totalElapsed = d.State.GetSavedElapsed() + time.Since(startTime)
-			// Get persisted bitmap data
-			bitmap, _, _, chunkSize, _ := d.State.GetBitmap()
-			chunkBitmap = bitmap
-			actualChunkSize = chunkSize
-			// Keep in-memory state aligned with the persisted snapshot.
-			d.State.FinalizePause(computedDownloaded, totalElapsed)
-		} else {
-			totalElapsed = time.Since(startTime)
-		}
+		// Get persisted bitmap data
+		bitmap, _, _, chunkSize, _ := d.State.GetBitmap()
+		chunkBitmap = bitmap
+		actualChunkSize = chunkSize
 
 		// Save state for resume (use computed value for consistency)
 		s := &types.DownloadState{

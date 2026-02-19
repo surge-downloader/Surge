@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -674,6 +675,36 @@ func computeFileHash(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+func removeIncompleteFilePath(surgePath string) error {
+	if surgePath == "" {
+		return nil
+	}
+	if err := os.Remove(surgePath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// RemoveIncompleteFile removes the partial .surge file for a destination path.
+func RemoveIncompleteFile(destPath string) error {
+	if destPath == "" {
+		return nil
+	}
+	return removeIncompleteFilePath(destPath + types.IncompleteSuffix)
+}
+
+func removeDownloadAndTasks(id string) error {
+	return withTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec("DELETE FROM tasks WHERE download_id = ?", id); err != nil {
+			return fmt.Errorf("failed to delete tasks: %w", err)
+		}
+		if _, err := tx.Exec("DELETE FROM downloads WHERE id = ?", id); err != nil {
+			return fmt.Errorf("failed to delete download: %w", err)
+		}
+		return nil
+	})
+}
+
 // ValidateIntegrity checks that paused .surge files still exist and haven't been tampered with.
 // Removes orphaned or corrupted entries from the database.
 // Returns the number of entries removed.
@@ -685,7 +716,7 @@ func ValidateIntegrity() (int, error) {
 
 	// Load all paused/queued downloads
 	rows, err := db.Query(`
-		SELECT id, dest_path, file_hash
+		SELECT id, dest_path, file_hash, status, downloaded
 		FROM downloads
 		WHERE status IN ('paused', 'queued')
 	`)
@@ -695,16 +726,18 @@ func ValidateIntegrity() (int, error) {
 	defer func() { _ = rows.Close() }()
 
 	type entry struct {
-		id       string
-		destPath string
-		fileHash string
+		id         string
+		destPath   string
+		fileHash   string
+		status     string
+		downloaded int64
 	}
 
 	var entries []entry
 	for rows.Next() {
 		var e entry
 		var fh sql.NullString
-		if err := rows.Scan(&e.id, &e.destPath, &fh); err != nil {
+		if err := rows.Scan(&e.id, &e.destPath, &fh, &e.status, &e.downloaded); err != nil {
 			return 0, err
 		}
 		if fh.Valid {
@@ -712,38 +745,123 @@ func ValidateIntegrity() (int, error) {
 		}
 		entries = append(entries, e)
 	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("failed to iterate paused downloads: %w", err)
+	}
 
 	removed := 0
+	expectedSurgePaths := make(map[string]struct{}, len(entries))
+	candidateDirs := make(map[string]struct{}, len(entries))
+
 	for _, e := range entries {
+		if e.destPath == "" {
+			continue
+		}
+		// Fresh queued entries may not have a partial file yet.
+		if e.status == "queued" && e.downloaded <= 0 {
+			candidateDirs[filepath.Dir(e.destPath)] = struct{}{}
+			continue
+		}
+		expectedSurgePaths[e.destPath+types.IncompleteSuffix] = struct{}{}
+		candidateDirs[filepath.Dir(e.destPath)] = struct{}{}
+	}
+
+	// Also include directories of all known downloads so we can clean orphan .surge
+	// files that no longer have corresponding DB entries.
+	// Keep .surge files for any non-completed entry (e.g. downloading after crash).
+	allRows, err := db.Query(`
+		SELECT dest_path, status
+		FROM downloads
+		WHERE dest_path IS NOT NULL AND dest_path != ''
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query known download paths: %w", err)
+	}
+	for allRows.Next() {
+		var dest string
+		var status string
+		if err := allRows.Scan(&dest, &status); err != nil {
+			_ = allRows.Close()
+			return 0, fmt.Errorf("failed to scan download path: %w", err)
+		}
+		candidateDirs[filepath.Dir(dest)] = struct{}{}
+		if status != "completed" {
+			expectedSurgePaths[dest+types.IncompleteSuffix] = struct{}{}
+		}
+	}
+	if err := allRows.Err(); err != nil {
+		_ = allRows.Close()
+		return 0, fmt.Errorf("failed to iterate download paths: %w", err)
+	}
+	_ = allRows.Close()
+
+	for _, e := range entries {
+		if e.status == "queued" && e.downloaded <= 0 {
+			continue
+		}
 		surgePath := e.destPath + types.IncompleteSuffix
 
 		// Check if .surge file exists
-		if _, err := os.Stat(surgePath); os.IsNotExist(err) {
+		_, statErr := os.Stat(surgePath)
+		if os.IsNotExist(statErr) {
 			// File missing — remove orphaned DB entry
 			utils.Debug("Integrity: .surge file missing for %s, removing entry %s", e.destPath, e.id)
-			_ = RemoveFromMasterList(e.id)
-			// Also clean up tasks
-			_, _ = db.Exec("DELETE FROM tasks WHERE download_id = ?", e.id)
+			if err := removeDownloadAndTasks(e.id); err != nil {
+				return removed, fmt.Errorf("failed to remove orphaned entry %s: %w", e.id, err)
+			}
 			removed++
 			continue
+		}
+		if statErr != nil {
+			return removed, fmt.Errorf("failed to stat %s: %w", surgePath, statErr)
 		}
 
 		// If we have a stored hash, verify it
 		if e.fileHash != "" {
 			currentHash, err := computeFileHash(surgePath)
 			if err != nil {
-				utils.Debug("Integrity: failed to hash %s: %v", surgePath, err)
-				continue // Don't remove on hash computation failure
+				return removed, fmt.Errorf("failed to hash %s: %w", surgePath, err)
 			}
 
 			if currentHash != e.fileHash {
 				// File has been tampered with — remove entry and corrupted file
 				utils.Debug("Integrity: hash mismatch for %s (expected %s, got %s), removing", surgePath, e.fileHash, currentHash)
-				_ = os.Remove(surgePath)
-				_ = RemoveFromMasterList(e.id)
-				_, _ = db.Exec("DELETE FROM tasks WHERE download_id = ?", e.id)
+				if err := removeIncompleteFilePath(surgePath); err != nil {
+					return removed, fmt.Errorf("failed to remove tampered file %s: %w", surgePath, err)
+				}
+				if err := removeDownloadAndTasks(e.id); err != nil {
+					return removed, fmt.Errorf("failed to remove tampered entry %s: %w", e.id, err)
+				}
 				removed++
 			}
+		}
+	}
+
+	// Remove orphan .surge files that no longer have matching paused/queued entries.
+	for dir := range candidateDirs {
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return removed, fmt.Errorf("failed to read directory %s: %w", dir, err)
+		}
+		for _, f := range files {
+			if f.IsDir() {
+				continue
+			}
+			name := f.Name()
+			if !strings.HasSuffix(name, types.IncompleteSuffix) {
+				continue
+			}
+			surgePath := filepath.Join(dir, name)
+			if _, ok := expectedSurgePaths[surgePath]; ok {
+				continue
+			}
+			if err := removeIncompleteFilePath(surgePath); err != nil {
+				return removed, fmt.Errorf("failed to remove orphan file %s: %w", surgePath, err)
+			}
+			utils.Debug("Integrity: removed orphan .surge file %s", surgePath)
 		}
 	}
 

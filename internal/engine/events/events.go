@@ -128,6 +128,11 @@ type DownloadRemovedMsg struct {
 	Filename   string
 }
 
+// SystemLogMsg carries informational system-level log messages for clients/UI.
+type SystemLogMsg struct {
+	Message string
+}
+
 // BatchProgressMsg represents a batch of progress updates to reduce TUI render calls
 type BatchProgressMsg []ProgressMsg
 

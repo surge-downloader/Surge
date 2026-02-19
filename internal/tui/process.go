@@ -13,6 +13,7 @@ func (m *RootModel) processProgressMsg(msg events.ProgressMsg) {
 				break
 			}
 
+			prevDownloaded := d.Downloaded
 			d.Downloaded = msg.Downloaded
 			d.Total = msg.Total
 			d.Speed = msg.Speed
@@ -24,6 +25,11 @@ func (m *RootModel) processProgressMsg(msg events.ProgressMsg) {
 			d.PeerDialSuccess = msg.PeerDialSuccess
 			d.PeerDialFailures = msg.PeerDialFailures
 			d.PeerInbound = msg.PeerInbound
+
+			// Keep "Resuming..." visible until we observe actual transfer.
+			if d.resuming && (d.Speed > 0 || d.Downloaded > prevDownloaded) {
+				d.resuming = false
+			}
 
 			// Update Chunk State if provided
 			if msg.BitmapWidth > 0 && len(msg.ChunkBitmap) > 0 {

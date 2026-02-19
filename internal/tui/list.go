@@ -31,6 +31,8 @@ func (i DownloadItem) Description() string {
 	if d.pausing {
 		// Custom "Pausing..." style using existing colors
 		styledStatus = lipgloss.NewStyle().Foreground(colors.StatePaused).Render("⏸ Pausing...")
+	} else if d.resuming {
+		styledStatus = lipgloss.NewStyle().Foreground(colors.StateDownloading).Render("▶ Resuming...")
 	} else {
 		styledStatus = components.DetermineStatus(d.done, d.paused, d.err != nil, isActiveDownload(d)).Render()
 	}

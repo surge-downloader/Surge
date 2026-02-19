@@ -211,3 +211,46 @@ func TestProgressState_GetProgress_PausedFreezesElapsed(t *testing.T) {
 		t.Errorf("TotalElapsed = %v, want ~5s while paused", totalElapsed)
 	}
 }
+
+func TestProgressState_FinalizeSession_AccumulatesElapsed(t *testing.T) {
+	ps := NewProgressState("finalize-session", 100)
+	ps.VerifiedProgress.Store(80)
+	ps.StartTime = time.Now().Add(-2 * time.Second)
+
+	sessionElapsed, totalElapsed := ps.FinalizeSession(80)
+
+	if sessionElapsed < 1500*time.Millisecond || sessionElapsed > 3*time.Second {
+		t.Fatalf("sessionElapsed = %v, want around 2s", sessionElapsed)
+	}
+	if totalElapsed < 1500*time.Millisecond || totalElapsed > 3*time.Second {
+		t.Fatalf("totalElapsed = %v, want around 2s", totalElapsed)
+	}
+	if got := ps.GetSavedElapsed(); got < 1500*time.Millisecond || got > 3*time.Second {
+		t.Fatalf("GetSavedElapsed = %v, want around 2s", got)
+	}
+	if ps.SessionStartBytes != 80 {
+		t.Fatalf("SessionStartBytes = %d, want 80", ps.SessionStartBytes)
+	}
+	if ps.VerifiedProgress.Load() != 80 {
+		t.Fatalf("VerifiedProgress = %d, want 80", ps.VerifiedProgress.Load())
+	}
+}
+
+func TestProgressState_FinalizePauseSession_UsesVerifiedWhenDownloadedUnknown(t *testing.T) {
+	ps := NewProgressState("finalize-pause", 100)
+	ps.VerifiedProgress.Store(55)
+	ps.StartTime = time.Now().Add(-1200 * time.Millisecond)
+	ps.Pause()
+
+	totalElapsed := ps.FinalizePauseSession(-1)
+
+	if totalElapsed < time.Second || totalElapsed > 2500*time.Millisecond {
+		t.Fatalf("totalElapsed = %v, want around 1.2s", totalElapsed)
+	}
+	if ps.SessionStartBytes != 55 {
+		t.Fatalf("SessionStartBytes = %d, want 55", ps.SessionStartBytes)
+	}
+	if ps.VerifiedProgress.Load() != 55 {
+		t.Fatalf("VerifiedProgress = %d, want 55", ps.VerifiedProgress.Load())
+	}
+}

@@ -39,21 +39,26 @@ var (
 var activeDownloads int32
 
 // Command line flags
-var verbose bool
+var (
+	verbose     bool
+	globalHost  string
+	globalToken string
+)
 
 // Globals for Unified Backend
 var (
-	GlobalPool       *download.WorkerPool
-	GlobalProgressCh chan any
-	GlobalService    core.DownloadService
-	serverProgram    *tea.Program
+	GlobalPool              *download.WorkerPool
+	GlobalProgressCh        chan any
+	GlobalService           core.DownloadService
+	serverProgram           *tea.Program
+	startupIntegrityMessage string
 )
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:     "surge [url]...",
-	Short:   "An open-source download manager written in Go",
-	Long:    `Surge is a blazing fast, open-source terminal (TUI) download manager built in Go.`,
+	Short:   "Blazing fast TUI download manager built in Go for power users",
+	Long:    `Surge is a blazing fast TUI download manager built in Go for power users. Find more info here: https://github.com/surge-downloader/surge`,
 	Version: Version,
 	Args:    cobra.ArbitraryArgs,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -72,15 +77,16 @@ var rootCmd = &cobra.Command{
 		GlobalPool = download.NewWorkerPool(GlobalProgressCh, settings.Network.MaxConcurrentDownloads)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		initializeGlobalState()
-
-		// Validate integrity of paused downloads before resuming
-		// Removes entries whose .surge files are missing or tampered with
-		if removed, err := state.ValidateIntegrity(); err != nil {
-			utils.Debug("Integrity check failed: %v", err)
-		} else if removed > 0 {
-			utils.Debug("Integrity check: removed %d corrupted/orphaned downloads", removed)
+		if hostTarget := resolveHostTarget(); hostTarget != "" {
+			if len(args) > 0 {
+				fmt.Fprintln(os.Stderr, "Error: URLs cannot be passed when using --host. Use 'surge add <url>' after connecting.")
+				os.Exit(1)
+			}
+			connectAndRunTUI(cmd, hostTarget)
+			return
 		}
+
+		initializeGlobalState()
 
 		// Attempt to acquire lock
 		isMaster, err := AcquireLock()
@@ -99,6 +105,8 @@ var rootCmd = &cobra.Command{
 				utils.Debug("Error releasing lock: %v", err)
 			}
 		}()
+
+		startupIntegrityMessage = runStartupIntegrityCheck()
 
 		// Initialize Service
 		GlobalService = core.NewLocalDownloadServiceWithInput(GlobalPool, GlobalProgressCh)
@@ -120,7 +128,7 @@ var rootCmd = &cobra.Command{
 		defer removeActivePort()
 
 		// Start HTTP server in background (reuse the listener)
-		go startHTTPServer(listener, port, outputDir, GlobalService)
+		go startHTTPServer(listener, port, outputDir, GlobalService, "")
 
 		// Queue initial downloads if any
 		go func() {
@@ -146,6 +154,22 @@ var rootCmd = &cobra.Command{
 	},
 }
 
+func runStartupIntegrityCheck() string {
+	// Validate integrity of paused/queued downloads before auto-resume.
+	// This removes entries whose .surge files are missing/tampered and
+	// also cleans orphan .surge files that no longer have DB entries.
+	if removed, err := state.ValidateIntegrity(); err != nil {
+		msg := fmt.Sprintf("Startup integrity check failed: %v", err)
+		return msg
+	} else if removed > 0 {
+		msg := fmt.Sprintf("Startup integrity check: removed %d corrupted/orphaned downloads", removed)
+		return msg
+	}
+	msg := "Startup integrity check: no issues found"
+	utils.Debug("%s", msg)
+	return msg
+}
+
 // startTUI initializes and runs the TUI program
 func startTUI(port int, exitWhenDone bool, noResume bool) {
 	// Initialize TUI
@@ -162,7 +186,7 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 	serverProgram = p // Save reference for HTTP handler
 
 	// Get event stream from service
-	events, cleanup, err := GlobalService.StreamEvents(context.Background())
+	stream, cleanup, err := GlobalService.StreamEvents(context.Background())
 	if err != nil {
 		_ = executeGlobalShutdown("tui: stream init failed")
 		fmt.Printf("Error getting event stream: %v\n", err)
@@ -172,10 +196,17 @@ func startTUI(port int, exitWhenDone bool, noResume bool) {
 
 	// Background listener for progress events
 	go func() {
-		for msg := range events {
+		for msg := range stream {
 			p.Send(msg)
 		}
 	}()
+
+	if startupIntegrityMessage != "" && GlobalService != nil {
+		_ = GlobalService.Publish(events.SystemLogMsg{
+			Message: startupIntegrityMessage,
+		})
+		startupIntegrityMessage = ""
+	}
 
 	// Exit-when-done checker for TUI
 	if exitWhenDone {
@@ -334,8 +365,13 @@ func removeActivePort() {
 }
 
 // startHTTPServer starts the HTTP server using an existing listener
-func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service core.DownloadService) {
-	authToken := ensureAuthToken()
+func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service core.DownloadService, tokenOverride string) {
+	authToken := strings.TrimSpace(tokenOverride)
+	if authToken == "" {
+		authToken = ensureAuthToken()
+	} else {
+		persistAuthToken(authToken)
+	}
 
 	mux := http.NewServeMux()
 
@@ -416,6 +452,8 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string, service
 					eventType = "removed"
 				case events.DownloadRequestMsg:
 					eventType = "request"
+				case events.SystemLogMsg:
+					eventType = "system"
 				case events.BatchProgressMsg:
 					// Unroll batch and send individual progress events
 					for _, p := range msg {
@@ -608,23 +646,58 @@ func authMiddleware(token string, next http.Handler) http.Handler {
 }
 
 func ensureAuthToken() string {
-	tokenFile := filepath.Join(config.GetStateDir(), "token")
-	data, err := os.ReadFile(tokenFile)
-	if err == nil {
-		return strings.TrimSpace(string(data))
+	stateTokenFile := filepath.Join(config.GetStateDir(), "token")
+	if token, err := readTokenFromFile(stateTokenFile); err == nil {
+		return token
 	}
 
-	// Generate new token
+	legacyTokenFile := filepath.Join(config.GetSurgeDir(), "token")
+	if token, err := readTokenFromFile(legacyTokenFile); err == nil {
+		if err := writeTokenToFile(stateTokenFile, token); err != nil {
+			utils.Debug("Failed to mirror legacy token to state dir: %v", err)
+		}
+		return token
+	}
+
 	token := uuid.New().String()
-
-	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(tokenFile), 0755); err != nil {
-		utils.Debug("Failed to create token directory: %v", err)
-	}
-	if err := os.WriteFile(tokenFile, []byte(token), 0600); err != nil {
-		utils.Debug("Failed to write token file: %v", err)
+	if err := writeTokenToFile(stateTokenFile, token); err != nil {
+		utils.Debug("Failed to write token file in state dir: %v", err)
+		if errLegacy := writeTokenToFile(legacyTokenFile, token); errLegacy != nil {
+			utils.Debug("Failed to write token file in legacy config dir: %v", errLegacy)
+		}
 	}
 	return token
+}
+
+func persistAuthToken(token string) {
+	stateTokenFile := filepath.Join(config.GetStateDir(), "token")
+	legacyTokenFile := filepath.Join(config.GetSurgeDir(), "token")
+
+	if err := writeTokenToFile(stateTokenFile, token); err != nil {
+		utils.Debug("Failed to write token file in state dir: %v", err)
+	}
+	if err := writeTokenToFile(legacyTokenFile, token); err != nil {
+		utils.Debug("Failed to write token file in legacy config dir: %v", err)
+	}
+}
+
+func readTokenFromFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	token := strings.TrimSpace(string(data))
+	if token == "" {
+		return "", fmt.Errorf("empty token file: %s", path)
+	}
+	return token, nil
+}
+
+func writeTokenToFile(path string, token string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(token), 0o600)
 }
 
 // DownloadRequest represents a download request from the browser extension
@@ -867,12 +940,14 @@ func processDownloads(urls []string, outputDir string, port int) int {
 
 	// If port > 0, we are sending to a remote server
 	if port > 0 {
+		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+		token := resolveLocalToken()
 		for _, arg := range urls {
 			url, mirrors := ParseURLArg(arg)
 			if url == "" {
 				continue
 			}
-			err := sendToServer(url, mirrors, outputDir, port)
+			err := sendToServer(url, mirrors, outputDir, baseURL, token)
 			if err != nil {
 				fmt.Printf("Error adding %s: %v\n", url, err)
 			} else {
@@ -944,6 +1019,8 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
+	rootCmd.PersistentFlags().StringVar(&globalHost, "host", "", "Server host to connect/control (or set SURGE_HOST), e.g. 127.0.0.1:1700")
+	rootCmd.PersistentFlags().StringVar(&globalToken, "token", "", "Bearer token (or set SURGE_TOKEN)")
 	rootCmd.Flags().StringP("batch", "b", "", "File containing URLs to download (one per line)")
 	rootCmd.Flags().IntP("port", "p", 0, "Port to listen on (default: 8080 or first available)")
 	rootCmd.Flags().StringP("output", "o", "", "Default output directory")

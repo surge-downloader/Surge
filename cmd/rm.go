@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -26,8 +27,6 @@ var rmCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		port := readActivePort()
-
 		if clean {
 			// Remove completed downloads from DB
 			count, err := state.RemoveCompletedDownloads()
@@ -39,41 +38,39 @@ var rmCmd = &cobra.Command{
 			return
 		}
 
-		id := args[0]
-
-		// Resolve partial ID to full ID
-		id, err := resolveDownloadID(id)
+		baseURL, token, err := resolveAPIConnection(true)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 
-		if port > 0 {
-			// Send to running server
-			resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/delete?id=%s", port, id), "application/json", nil)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error connecting to server: %v\n", err)
-				os.Exit(1)
-			}
-			defer func() {
-				if err := resp.Body.Close(); err != nil {
-					utils.Debug("Error closing response body: %v", err)
-				}
-			}()
+		id := args[0]
 
-			if resp.StatusCode != http.StatusOK {
-				fmt.Fprintf(os.Stderr, "Error: server returned %s\n", resp.Status)
-				os.Exit(1)
-			}
-			fmt.Printf("Removed download %s\n", id[:8])
-		} else {
-			// Offline mode: remove from DB
-			if err := state.RemoveFromMasterList(id); err != nil {
-				fmt.Fprintf(os.Stderr, "Error removing download: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("Removed download %s (offline mode)\n", id[:8])
+		// Resolve partial ID to full ID
+		id, err = resolveDownloadID(id)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
 		}
+
+		// Send to running server
+		path := fmt.Sprintf("/delete?id=%s", url.QueryEscape(id))
+		resp, err := doAPIRequest(http.MethodPost, baseURL, token, path, nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error connecting to server: %v\n", err)
+			os.Exit(1)
+		}
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				utils.Debug("Error closing response body: %v", err)
+			}
+		}()
+
+		if resp.StatusCode != http.StatusOK {
+			fmt.Fprintf(os.Stderr, "Error: server returned %s\n", resp.Status)
+			os.Exit(1)
+		}
+		fmt.Printf("Removed download %s\n", id[:8])
 	},
 }
 

@@ -187,23 +187,39 @@ func (ps *ProgressState) GetSavedElapsed() time.Duration {
 	return ps.SavedElapsed
 }
 
-// FinalizePause stores a stable pause snapshot so UI/API values don't drift while paused.
-func (ps *ProgressState) FinalizePause(downloaded int64, elapsed time.Duration) {
+// FinalizeSession closes the current session and accumulates its elapsed time into total elapsed.
+// It returns (sessionElapsed, totalElapsedAfterFinalize).
+func (ps *ProgressState) FinalizeSession(downloaded int64) (time.Duration, time.Duration) {
 	if downloaded < 0 {
-		downloaded = 0
+		downloaded = ps.VerifiedProgress.Load()
 	}
-	if elapsed < 0 {
-		elapsed = 0
+
+	now := time.Now()
+	ps.mu.Lock()
+	sessionElapsed := now.Sub(ps.StartTime)
+	if sessionElapsed < 0 {
+		sessionElapsed = 0
 	}
+	ps.SavedElapsed += sessionElapsed
+	if ps.SavedElapsed < 0 {
+		ps.SavedElapsed = 0
+	}
+	ps.SessionStartBytes = downloaded
+	ps.StartTime = now
+	totalElapsed := ps.SavedElapsed
+	ps.mu.Unlock()
 
 	ps.Downloaded.Store(downloaded)
 	ps.VerifiedProgress.Store(downloaded)
 
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-	ps.SavedElapsed = elapsed
-	ps.SessionStartBytes = downloaded
-	ps.StartTime = time.Now()
+	return sessionElapsed, totalElapsed
+}
+
+// FinalizePauseSession finalizes the current session for a pause transition.
+// It keeps timing/data frozen while paused and returns total elapsed after finalize.
+func (ps *ProgressState) FinalizePauseSession(downloaded int64) time.Duration {
+	_, total := ps.FinalizeSession(downloaded)
+	return total
 }
 
 func (ps *ProgressState) SetMirrors(mirrors []MirrorStatus) {

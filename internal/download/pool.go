@@ -2,7 +2,7 @@ package download
 
 import (
 	"context"
-	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -219,12 +219,6 @@ func (p *WorkerPool) Cancel(downloadID string) {
 		ad.config.State.Done.Store(true)
 	}
 
-	// Best-effort cleanup of active partial file.
-	// This handles cancels before paused state is persisted in DB.
-	if ad.config.State != nil && ad.config.State.DestPath != "" {
-		_ = os.Remove(ad.config.State.DestPath + types.IncompleteSuffix)
-	}
-
 	// Send removal message
 	if p.progressCh != nil {
 		p.progressCh <- events.DownloadRemovedMsg{
@@ -362,10 +356,15 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 	}
 
 	if qExists {
+		destPath := qCfg.DestPath
+		if destPath == "" && qCfg.State != nil {
+			destPath = qCfg.State.GetDestPath()
+		}
 		return &types.DownloadStatus{
 			ID:         id,
 			URL:        qCfg.URL,
 			Filename:   qCfg.Filename,
+			DestPath:   destPath,
 			Status:     "queued",
 			Downloaded: 0,
 			TotalSize:  0, // Metadata not yet fetched
@@ -395,6 +394,12 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 		Downloaded: downloaded,
 		Status:     "downloading",
 	}
+	if dp := state.GetDestPath(); dp != "" {
+		status.DestPath = dp
+	} else {
+		status.DestPath = ad.config.DestPath
+	}
+
 	peerStats := state.GetTorrentPeerCounters()
 	status.PeerDiscovered = peerStats.Discovered
 	status.PeerPending = peerStats.Pending
@@ -436,7 +441,10 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 
 // GracefulShutdown pauses all downloads and waits for them to save state
 func (p *WorkerPool) GracefulShutdown() {
-	// ... existing implementation
+	// Persist queued downloads first so they don't disappear on process shutdown.
+	// These entries may not have started yet, so they do not have a .surge state snapshot.
+	p.persistQueuedForShutdown()
+
 	p.PauseAll()
 
 	// Wait for any downloads in "Pausing" state to finish transitioning
@@ -472,4 +480,47 @@ func (p *WorkerPool) GracefulShutdown() {
 	}
 
 	p.wg.Wait() // Blocks until all workers call Done()
+}
+
+func (p *WorkerPool) persistQueuedForShutdown() {
+	p.mu.RLock()
+	queued := make([]types.DownloadConfig, 0, len(p.queued))
+	for _, cfg := range p.queued {
+		queued = append(queued, cfg)
+	}
+	p.mu.RUnlock()
+
+	for _, cfg := range queued {
+		if cfg.ID == "" || cfg.URL == "" {
+			continue
+		}
+
+		filename := cfg.Filename
+		destPath := cfg.DestPath
+		if cfg.State != nil {
+			if fn := cfg.State.GetFilename(); fn != "" {
+				filename = fn
+			}
+			if dp := cfg.State.GetDestPath(); dp != "" {
+				destPath = dp
+			}
+		}
+		if destPath == "" && cfg.OutputPath != "" && filename != "" {
+			destPath = filepath.Join(cfg.OutputPath, filename)
+		}
+
+		if err := state.AddToMasterList(types.DownloadEntry{
+			ID:         cfg.ID,
+			URL:        cfg.URL,
+			URLHash:    state.URLHash(cfg.URL),
+			DestPath:   destPath,
+			Filename:   filename,
+			Status:     "queued",
+			TotalSize:  0,
+			Downloaded: 0,
+			Mirrors:    cfg.Mirrors,
+		}); err != nil {
+			utils.Debug("GracefulShutdown: failed to persist queued download %s: %v", cfg.ID, err)
+		}
+	}
 }

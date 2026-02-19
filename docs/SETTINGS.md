@@ -4,7 +4,8 @@ This document provides a detailed overview of all configuration options and CLI 
 
 ## Configuration File
 
-Surge stores its configuration in a `settings.json` file located in the application data directory:
+You can **access the settings in TUI** or if you prefer
+from the `settings.json` file located in the application data directory:
 - **Windows:** `%APPDATA%\surge\settings.json`
 - **macOS:** `~/Library/Application Support/surge/settings.json`
 - **Linux:** `~/.config/surge/settings.json`
@@ -25,15 +26,10 @@ Surge stores its configuration in a `settings.json` file located in the applicat
 | Key | Type | Description | Default |
 | :--- | :--- | :--- | :--- |
 | `max_connections_per_host` | int | Maximum concurrent connections allowed to a single host (1-64). | `32` |
-| `max_global_connections` | int | Maximum total concurrent connections across all active downloads. | `100` |
 | `max_concurrent_downloads` | int | Maximum number of downloads running simultaneously (requires restart). | `3` |
 | `user_agent` | string | Custom User-Agent string for HTTP requests. Leave empty for default. | `""` |
 | `proxy_url` | string | HTTP/HTTPS proxy URL (e.g., `http://127.0.0.1:8080`). Leave empty to use system settings. | `""` |
 | `sequential_download` | bool | Download file pieces in strict order (Streaming Mode). Useful for previewing media but may be slower. | `false` |
-
-### Chunk Settings
-| Key | Type | Description | Default |
-| :--- | :--- | :--- | :--- |
 | `min_chunk_size` | int64 | Minimum size of a download chunk in bytes (e.g., `2097152` for 2MB). | `2MB` |
 | `worker_buffer_size` | int | I/O buffer size per worker in bytes (e.g., `524288` for 512KB). | `512KB` |
 
@@ -52,61 +48,41 @@ Surge stores its configuration in a `settings.json` file located in the applicat
 
 Surge provides a robust Command Line Interface for automation and scripting.
 
-### `surge [url...]`
-Start the interactive TUI mode. If URLs are provided, they are added to the queue immediately.
+### Command Table
 
-**Flags:**
-- `--batch, -b <file>`: Read URLs from a file (one per line).
-- `--port, -p <port>`: Force the internal server to listen on a specific port.
-- `--output, -o <dir>`: Set a default output directory for this session.
-- `--no-resume`: Do not auto-resume paused downloads on startup.
-- `--exit-when-done`: Automatically exit the application when all downloads complete.
+| Command | What it does | Key flags | Notes |
+| :--- | :--- | :--- | :--- |
+| `surge [url]...` | Launches local TUI. Queues optional URLs. | `--batch, -b`<br>`--port, -p`<br>`--output, -o`<br>`--no-resume`<br>`--exit-when-done` | If `--host` is set, this becomes remote TUI mode. |
+| `surge server [url]...` | Launches headless server. Queues optional URLs. | `--batch, -b`<br>`--port, -p`<br>`--output, -o`<br>`--exit-when-done`<br>`--no-resume`<br>`--token` | Primary headless mode command. |
+| `surge connect <host:port>` | Launches TUI connected to remote server. | `--insecure-http` | Convenience alias for remote TUI usage. |
+| `surge add <url>...` | Queues downloads via CLI/API. | `--batch, -b`<br>`--output, -o` | Alias: `get`. |
+| `surge ls [id]` | Lists downloads, or shows one download detail. | `--json`<br>`--watch` | Alias: `l`. |
+| `surge pause <id>` | Pauses a download by ID/prefix. | `--all` | |
+| `surge resume <id>` | Resumes a paused download by ID/prefix. | `--all` | |
+| `surge rm <id>` | Removes a download by ID/prefix. | `--clean` | Alias: `kill`. |
+| `surge token` | Prints current API auth token. | None | Useful for remote clients. |
 
-### `surge add <url>`
-Add a download to the running instance (or start a new one if not running).
+### Server Subcommands (Compatibility)
 
-**Flags:**
-- `--batch, -b <file>`: Add multiple URLs from a file.
-- `--output, -o <dir>`: Specify the output directory for this download.
+| Command | What it does |
+| :--- | :--- |
+| `surge server start [url]...` | Legacy equivalent of `surge server [url]...`. |
+| `surge server stop` | Stops a running server process by PID file. |
+| `surge server status` | Prints running/not-running status from PID/port state. |
 
-### `surge connect [host]`
-Connect the TUI to a remote Surge daemon.
+### Global Flags
 
-**Flags:**
-- `--token <token>`: Bearer token for authentication (or set `SURGE_TOKEN` env var).
-- `--insecure-http`: Allow plain HTTP connections to non-loopback targets.
+These are persistent flags and can be used with all commands.
 
-### `surge ls`
-List all downloads in the queue.
+| Flag | Description |
+| :--- | :--- |
+| `--host <host:port>` | Target server for TUI and CLI actions. |
+| `--token <token>` | Bearer token used for API requests. |
+| `--verbose, -v` | Enable verbose logging. |
 
-**Flags:**
-- `--json`: Output the list in JSON format (useful for scripts).
-- `--watch`: Watch mode (refresh every second).
+### Environment Variables
 
-### `surge pause <id>`
-Pause a specific download by ID (or partial ID).
-
-**Flags:**
-- `--all`: Pause all active downloads.
-
-### `surge resume <id>`
-Resume a specific paused download by ID.
-
-**Flags:**
-- `--all`: Resume all paused downloads.
-
-### `surge rm <id>`
-Remove/Cancel a download.
-
-**Flags:**
-- `--clean`: Remove all completed downloads from the list.
-
-### `surge server start`
-Start Surge in headless server mode (no TUI). Ideal for background services or remote servers.
-
-**Flags:**
-- `--batch, -b <file>`: Load initial URLs from a file.
-- `--port, -p <port>`: Listen on a specific port.
-- `--output, -o <dir>`: Set the default output directory.
-- `--exit-when-done`: Exit when the queue is empty.
-- `--no-resume`: Do not auto-resume paused downloads on startup.
+| Variable | Description |
+| :--- | :--- |
+| `SURGE_HOST` | Default host when `--host` is not provided. |
+| `SURGE_TOKEN` | Default token when `--token` is not provided. |
