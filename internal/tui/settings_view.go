@@ -277,6 +277,22 @@ func (m RootModel) getSettingsValues(category string) map[string]interface{} {
 		values["upload_slots_per_torrent"] = m.Settings.Torrent.UploadSlotsPerTorrent
 		values["request_pipeline_depth"] = m.Settings.Torrent.RequestPipelineDepth
 		values["listen_port"] = m.Settings.Torrent.ListenPort
+		values["health_enabled"] = m.Settings.Torrent.HealthEnabled
+		values["low_rate_cull_factor"] = m.Settings.Torrent.LowRateCullFactor
+		values["health_min_uptime"] = m.Settings.Torrent.HealthMinUptime
+		values["health_cull_max_per_tick"] = m.Settings.Torrent.HealthCullMaxPerTick
+		values["health_redial_block"] = m.Settings.Torrent.HealthRedialBlock
+		values["eviction_cooldown"] = m.Settings.Torrent.EvictionCooldown
+		values["eviction_min_uptime"] = m.Settings.Torrent.EvictionMinUptime
+		values["idle_eviction_threshold"] = m.Settings.Torrent.IdleEvictionThreshold
+		values["eviction_keep_rate_min_bps"] = m.Settings.Torrent.EvictionKeepRateMinBps
+		values["peer_read_timeout"] = m.Settings.Torrent.PeerReadTimeout
+		values["peer_keepalive_send"] = m.Settings.Torrent.PeerKeepaliveSend
+		values["tracker_interval_normal"] = m.Settings.Torrent.TrackerIntervalNormal
+		values["tracker_interval_low_peer"] = m.Settings.Torrent.TrackerIntervalLowPeer
+		values["tracker_numwant_normal"] = m.Settings.Torrent.TrackerNumWantNormal
+		values["tracker_numwant_low_peer"] = m.Settings.Torrent.TrackerNumWantLowPeer
+		values["lsd_enabled"] = m.Settings.Torrent.LSDEnabled
 	}
 
 	return values
@@ -449,6 +465,17 @@ func (m *RootModel) setPerformanceSetting(key, value, typ string) error {
 }
 
 func (m *RootModel) setTorrentSetting(key, value, typ string) error {
+	parseDuration := func(raw string) (time.Duration, bool) {
+		if _, err := strconv.ParseFloat(raw, 64); err == nil {
+			raw += "s"
+		}
+		d, err := time.ParseDuration(raw)
+		if err != nil {
+			return 0, false
+		}
+		return d, true
+	}
+
 	switch key {
 	case "max_connections_per_torrent":
 		if v, err := strconv.Atoi(value); err == nil {
@@ -485,6 +512,97 @@ func (m *RootModel) setTorrentSetting(key, value, typ string) error {
 				v = 65535
 			}
 			m.Settings.Torrent.ListenPort = v
+		}
+	case "health_enabled":
+		if value == "" {
+			m.Settings.Torrent.HealthEnabled = !m.Settings.Torrent.HealthEnabled
+		} else if b, err := strconv.ParseBool(value); err == nil {
+			m.Settings.Torrent.HealthEnabled = b
+		}
+	case "low_rate_cull_factor":
+		if v, err := strconv.ParseFloat(value, 64); err == nil {
+			if v < 0 {
+				v = 0
+			} else if v > 1 {
+				v = 1
+			}
+			m.Settings.Torrent.LowRateCullFactor = v
+		}
+	case "health_min_uptime":
+		if d, ok := parseDuration(value); ok {
+			m.Settings.Torrent.HealthMinUptime = d
+		}
+	case "health_cull_max_per_tick":
+		if v, err := strconv.Atoi(value); err == nil {
+			if v < 1 {
+				v = 1
+			} else if v > 16 {
+				v = 16
+			}
+			m.Settings.Torrent.HealthCullMaxPerTick = v
+		}
+	case "health_redial_block":
+		if d, ok := parseDuration(value); ok {
+			m.Settings.Torrent.HealthRedialBlock = d
+		}
+	case "eviction_cooldown":
+		if d, ok := parseDuration(value); ok {
+			m.Settings.Torrent.EvictionCooldown = d
+		}
+	case "eviction_min_uptime":
+		if d, ok := parseDuration(value); ok {
+			m.Settings.Torrent.EvictionMinUptime = d
+		}
+	case "idle_eviction_threshold":
+		if d, ok := parseDuration(value); ok {
+			m.Settings.Torrent.IdleEvictionThreshold = d
+		}
+	case "eviction_keep_rate_min_bps":
+		if v, err := strconv.ParseInt(value, 10, 64); err == nil {
+			if v < 1 {
+				v = 1
+			}
+			m.Settings.Torrent.EvictionKeepRateMinBps = v
+		}
+	case "peer_read_timeout":
+		if d, ok := parseDuration(value); ok {
+			m.Settings.Torrent.PeerReadTimeout = d
+		}
+	case "peer_keepalive_send":
+		if d, ok := parseDuration(value); ok {
+			m.Settings.Torrent.PeerKeepaliveSend = d
+		}
+	case "tracker_interval_normal":
+		if d, ok := parseDuration(value); ok {
+			m.Settings.Torrent.TrackerIntervalNormal = d
+		}
+	case "tracker_interval_low_peer":
+		if d, ok := parseDuration(value); ok {
+			m.Settings.Torrent.TrackerIntervalLowPeer = d
+		}
+	case "tracker_numwant_normal":
+		if v, err := strconv.Atoi(value); err == nil {
+			if v < 50 {
+				v = 50
+			} else if v > 1000 {
+				v = 1000
+			}
+			m.Settings.Torrent.TrackerNumWantNormal = v
+		}
+	case "tracker_numwant_low_peer":
+		if v, err := strconv.Atoi(value); err == nil {
+			if v < 50 {
+				v = 50
+			} else if v > 1000 {
+				v = 1000
+			}
+			m.Settings.Torrent.TrackerNumWantLowPeer = v
+		}
+	case "lsd_enabled":
+		if value == "" {
+			m.Settings.Torrent.LSDEnabled = !m.Settings.Torrent.LSDEnabled
+		} else if b, err := strconv.ParseBool(value); err == nil {
+			m.Settings.Torrent.LSDEnabled = b
 		}
 	}
 	return nil
@@ -564,6 +682,14 @@ func (m RootModel) getSettingUnit() string {
 		return " in-flight"
 	case "listen_port":
 		return " port"
+	case "low_rate_cull_factor":
+		return " (0.0-1.0)"
+	case "health_min_uptime", "health_redial_block", "eviction_cooldown", "eviction_min_uptime", "idle_eviction_threshold", "peer_read_timeout", "peer_keepalive_send", "tracker_interval_normal", "tracker_interval_low_peer":
+		return " seconds"
+	case "eviction_keep_rate_min_bps":
+		return " B/s"
+	case "tracker_numwant_normal", "tracker_numwant_low_peer":
+		return " peers"
 	default:
 		return ""
 	}
@@ -583,7 +709,7 @@ func formatSettingValueForEdit(value interface{}, typ, key string) string {
 			kb := float64(v.Int()) / 1024
 			return fmt.Sprintf("%.0f", kb)
 		}
-	case "slow_worker_grace_period", "stall_timeout":
+	case "slow_worker_grace_period", "stall_timeout", "health_min_uptime", "health_redial_block", "eviction_cooldown", "eviction_min_uptime", "idle_eviction_threshold", "peer_read_timeout", "peer_keepalive_send", "tracker_interval_normal", "tracker_interval_low_peer":
 		// Show duration as plain seconds number (e.g., "5" instead of "5s")
 		if d, ok := value.(time.Duration); ok {
 			return fmt.Sprintf("%.0f", d.Seconds())
@@ -729,6 +855,38 @@ func (m *RootModel) resetSettingToDefault(category, key string, defaults *config
 			m.Settings.Torrent.RequestPipelineDepth = defaults.Torrent.RequestPipelineDepth
 		case "listen_port":
 			m.Settings.Torrent.ListenPort = defaults.Torrent.ListenPort
+		case "health_enabled":
+			m.Settings.Torrent.HealthEnabled = defaults.Torrent.HealthEnabled
+		case "low_rate_cull_factor":
+			m.Settings.Torrent.LowRateCullFactor = defaults.Torrent.LowRateCullFactor
+		case "health_min_uptime":
+			m.Settings.Torrent.HealthMinUptime = defaults.Torrent.HealthMinUptime
+		case "health_cull_max_per_tick":
+			m.Settings.Torrent.HealthCullMaxPerTick = defaults.Torrent.HealthCullMaxPerTick
+		case "health_redial_block":
+			m.Settings.Torrent.HealthRedialBlock = defaults.Torrent.HealthRedialBlock
+		case "eviction_cooldown":
+			m.Settings.Torrent.EvictionCooldown = defaults.Torrent.EvictionCooldown
+		case "eviction_min_uptime":
+			m.Settings.Torrent.EvictionMinUptime = defaults.Torrent.EvictionMinUptime
+		case "idle_eviction_threshold":
+			m.Settings.Torrent.IdleEvictionThreshold = defaults.Torrent.IdleEvictionThreshold
+		case "eviction_keep_rate_min_bps":
+			m.Settings.Torrent.EvictionKeepRateMinBps = defaults.Torrent.EvictionKeepRateMinBps
+		case "peer_read_timeout":
+			m.Settings.Torrent.PeerReadTimeout = defaults.Torrent.PeerReadTimeout
+		case "peer_keepalive_send":
+			m.Settings.Torrent.PeerKeepaliveSend = defaults.Torrent.PeerKeepaliveSend
+		case "tracker_interval_normal":
+			m.Settings.Torrent.TrackerIntervalNormal = defaults.Torrent.TrackerIntervalNormal
+		case "tracker_interval_low_peer":
+			m.Settings.Torrent.TrackerIntervalLowPeer = defaults.Torrent.TrackerIntervalLowPeer
+		case "tracker_numwant_normal":
+			m.Settings.Torrent.TrackerNumWantNormal = defaults.Torrent.TrackerNumWantNormal
+		case "tracker_numwant_low_peer":
+			m.Settings.Torrent.TrackerNumWantLowPeer = defaults.Torrent.TrackerNumWantLowPeer
+		case "lsd_enabled":
+			m.Settings.Torrent.LSDEnabled = defaults.Torrent.LSDEnabled
 		}
 	}
 }
