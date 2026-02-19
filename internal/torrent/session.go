@@ -170,7 +170,9 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 					if trackerNext > 10*time.Minute {
 						trackerNext = 10 * time.Minute
 					}
-					if !s.isLowPeerMode() {
+					// Aggressive mode: do not let sparse tracker intervals slow peer refresh.
+					// Use the faster cadence between our configured target and tracker suggestion.
+					if trackerNext < next {
 						next = trackerNext
 					}
 				}

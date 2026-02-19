@@ -74,6 +74,7 @@ type Manager struct {
 	mu              sync.Mutex
 	active          map[string]*Conn
 	discovered      map[string]bool
+	discoveredAddrs map[string]net.TCPAddr
 	pending         map[string]bool
 	retry           map[string]dialRetryState
 	uploading       map[string]bool
@@ -164,6 +165,7 @@ func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceL
 		requestPipeline: requestPipeline,
 		active:          make(map[string]*Conn),
 		discovered:      make(map[string]bool),
+		discoveredAddrs: make(map[string]net.TCPAddr),
 		pending:         make(map[string]bool),
 		retry:           make(map[string]dialRetryState),
 		uploading:       make(map[string]bool),
@@ -195,7 +197,7 @@ func (m *Manager) Start(ctx context.Context, peers <-chan net.TCPAddr) {
 					m.CloseAll()
 					return
 				}
-				m.markDiscovered(addr.String())
+				m.markDiscovered(addr)
 				m.tryDialAsync(ctx, addr)
 			}
 		}
@@ -203,10 +205,12 @@ func (m *Manager) Start(ctx context.Context, peers <-chan net.TCPAddr) {
 	go m.maintain(ctx)
 }
 
-func (m *Manager) markDiscovered(key string) {
+func (m *Manager) markDiscovered(addr net.TCPAddr) {
+	key := addr.String()
 	m.mu.Lock()
 	if key != "" {
 		m.discovered[key] = true
+		m.discoveredAddrs[key] = addr
 	}
 	m.mu.Unlock()
 }
@@ -437,6 +441,7 @@ func (m *Manager) CloseAll() {
 	}
 	clear(m.pending)
 	clear(m.retry)
+	clear(m.discoveredAddrs)
 	m.unchoked = 0
 }
 
@@ -478,6 +483,44 @@ func (m *Manager) maintain(ctx context.Context) {
 				seen[c] = struct{}{}
 				c.Close()
 			}
+			m.fillFromDiscovered(ctx)
+		}
+	}
+}
+
+func (m *Manager) fillFromDiscovered(ctx context.Context) {
+	m.mu.Lock()
+	if m.maxPeers > 0 && len(m.active)+len(m.pending) >= m.maxPeers {
+		m.mu.Unlock()
+		return
+	}
+	addrs := make([]net.TCPAddr, 0, len(m.discoveredAddrs))
+	for _, addr := range m.discoveredAddrs {
+		addrs = append(addrs, addr)
+	}
+	m.mu.Unlock()
+
+	if len(addrs) == 0 {
+		return
+	}
+
+	budget := 16
+	for _, addr := range addrs {
+		if budget <= 0 {
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+
+		m.tryDialAsync(ctx, addr)
+		budget--
+
+		m.mu.Lock()
+		full := m.maxPeers > 0 && len(m.active)+len(m.pending) >= m.maxPeers
+		m.mu.Unlock()
+		if full {
+			return
 		}
 	}
 }
@@ -643,7 +686,7 @@ func (m *Manager) onPEXPeer(ctx context.Context, addr net.TCPAddr) {
 	if addr.Port <= 0 || addr.Port > 65535 || addr.IP == nil || addr.IP.IsUnspecified() {
 		return
 	}
-	m.markDiscovered(addr.String())
+	m.markDiscovered(addr)
 	m.tryDialAsync(ctx, addr)
 }
 
