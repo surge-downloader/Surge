@@ -7,6 +7,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/surge-downloader/surge/internal/torrent/peer/health"
 )
 
 const (
@@ -20,6 +22,8 @@ const (
 	minEvictionUptime       = 8 * time.Second
 	idleEvictionThreshold   = 10 * time.Second
 	evictionKeepRateMinimum = 512 * 1024
+	lowRateCullFactor       = 0.3
+	healthRedialBlock       = 2 * time.Minute
 	dialBackoffBase         = 15 * time.Second
 	dialBackoffMax          = 10 * time.Minute
 )
@@ -365,14 +369,54 @@ func (m *Manager) maintain(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			now := time.Now()
 			m.mu.Lock()
 			victim := m.pickEvictionCandidateLocked()
-			m.mu.Unlock()
+			stragglers := m.collectHealthEvictionsLocked()
+
+			toClose := make([]*Conn, 0, 1+len(stragglers))
 			if victim != nil {
-				victim.Close()
+				toClose = append(toClose, victim)
+			}
+			for _, key := range stragglers {
+				conn, ok := m.active[key]
+				if !ok || conn == nil {
+					continue
+				}
+				m.noteHealthEvictionLocked(key, now)
+				toClose = append(toClose, conn)
+			}
+			m.mu.Unlock()
+
+			seen := make(map[*Conn]struct{}, len(toClose))
+			for _, c := range toClose {
+				if c == nil {
+					continue
+				}
+				if _, ok := seen[c]; ok {
+					continue
+				}
+				seen[c] = struct{}{}
+				c.Close()
 			}
 		}
 	}
+}
+
+func (m *Manager) collectHealthEvictionsLocked() []string {
+	if len(m.active) < 2 {
+		return nil
+	}
+	samples := make([]health.PeerSample, 0, len(m.active))
+	for key, c := range m.active {
+		p := c.Performance()
+		samples = append(samples, health.PeerSample{
+			Key:     key,
+			RateBps: p.RateBps,
+			Uptime:  p.Uptime,
+		})
+	}
+	return health.BelowRelativeMean(samples, minEvictionUptime, lowRateCullFactor)
 }
 
 func (m *Manager) pickEvictionCandidateLocked() *Conn {
@@ -487,6 +531,21 @@ func (m *Manager) noteDialFailureLocked(key string, now time.Time) {
 	st := m.retry[key]
 	st.failures++
 	st.nextAttempt = now.Add(dialBackoffDuration(st.failures))
+	m.retry[key] = st
+}
+
+func (m *Manager) noteHealthEvictionLocked(key string, now time.Time) {
+	if key == "" {
+		return
+	}
+	st := m.retry[key]
+	until := now.Add(healthRedialBlock)
+	if st.nextAttempt.Before(until) {
+		st.nextAttempt = until
+	}
+	if st.failures < 1 {
+		st.failures = 1
+	}
 	m.retry[key] = st
 }
 

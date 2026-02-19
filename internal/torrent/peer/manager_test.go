@@ -77,3 +77,24 @@ func TestRetryStateEscalatesConsecutiveFailures(t *testing.T) {
 		t.Fatalf("nextAttempt mismatch: got=%s want=%s", state.nextAttempt, now.Add(4*dialBackoffBase))
 	}
 }
+
+func TestHealthEvictionBlocksImmediateRedial(t *testing.T) {
+	m := &Manager{
+		retry: make(map[string]dialRetryState),
+	}
+	const key = "7.7.7.7:51413"
+	now := time.Unix(3000, 0)
+
+	m.noteHealthEvictionLocked(key, now)
+	st := m.retry[key]
+	if !st.nextAttempt.Equal(now.Add(healthRedialBlock)) {
+		t.Fatalf("health block mismatch: got=%s want=%s", st.nextAttempt, now.Add(healthRedialBlock))
+	}
+
+	if m.shouldAttemptDialLocked(key, now.Add(healthRedialBlock-time.Millisecond)) {
+		t.Fatalf("expected redial to be blocked before health cooldown")
+	}
+	if !m.shouldAttemptDialLocked(key, now.Add(healthRedialBlock)) {
+		t.Fatalf("expected redial to be allowed after health cooldown")
+	}
+}
