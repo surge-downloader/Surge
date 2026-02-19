@@ -62,3 +62,29 @@ func peerManagerForTest() *peer.Manager {
 	var pid [20]byte
 	return peer.NewManager(ih, pid, nil, nil, nil, 1, 0, 8, peer.ManagerConfig{})
 }
+
+func TestTrackerFailureWaitDemotesDNSWhenAlternativesHealthy(t *testing.T) {
+	err := &net.DNSError{Err: "no such host"}
+	wait := trackerFailureWait(err, trackerDemoteAfter, true)
+	if wait < trackerDemoteMinWait {
+		t.Fatalf("expected dns failure demotion >= %s, got %s", trackerDemoteMinWait, wait)
+	}
+}
+
+func TestTrackerFailureWaitDoesNotHardDemoteDNSWithoutHealthyAlternatives(t *testing.T) {
+	err := &net.DNSError{Err: "no such host"}
+	wait := trackerFailureWait(err, trackerDemoteAfter, false)
+	if wait >= trackerDemoteMinWait {
+		t.Fatalf("expected dns failure wait below hard demotion without healthy alternatives, got %s", wait)
+	}
+}
+
+func TestTrackerFailureWaitTimeoutDemotesModerately(t *testing.T) {
+	wait := trackerFailureWait(context.DeadlineExceeded, trackerDemoteAfter+1, true)
+	if wait < 45*time.Second {
+		t.Fatalf("expected timeout demotion to be at least 45s, got %s", wait)
+	}
+	if wait >= trackerDemoteMinWait {
+		t.Fatalf("expected timeout demotion to stay below hard demotion window, got %s", wait)
+	}
+}

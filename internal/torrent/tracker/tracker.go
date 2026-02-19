@@ -7,7 +7,18 @@ import (
 	"math/rand"
 	"net"
 	"net/url"
+	"strings"
 	"time"
+)
+
+type FailureKind int
+
+const (
+	FailureUnknown FailureKind = iota
+	FailureTimeout
+	FailureDNS
+	FailureRefused
+	FailureUnreachable
 )
 
 func Announce(announceURL string, req AnnounceRequest) (*AnnounceResponse, error) {
@@ -59,6 +70,32 @@ func isTimeoutErr(err error) bool {
 		return te.Timeout()
 	}
 	return false
+}
+
+func ClassifyFailure(err error) FailureKind {
+	if err == nil {
+		return FailureUnknown
+	}
+	if isTimeoutErr(err) {
+		return FailureTimeout
+	}
+
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return FailureDNS
+	}
+
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "no such host"), strings.Contains(msg, "server misbehaving"):
+		return FailureDNS
+	case strings.Contains(msg, "connection refused"):
+		return FailureRefused
+	case strings.Contains(msg, "network is unreachable"), strings.Contains(msg, "host is unreachable"), strings.Contains(msg, "no route to host"):
+		return FailureUnreachable
+	default:
+		return FailureUnknown
+	}
 }
 
 func DefaultPeerID() [20]byte {

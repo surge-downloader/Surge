@@ -20,6 +20,10 @@ const (
 	trackerRetryBackoffMax   = 30 * time.Second
 	minTrackerInterval       = 3 * time.Second
 	maxLowPeerInterval       = 10 * time.Second
+	trackerHealthyWindow     = 2 * time.Minute
+	trackerDemoteMinWait     = 2 * time.Minute
+	trackerDemoteMaxWait     = 10 * time.Minute
+	trackerDemoteAfter       = 3
 )
 
 type SessionConfig struct {
@@ -115,12 +119,33 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 		defer producers.Done()
 		seen := make(map[string]time.Time)
 		var seenMu sync.Mutex
+		trackerSuccess := make(map[string]time.Time)
+		var trackerStateMu sync.Mutex
 		emitPeer := func(addr net.TCPAddr) bool {
 			key := addr.String()
 			seenMu.Lock()
 			ok := shouldEmitPeer(seen, key, peerRetryWindow)
 			seenMu.Unlock()
 			return ok
+		}
+		markTrackerSuccess := func(url string) {
+			trackerStateMu.Lock()
+			trackerSuccess[url] = time.Now()
+			trackerStateMu.Unlock()
+		}
+		hasOtherHealthyTracker := func(url string) bool {
+			now := time.Now()
+			trackerStateMu.Lock()
+			defer trackerStateMu.Unlock()
+			for tr, last := range trackerSuccess {
+				if tr == url {
+					continue
+				}
+				if now.Sub(last) <= trackerHealthyWindow {
+					return true
+				}
+			}
+			return false
 		}
 
 		var trackerWG sync.WaitGroup
@@ -131,7 +156,7 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 				defer trackerWG.Done()
 
 				started := true
-				backoff := time.Duration(0)
+				failureStreak := 0
 				for {
 					resp, err := tracker.Announce(announceURL, tracker.AnnounceRequest{
 						InfoHash: s.infoHash,
@@ -144,18 +169,12 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 
 					wait := s.currentTrackerInterval()
 					if err != nil {
-						if backoff <= 0 {
-							backoff = trackerRetryBackoffStart
-						} else {
-							backoff *= 2
-							if backoff > trackerRetryBackoffMax {
-								backoff = trackerRetryBackoffMax
-							}
-						}
-						wait = backoff
-						utils.Debug("Tracker announce failed (%s): %v (next retry in %s)", announceURL, err, backoff)
+						failureStreak++
+						wait = trackerFailureWait(err, failureStreak, hasOtherHealthyTracker(announceURL))
+						utils.Debug("Tracker announce failed (%s): %v [kind=%s] (next retry in %s)", announceURL, err, trackerFailureKindString(tracker.ClassifyFailure(err)), wait)
 					} else {
-						backoff = 0
+						failureStreak = 0
+						markTrackerSuccess(announceURL)
 						if resp != nil && resp.Interval > 0 {
 							trackerNext := time.Duration(resp.Interval) * time.Second
 							if trackerNext < minTrackerInterval {
@@ -339,6 +358,67 @@ func (s *Session) trackerNumWant() int {
 		target = 1000
 	}
 	return target
+}
+
+func trackerFailureWait(err error, failureStreak int, hasHealthyAlternatives bool) time.Duration {
+	if failureStreak < 1 {
+		failureStreak = 1
+	}
+
+	backoff := trackerRetryBackoffStart
+	for i := 1; i < failureStreak; i++ {
+		backoff *= 2
+		if backoff >= trackerRetryBackoffMax {
+			backoff = trackerRetryBackoffMax
+			break
+		}
+	}
+
+	kind := tracker.ClassifyFailure(err)
+	switch kind {
+	case tracker.FailureDNS, tracker.FailureRefused, tracker.FailureUnreachable:
+		if backoff < 15*time.Second {
+			backoff = 15 * time.Second
+		}
+		if hasHealthyAlternatives && failureStreak >= trackerDemoteAfter {
+			if backoff < trackerDemoteMinWait {
+				backoff = trackerDemoteMinWait
+			}
+			if backoff > trackerDemoteMaxWait {
+				backoff = trackerDemoteMaxWait
+			}
+		}
+	case tracker.FailureTimeout:
+		if hasHealthyAlternatives && failureStreak >= trackerDemoteAfter {
+			if backoff < 45*time.Second {
+				backoff = 45 * time.Second
+			}
+		}
+	default:
+	}
+
+	if backoff > trackerDemoteMaxWait {
+		backoff = trackerDemoteMaxWait
+	}
+	if backoff < time.Second {
+		backoff = time.Second
+	}
+	return backoff
+}
+
+func trackerFailureKindString(kind tracker.FailureKind) string {
+	switch kind {
+	case tracker.FailureTimeout:
+		return "timeout"
+	case tracker.FailureDNS:
+		return "dns"
+	case tracker.FailureRefused:
+		return "refused"
+	case tracker.FailureUnreachable:
+		return "unreachable"
+	default:
+		return "unknown"
+	}
 }
 
 func startedEvent(initial bool) string {
