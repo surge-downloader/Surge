@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/surge-downloader/surge/internal/torrent/bencode"
+	"github.com/anacrolix/torrent/bencode"
 )
 
 const (
@@ -23,7 +23,7 @@ func MakeExtendedHandshakeMessage(messages map[string]byte) (*Message, error) {
 	for name, id := range messages {
 		m[name] = int(id)
 	}
-	payload, err := bencode.Encode(map[string]any{
+	payload, err := bencode.Marshal(map[string]any{
 		"m": m,
 		"v": "surge",
 	})
@@ -47,12 +47,8 @@ func ParseExtendedMessage(msg *Message) (extID byte, payload []byte, err error) 
 }
 
 func ParseExtendedHandshake(payload []byte) (ExtendedHandshake, error) {
-	v, err := bencode.Decode(payload)
+	root, err := decodeBencodeMap(payload)
 	if err != nil {
-		return ExtendedHandshake{}, err
-	}
-	root, ok := v.(map[string]any)
-	if !ok {
 		return ExtendedHandshake{}, fmt.Errorf("invalid extended handshake root")
 	}
 	out := ExtendedHandshake{Messages: make(map[string]byte)}
@@ -78,19 +74,15 @@ func ParseExtendedHandshake(payload []byte) (ExtendedHandshake, error) {
 }
 
 func ParseUTPexPeers(payload []byte) ([]net.TCPAddr, error) {
-	v, err := bencode.Decode(payload)
+	root, err := decodeBencodeMap(payload)
 	if err != nil {
-		return nil, err
-	}
-	root, ok := v.(map[string]any)
-	if !ok {
 		return nil, fmt.Errorf("invalid ut_pex payload")
 	}
 	var peers []net.TCPAddr
-	if added, ok := root["added"].([]byte); ok {
+	if added, ok := getBencodeBytes(root["added"]); ok {
 		peers = append(peers, parseCompactPeers(added, 6)...)
 	}
-	if added6, ok := root["added6"].([]byte); ok {
+	if added6, ok := getBencodeBytes(root["added6"]); ok {
 		peers = append(peers, parseCompactPeers(added6, 18)...)
 	}
 	return peers, nil
@@ -127,7 +119,7 @@ func MakeUTPexMessage(extID byte, peers []net.TCPAddr) (*Message, error) {
 	if len(added6) > 0 {
 		body["added6"] = added6
 	}
-	encoded, err := bencode.Encode(body)
+	encoded, err := bencode.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
@@ -153,4 +145,26 @@ func parseCompactPeers(data []byte, stride int) []net.TCPAddr {
 		peers = append(peers, net.TCPAddr{IP: ip, Port: port})
 	}
 	return peers
+}
+
+func decodeBencodeMap(payload []byte) (map[string]any, error) {
+	var root map[string]any
+	if err := bencode.Unmarshal(payload, &root); err != nil {
+		return nil, err
+	}
+	if root == nil {
+		return nil, fmt.Errorf("empty bencode map")
+	}
+	return root, nil
+}
+
+func getBencodeBytes(v any) ([]byte, bool) {
+	switch t := v.(type) {
+	case []byte:
+		return t, true
+	case string:
+		return []byte(t), true
+	default:
+		return nil, false
+	}
 }

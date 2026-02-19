@@ -5,7 +5,7 @@ import (
 	"crypto/sha1"
 	"testing"
 
-	"github.com/surge-downloader/surge/internal/torrent/bencode"
+	"github.com/anacrolix/torrent/bencode"
 )
 
 func TestParseTorrent_InfoHash(t *testing.T) {
@@ -15,7 +15,7 @@ func TestParseTorrent_InfoHash(t *testing.T) {
 		"length":       int64(5),
 		"pieces":       []byte("12345678901234567890"),
 	}
-	infoBytes, err := bencode.Encode(info)
+	infoBytes, err := bencode.Marshal(info)
 	if err != nil {
 		t.Fatalf("encode info failed: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestParseTorrent_InfoHash(t *testing.T) {
 		"announce": "http://tracker",
 		"info":     info,
 	}
-	rootBytes, err := bencode.Encode(root)
+	rootBytes, err := bencode.Marshal(root)
 	if err != nil {
 		t.Fatalf("encode root failed: %v", err)
 	}
@@ -57,12 +57,12 @@ func TestParseTorrent_Multifile(t *testing.T) {
 			},
 		},
 	}
-	infoBytes, _ := bencode.Encode(info)
+	infoBytes, _ := bencode.Marshal(info)
 	root := map[string]any{
 		"announce": "http://tracker",
 		"info":     info,
 	}
-	rootBytes, _ := bencode.Encode(root)
+	rootBytes, _ := bencode.Marshal(root)
 
 	meta, err := ParseTorrent(rootBytes)
 	if err != nil {
