@@ -8,9 +8,19 @@ import (
 
 const protocolString = "BitTorrent protocol"
 
+const (
+	extensionReservedByte = 5
+	extensionReservedBit  = byte(0x10)
+)
+
 type Handshake struct {
 	InfoHash [20]byte
 	PeerID   [20]byte
+	Reserved [8]byte
+}
+
+func (h Handshake) SupportsExtensionProtocol() bool {
+	return h.Reserved[extensionReservedByte]&extensionReservedBit != 0
 }
 
 func WriteHandshake(w io.Writer, h Handshake) error {
@@ -20,8 +30,10 @@ func WriteHandshake(w io.Writer, h Handshake) error {
 	if _, err := w.Write([]byte(protocolString)); err != nil {
 		return err
 	}
-	// reserved bytes
-	if _, err := w.Write(make([]byte, 8)); err != nil {
+	reserved := h.Reserved
+	// Always advertise BEP10 support so peers can use extension messages (ut_pex).
+	reserved[extensionReservedByte] |= extensionReservedBit
+	if _, err := w.Write(reserved[:]); err != nil {
 		return err
 	}
 	if _, err := w.Write(h.InfoHash[:]); err != nil {
@@ -45,11 +57,10 @@ func ReadHandshake(r io.Reader) (*Handshake, error) {
 	if !bytes.Equal(ps, []byte(protocolString)) {
 		return nil, fmt.Errorf("invalid protocol string")
 	}
-	reserved := make([]byte, 8)
-	if _, err := io.ReadFull(r, reserved); err != nil {
+	var h Handshake
+	if _, err := io.ReadFull(r, h.Reserved[:]); err != nil {
 		return nil, err
 	}
-	var h Handshake
 	if _, err := io.ReadFull(r, h.InfoHash[:]); err != nil {
 		return nil, err
 	}
