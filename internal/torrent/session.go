@@ -114,102 +114,93 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 	go func() {
 		defer producers.Done()
 		seen := make(map[string]time.Time)
-		type trackerRetryState struct {
-			next    time.Time
-			backoff time.Duration
+		var seenMu sync.Mutex
+		emitPeer := func(addr net.TCPAddr) bool {
+			key := addr.String()
+			seenMu.Lock()
+			ok := shouldEmitPeer(seen, key, peerRetryWindow)
+			seenMu.Unlock()
+			return ok
 		}
-		retry := make(map[string]trackerRetryState)
-		started := true
 
-		for {
-			now := time.Now()
-			minNext := now.Add(s.currentTrackerInterval())
+		var trackerWG sync.WaitGroup
+		for _, tr := range s.trackers {
+			announceURL := tr
+			trackerWG.Add(1)
+			go func() {
+				defer trackerWG.Done()
 
-			for _, tr := range s.trackers {
-				st := retry[tr]
-				if !st.next.IsZero() && now.Before(st.next) {
-					if st.next.Before(minNext) {
-						minNext = st.next
-					}
-					continue
-				}
+				started := true
+				backoff := time.Duration(0)
+				for {
+					resp, err := tracker.Announce(announceURL, tracker.AnnounceRequest{
+						InfoHash: s.infoHash,
+						PeerID:   s.peerID,
+						Port:     s.announcePort(),
+						Left:     s.cfg.TotalLength,
+						Event:    startedEvent(started),
+						NumWant:  s.trackerNumWant(),
+					})
 
-				resp, err := tracker.Announce(tr, tracker.AnnounceRequest{
-					InfoHash: s.infoHash,
-					PeerID:   s.peerID,
-					Port:     s.announcePort(),
-					Left:     s.cfg.TotalLength,
-					Event:    startedEvent(started),
-					NumWant:  s.trackerNumWant(),
-				})
-				if err != nil {
-					if st.backoff <= 0 {
-						st.backoff = trackerRetryBackoffStart
+					wait := s.currentTrackerInterval()
+					if err != nil {
+						if backoff <= 0 {
+							backoff = trackerRetryBackoffStart
+						} else {
+							backoff *= 2
+							if backoff > trackerRetryBackoffMax {
+								backoff = trackerRetryBackoffMax
+							}
+						}
+						wait = backoff
+						utils.Debug("Tracker announce failed (%s): %v (next retry in %s)", announceURL, err, backoff)
 					} else {
-						st.backoff *= 2
-						if st.backoff > trackerRetryBackoffMax {
-							st.backoff = trackerRetryBackoffMax
+						backoff = 0
+						if resp != nil && resp.Interval > 0 {
+							trackerNext := time.Duration(resp.Interval) * time.Second
+							if trackerNext < minTrackerInterval {
+								trackerNext = minTrackerInterval
+							}
+							if trackerNext > 10*time.Minute {
+								trackerNext = 10 * time.Minute
+							}
+							// Aggressive mode: do not let sparse tracker intervals slow peer refresh.
+							// Use the faster cadence between our configured target and tracker suggestion.
+							if trackerNext < wait {
+								wait = trackerNext
+							}
+						}
+
+						if resp != nil {
+							for _, p := range resp.Peers {
+								addr := net.TCPAddr{IP: p.IP, Port: p.Port}
+								if !emitPeer(addr) {
+									continue
+								}
+								select {
+								case out <- addr:
+								case <-ctx.Done():
+									return
+								}
+							}
 						}
 					}
-					st.next = now.Add(st.backoff)
-					retry[tr] = st
-					if st.next.Before(minNext) {
-						minNext = st.next
-					}
-					utils.Debug("Tracker announce failed (%s): %v (next retry in %s)", tr, err, st.backoff)
-					continue
-				}
 
-				st.backoff = 0
-				next := s.currentTrackerInterval()
-				if resp != nil && resp.Interval > 0 {
-					trackerNext := time.Duration(resp.Interval) * time.Second
-					if trackerNext < minTrackerInterval {
-						trackerNext = minTrackerInterval
+					started = false
+					if wait < time.Second {
+						wait = time.Second
 					}
-					if trackerNext > 10*time.Minute {
-						trackerNext = 10 * time.Minute
-					}
-					// Aggressive mode: do not let sparse tracker intervals slow peer refresh.
-					// Use the faster cadence between our configured target and tracker suggestion.
-					if trackerNext < next {
-						next = trackerNext
-					}
-				}
-				st.next = now.Add(next)
-				retry[tr] = st
-				if st.next.Before(minNext) {
-					minNext = st.next
-				}
-
-				if resp == nil {
-					continue
-				}
-				for _, p := range resp.Peers {
-					addr := net.TCPAddr{IP: p.IP, Port: p.Port}
-					key := addr.String()
-					if !shouldEmitPeer(seen, key, peerRetryWindow) {
-						continue
-					}
+					timer := time.NewTimer(wait)
 					select {
-					case out <- addr:
 					case <-ctx.Done():
+						timer.Stop()
 						return
+					case <-timer.C:
 					}
 				}
-			}
-
-			started = false
-			wait := time.Until(minNext)
-			if wait < 1*time.Second {
-				wait = 1 * time.Second
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(wait):
-			}
+			}()
 		}
+		trackerWG.Wait()
 	}()
 
 	// dht stream

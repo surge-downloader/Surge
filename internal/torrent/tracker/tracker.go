@@ -1,12 +1,33 @@
 package tracker
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math/rand"
+	"net"
 	"net/url"
+	"time"
 )
 
 func Announce(announceURL string, req AnnounceRequest) (*AnnounceResponse, error) {
+	var lastErr error
+	const maxAttempts = 2
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		resp, err := announceOnce(announceURL, req)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if !isTimeoutErr(err) || attempt+1 >= maxAttempts {
+			break
+		}
+		time.Sleep(time.Duration(300*(attempt+1)) * time.Millisecond)
+	}
+	return nil, lastErr
+}
+
+func announceOnce(announceURL string, req AnnounceRequest) (*AnnounceResponse, error) {
 	u, err := url.Parse(announceURL)
 	if err != nil {
 		return nil, err
@@ -19,6 +40,25 @@ func Announce(announceURL string, req AnnounceRequest) (*AnnounceResponse, error
 	default:
 		return nil, fmt.Errorf("unsupported tracker scheme: %s", u.Scheme)
 	}
+}
+
+func isTimeoutErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	if errors.As(err, &ne) {
+		return ne.Timeout()
+	}
+	type timeout interface{ Timeout() bool }
+	var te timeout
+	if errors.As(err, &te) {
+		return te.Timeout()
+	}
+	return false
 }
 
 func DefaultPeerID() [20]byte {
