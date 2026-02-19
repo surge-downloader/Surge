@@ -29,6 +29,7 @@ const (
 	defaultHealthMinMature  = 4
 	defaultPeerReadTimeout  = 45 * time.Second
 	defaultKeepAliveSend    = 30 * time.Second
+	protocolShortUptime     = 30 * time.Second
 
 	// Compatibility aliases for tests.
 	evictionCooldown        = defaultEvictionCooldown
@@ -42,7 +43,7 @@ const (
 	dialBackoffMax          = 10 * time.Minute
 
 	minPendingDialWindow = 8
-	maxPendingDialWindow = 32
+	maxPendingDialWindow = 64
 )
 
 type dialRetryState struct {
@@ -689,6 +690,10 @@ func (m *Manager) BroadcastHave(pieceIndex int) {
 
 func (m *Manager) onClose(key string, closeErr error) {
 	m.mu.Lock()
+	var uptime time.Duration
+	if c, ok := m.active[key]; ok && c != nil {
+		uptime = c.Performance().Uptime
+	}
 	if m.uploading[key] {
 		m.unchoked--
 		delete(m.uploading, key)
@@ -696,6 +701,7 @@ func (m *Manager) onClose(key string, closeErr error) {
 	delete(m.active, key)
 	if isUnexpectedPeerClose(closeErr) {
 		m.protocolCloses++
+		m.noteProtocolCloseLocked(key, time.Now(), uptime)
 	}
 	m.mu.Unlock()
 }
@@ -757,6 +763,28 @@ func (m *Manager) noteHealthEvictionLocked(key string, now time.Time) {
 	m.healthEvictions++
 }
 
+func (m *Manager) noteProtocolCloseLocked(key string, now time.Time, uptime time.Duration) {
+	if key == "" {
+		return
+	}
+	st := m.retry[key]
+	delay := dialBackoffBase
+	if uptime < protocolShortUptime {
+		delay = defaultHealthRedial
+	}
+	until := now.Add(delay)
+	if st.nextAttempt.Before(until) {
+		st.nextAttempt = until
+	}
+	if st.failures < 1 {
+		st.failures = 1
+	}
+	m.retry[key] = st
+	if m.goodPeers != nil {
+		delete(m.goodPeers, key)
+	}
+}
+
 func dialBackoffDuration(failures int) time.Duration {
 	if failures <= 0 {
 		return dialBackoffBase
@@ -782,7 +810,11 @@ func withDefaultDuration(v time.Duration, fallback time.Duration) time.Duration 
 }
 
 func (m *Manager) pendingDialLimitLocked() int {
-	limit := m.maxPeers / 8
+	remaining := m.maxPeers - len(m.active)
+	if remaining <= 0 {
+		return minPendingDialWindow
+	}
+	limit := remaining / 2
 	if limit < minPendingDialWindow {
 		limit = minPendingDialWindow
 	}
