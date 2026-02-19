@@ -20,7 +20,14 @@ const (
 	minEvictionUptime       = 8 * time.Second
 	idleEvictionThreshold   = 10 * time.Second
 	evictionKeepRateMinimum = 512 * 1024
+	dialBackoffBase         = 15 * time.Second
+	dialBackoffMax          = 10 * time.Minute
 )
+
+type dialRetryState struct {
+	failures    int
+	nextAttempt time.Time
+}
 
 type Manager struct {
 	infoHash [20]byte
@@ -36,6 +43,7 @@ type Manager struct {
 	active          map[string]*Conn
 	discovered      map[string]bool
 	pending         map[string]bool
+	retry           map[string]dialRetryState
 	uploading       map[string]bool
 	unchoked        int
 	listener        net.Listener
@@ -86,6 +94,7 @@ func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceL
 		active:          make(map[string]*Conn),
 		discovered:      make(map[string]bool),
 		pending:         make(map[string]bool),
+		retry:           make(map[string]dialRetryState),
 		uploading:       make(map[string]bool),
 		dialSem:         make(chan struct{}, dialWorkers),
 	}
@@ -122,6 +131,7 @@ func (m *Manager) markDiscovered(key string) {
 func (m *Manager) tryDialAsync(ctx context.Context, addr net.TCPAddr) {
 	key := addr.String()
 	var victim *Conn
+	now := time.Now()
 	m.mu.Lock()
 	if len(m.active) >= m.maxPeers {
 		victim = m.pickEvictionCandidateLocked()
@@ -135,6 +145,10 @@ func (m *Manager) tryDialAsync(ctx context.Context, addr net.TCPAddr) {
 		return
 	}
 	if m.pending[key] {
+		m.mu.Unlock()
+		return
+	}
+	if !m.shouldAttemptDialLocked(key, now) {
 		m.mu.Unlock()
 		return
 	}
@@ -231,11 +245,13 @@ func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 	if err != nil {
 		m.mu.Lock()
 		m.dialFailures++
+		m.noteDialFailureLocked(key, time.Now())
 		m.mu.Unlock()
 		return
 	}
 	m.mu.Lock()
 	m.dialSuccess++
+	m.noteDialSuccessLocked(key)
 	m.mu.Unlock()
 
 	var pipe Pipeline
@@ -297,6 +313,7 @@ func (m *Manager) acceptInboundConn(ctx context.Context, raw net.Conn) {
 		return
 	}
 	m.inboundAccepted++
+	m.noteDialSuccessLocked(key)
 	m.mu.Unlock()
 
 	var pipe Pipeline
@@ -336,6 +353,7 @@ func (m *Manager) CloseAll() {
 		delete(m.uploading, k)
 	}
 	clear(m.pending)
+	clear(m.retry)
 	m.unchoked = 0
 }
 
@@ -442,4 +460,49 @@ func (m *Manager) onPEXPeer(ctx context.Context, addr net.TCPAddr) {
 	}
 	m.markDiscovered(addr.String())
 	m.tryDialAsync(ctx, addr)
+}
+
+func (m *Manager) shouldAttemptDialLocked(key string, now time.Time) bool {
+	if key == "" {
+		return false
+	}
+	st, ok := m.retry[key]
+	if !ok {
+		return true
+	}
+	return !now.Before(st.nextAttempt)
+}
+
+func (m *Manager) noteDialSuccessLocked(key string) {
+	if key == "" {
+		return
+	}
+	delete(m.retry, key)
+}
+
+func (m *Manager) noteDialFailureLocked(key string, now time.Time) {
+	if key == "" {
+		return
+	}
+	st := m.retry[key]
+	st.failures++
+	st.nextAttempt = now.Add(dialBackoffDuration(st.failures))
+	m.retry[key] = st
+}
+
+func dialBackoffDuration(failures int) time.Duration {
+	if failures <= 0 {
+		return dialBackoffBase
+	}
+	backoff := dialBackoffBase
+	for i := 1; i < failures; i++ {
+		if backoff >= dialBackoffMax {
+			return dialBackoffMax
+		}
+		backoff *= 2
+		if backoff >= dialBackoffMax {
+			return dialBackoffMax
+		}
+	}
+	return backoff
 }
