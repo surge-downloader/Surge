@@ -1,16 +1,17 @@
 package peer
 
 import (
-	"encoding/binary"
 	"fmt"
 	"net"
 
+	"github.com/anacrolix/dht/v2/krpc"
 	"github.com/anacrolix/torrent/bencode"
+	"github.com/anacrolix/torrent/peer_protocol"
 )
 
 const (
-	extendedHandshakeID = byte(0)
-	utPexExtensionName  = "ut_pex"
+	extendedHandshakeID = byte(peer_protocol.HandshakeExtendedID)
+	utPexExtensionName  = string(peer_protocol.ExtensionNamePex)
 	utPexLocalMessageID = byte(1)
 )
 
@@ -19,14 +20,14 @@ type ExtendedHandshake struct {
 }
 
 func MakeExtendedHandshakeMessage(messages map[string]byte) (*Message, error) {
-	m := make(map[string]any, len(messages))
-	for name, id := range messages {
-		m[name] = int(id)
+	hs := peer_protocol.ExtendedHandshakeMessage{
+		M: make(map[peer_protocol.ExtensionName]peer_protocol.ExtensionNumber, len(messages)),
+		V: "surge",
 	}
-	payload, err := bencode.Marshal(map[string]any{
-		"m": m,
-		"v": "surge",
-	})
+	for name, id := range messages {
+		hs.M[peer_protocol.ExtensionName(name)] = peer_protocol.ExtensionNumber(id)
+	}
+	payload, err := bencode.Marshal(hs)
 	if err != nil {
 		return nil, err
 	}
@@ -47,43 +48,45 @@ func ParseExtendedMessage(msg *Message) (extID byte, payload []byte, err error) 
 }
 
 func ParseExtendedHandshake(payload []byte) (ExtendedHandshake, error) {
-	root, err := decodeBencodeMap(payload)
-	if err != nil {
+	var hs peer_protocol.ExtendedHandshakeMessage
+	if err := bencode.Unmarshal(payload, &hs); err != nil {
 		return ExtendedHandshake{}, fmt.Errorf("invalid extended handshake root")
 	}
-	out := ExtendedHandshake{Messages: make(map[string]byte)}
-	mraw, ok := root["m"].(map[string]any)
-	if !ok {
-		return out, nil
-	}
-	for name, idRaw := range mraw {
-		switch id := idRaw.(type) {
-		case int64:
-			if id < 0 || id > 255 {
-				continue
-			}
-			out.Messages[name] = byte(id)
-		case int:
-			if id < 0 || id > 255 {
-				continue
-			}
-			out.Messages[name] = byte(id)
+	out := ExtendedHandshake{Messages: make(map[string]byte, len(hs.M))}
+	for name, id := range hs.M {
+		if id == peer_protocol.ExtensionDeleteNumber {
+			continue
 		}
+		out.Messages[string(name)] = byte(id)
 	}
 	return out, nil
 }
 
 func ParseUTPexPeers(payload []byte) ([]net.TCPAddr, error) {
-	root, err := decodeBencodeMap(payload)
+	pex, err := peer_protocol.LoadPexMsg(payload)
 	if err != nil {
 		return nil, fmt.Errorf("invalid ut_pex payload")
 	}
-	var peers []net.TCPAddr
-	if added, ok := getBencodeBytes(root["added"]); ok {
-		peers = append(peers, parseCompactPeers(added, 6)...)
+	peers := make([]net.TCPAddr, 0, len(pex.Added)+len(pex.Added6))
+	for _, p := range pex.Added {
+		if p.Port <= 0 || p.IP == nil {
+			continue
+		}
+		ip := p.IP.To4()
+		if ip == nil {
+			continue
+		}
+		peers = append(peers, net.TCPAddr{IP: append(net.IP(nil), ip...), Port: p.Port})
 	}
-	if added6, ok := getBencodeBytes(root["added6"]); ok {
-		peers = append(peers, parseCompactPeers(added6, 18)...)
+	for _, p := range pex.Added6 {
+		if p.Port <= 0 || p.IP == nil {
+			continue
+		}
+		ip := p.IP.To16()
+		if ip == nil {
+			continue
+		}
+		peers = append(peers, net.TCPAddr{IP: append(net.IP(nil), ip...), Port: p.Port})
 	}
 	return peers, nil
 }
@@ -92,79 +95,31 @@ func MakeUTPexMessage(extID byte, peers []net.TCPAddr) (*Message, error) {
 	if extID == 0 {
 		return nil, fmt.Errorf("invalid ut_pex extension id")
 	}
-	var added []byte
-	var added6 []byte
+	pex := peer_protocol.PexMsg{
+		Added:  make(krpc.CompactIPv4NodeAddrs, 0, len(peers)),
+		Added6: make(krpc.CompactIPv6NodeAddrs, 0, len(peers)),
+	}
 	for _, p := range peers {
 		if p.Port <= 0 || p.Port > 65535 || p.IP == nil {
 			continue
 		}
 		if ipv4 := p.IP.To4(); ipv4 != nil {
-			entry := make([]byte, 6)
-			copy(entry[:4], ipv4)
-			binary.BigEndian.PutUint16(entry[4:6], uint16(p.Port))
-			added = append(added, entry...)
+			pex.Added = append(pex.Added, krpc.NodeAddr{
+				IP:   append(net.IP(nil), ipv4...),
+				Port: p.Port,
+			})
 			continue
 		}
 		if ipv6 := p.IP.To16(); ipv6 != nil {
-			entry := make([]byte, 18)
-			copy(entry[:16], ipv6)
-			binary.BigEndian.PutUint16(entry[16:18], uint16(p.Port))
-			added6 = append(added6, entry...)
+			pex.Added6 = append(pex.Added6, krpc.NodeAddr{
+				IP:   append(net.IP(nil), ipv6...),
+				Port: p.Port,
+			})
 		}
 	}
-	body := make(map[string]any, 2)
-	if len(added) > 0 {
-		body["added"] = added
-	}
-	if len(added6) > 0 {
-		body["added6"] = added6
-	}
-	encoded, err := bencode.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	extPayload := make([]byte, 1+len(encoded))
-	extPayload[0] = extID
-	copy(extPayload[1:], encoded)
+	pp := pex.Message(peer_protocol.ExtensionNumber(extID))
+	extPayload := make([]byte, 1+len(pp.ExtendedPayload))
+	extPayload[0] = byte(pp.ExtendedID)
+	copy(extPayload[1:], pp.ExtendedPayload)
 	return &Message{ID: MsgExtended, Payload: extPayload}, nil
-}
-
-func parseCompactPeers(data []byte, stride int) []net.TCPAddr {
-	if stride <= 0 || len(data) < stride {
-		return nil
-	}
-	var peers []net.TCPAddr
-	for i := 0; i+stride <= len(data); i += stride {
-		ipLen := stride - 2
-		port := int(binary.BigEndian.Uint16(data[i+ipLen : i+stride]))
-		if port <= 0 {
-			continue
-		}
-		ip := make(net.IP, ipLen)
-		copy(ip, data[i:i+ipLen])
-		peers = append(peers, net.TCPAddr{IP: ip, Port: port})
-	}
-	return peers
-}
-
-func decodeBencodeMap(payload []byte) (map[string]any, error) {
-	var root map[string]any
-	if err := bencode.Unmarshal(payload, &root); err != nil {
-		return nil, err
-	}
-	if root == nil {
-		return nil, fmt.Errorf("empty bencode map")
-	}
-	return root, nil
-}
-
-func getBencodeBytes(v any) ([]byte, bool) {
-	switch t := v.(type) {
-	case []byte:
-		return t, true
-	case string:
-		return []byte(t), true
-	default:
-		return nil, false
-	}
 }
