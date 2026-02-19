@@ -15,8 +15,8 @@ import (
 const (
 	defaultMaxPeers         = 128
 	defaultRequestPipeline  = 32
-	minDialWorkers          = 16
-	maxDialWorkers          = 192
+	minDialWorkers          = 8
+	maxDialWorkers          = 64
 	managerDialTimeout      = 3 * time.Second
 	maintainInterval        = 2 * time.Second
 	defaultEvictionCooldown = 5 * time.Second
@@ -40,6 +40,9 @@ const (
 	healthCullMaxPerTick    = defaultHealthCullMax
 	dialBackoffBase         = 15 * time.Second
 	dialBackoffMax          = 10 * time.Minute
+
+	minPendingDialWindow = 8
+	maxPendingDialWindow = 32
 )
 
 type dialRetryState struct {
@@ -75,6 +78,7 @@ type Manager struct {
 	active          map[string]*Conn
 	discovered      map[string]bool
 	discoveredAddrs map[string]net.TCPAddr
+	goodPeers       map[string]bool
 	pending         map[string]bool
 	retry           map[string]dialRetryState
 	uploading       map[string]bool
@@ -166,6 +170,7 @@ func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceL
 		active:          make(map[string]*Conn),
 		discovered:      make(map[string]bool),
 		discoveredAddrs: make(map[string]net.TCPAddr),
+		goodPeers:       make(map[string]bool),
 		pending:         make(map[string]bool),
 		retry:           make(map[string]dialRetryState),
 		uploading:       make(map[string]bool),
@@ -232,6 +237,10 @@ func (m *Manager) tryDialAsync(ctx context.Context, addr net.TCPAddr) {
 		return
 	}
 	if m.pending[key] {
+		m.mu.Unlock()
+		return
+	}
+	if len(m.pending) >= m.pendingDialLimitLocked() {
 		m.mu.Unlock()
 		return
 	}
@@ -494,35 +503,44 @@ func (m *Manager) fillFromDiscovered(ctx context.Context) {
 		m.mu.Unlock()
 		return
 	}
-	addrs := make([]net.TCPAddr, 0, len(m.discoveredAddrs))
-	for _, addr := range m.discoveredAddrs {
-		addrs = append(addrs, addr)
+	goodAddrs := make([]net.TCPAddr, 0, len(m.discoveredAddrs))
+	otherAddrs := make([]net.TCPAddr, 0, len(m.discoveredAddrs))
+	for key, addr := range m.discoveredAddrs {
+		if m.goodPeers[key] {
+			goodAddrs = append(goodAddrs, addr)
+			continue
+		}
+		otherAddrs = append(otherAddrs, addr)
 	}
 	m.mu.Unlock()
 
-	if len(addrs) == 0 {
+	if len(goodAddrs) == 0 && len(otherAddrs) == 0 {
 		return
 	}
 
 	budget := 16
-	for _, addr := range addrs {
-		if budget <= 0 {
-			return
-		}
-		if ctx.Err() != nil {
-			return
-		}
+	tryList := func(addrs []net.TCPAddr) bool {
+		for _, addr := range addrs {
+			if budget <= 0 || ctx.Err() != nil {
+				return true
+			}
 
-		m.tryDialAsync(ctx, addr)
-		budget--
+			m.tryDialAsync(ctx, addr)
+			budget--
 
-		m.mu.Lock()
-		full := m.maxPeers > 0 && len(m.active)+len(m.pending) >= m.maxPeers
-		m.mu.Unlock()
-		if full {
-			return
+			m.mu.Lock()
+			full := m.maxPeers > 0 && len(m.active)+len(m.pending) >= m.maxPeers
+			m.mu.Unlock()
+			if full {
+				return true
+			}
 		}
+		return false
 	}
+	if stop := tryList(goodAddrs); stop {
+		return
+	}
+	_ = tryList(otherAddrs)
 }
 
 func (m *Manager) collectHealthEvictionsLocked() []string {
@@ -705,6 +723,10 @@ func (m *Manager) noteDialSuccessLocked(key string) {
 	if key == "" {
 		return
 	}
+	if m.goodPeers == nil {
+		m.goodPeers = make(map[string]bool)
+	}
+	m.goodPeers[key] = true
 	delete(m.retry, key)
 }
 
@@ -757,6 +779,17 @@ func withDefaultDuration(v time.Duration, fallback time.Duration) time.Duration 
 		return fallback
 	}
 	return v
+}
+
+func (m *Manager) pendingDialLimitLocked() int {
+	limit := m.maxPeers / 8
+	if limit < minPendingDialWindow {
+		limit = minPendingDialWindow
+	}
+	if limit > maxPendingDialWindow {
+		limit = maxPendingDialWindow
+	}
+	return limit
 }
 
 func isUnexpectedPeerClose(err error) bool {
