@@ -20,6 +20,8 @@ const (
 	trackerRetryBackoffMax   = 30 * time.Second
 	minTrackerInterval       = 3 * time.Second
 	maxLowPeerInterval       = 10 * time.Second
+	trackerLoopMinWait       = 250 * time.Millisecond
+	trackerInitialFollowup   = 800 * time.Millisecond
 	trackerHealthyWindow     = 2 * time.Minute
 	trackerDemoteMinWait     = 2 * time.Minute
 	trackerDemoteMaxWait     = 10 * time.Minute
@@ -158,6 +160,7 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 				started := true
 				failureStreak := 0
 				for {
+					firstAnnounce := started
 					resp, err := tracker.Announce(announceURL, tracker.AnnounceRequest{
 						InfoHash: s.infoHash,
 						PeerID:   s.peerID,
@@ -208,9 +211,12 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 						}
 					}
 
+					if firstAnnounce && err == nil && wait > trackerInitialFollowup {
+						wait = trackerInitialFollowup
+					}
 					started = false
-					if wait < time.Second {
-						wait = time.Second
+					if wait < trackerLoopMinWait {
+						wait = trackerLoopMinWait
 					}
 					timer := time.NewTimer(wait)
 					select {
