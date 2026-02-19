@@ -1,158 +1,65 @@
 package torrent
 
 import (
-	"crypto/sha1"
+	"bytes"
 	"fmt"
 
-	"github.com/surge-downloader/surge/internal/torrent/bencode"
+	"github.com/anacrolix/torrent/metainfo"
 )
 
 func ParseTorrent(data []byte) (*TorrentMeta, error) {
-	rootAny, infoBytes, err := bencode.DecodeWithSpanKey(data, "info")
+	mi, err := metainfo.Load(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
-	root, ok := rootAny.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("invalid torrent root")
-	}
-	infoAny, ok := root["info"]
-	if !ok {
-		return nil, fmt.Errorf("missing info dict")
-	}
-	infoMap, ok := infoAny.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("invalid info dict")
-	}
-
-	info, err := parseInfo(infoMap)
+	parsedInfo, err := mi.UnmarshalInfo()
 	if err != nil {
 		return nil, err
 	}
 
-	if len(infoBytes) == 0 {
-		encoded, encErr := bencode.Encode(infoMap)
-		if encErr != nil {
-			return nil, encErr
-		}
-		infoBytes = encoded
+	info := Info{
+		Name:        parsedInfo.BestName(),
+		PieceLength: parsedInfo.PieceLength,
+		Pieces:      append([]byte(nil), parsedInfo.Pieces...),
+		Length:      parsedInfo.Length,
 	}
-	hash := sha1.Sum(infoBytes)
+	for _, f := range parsedInfo.UpvertedFiles() {
+		info.Files = append(info.Files, FileEntry{
+			Path:   append([]string(nil), f.BestPath()...),
+			Length: f.Length,
+		})
+	}
+	if info.Name == "" {
+		info.Name = parsedInfo.Name
+	}
+	if err := validateInfo(info); err != nil {
+		return nil, err
+	}
+
+	hash := mi.HashInfoBytes()
 
 	meta := &TorrentMeta{
 		Info:      info,
 		InfoHash:  hash,
-		InfoBytes: infoBytes,
+		InfoBytes: append([]byte(nil), mi.InfoBytes...),
+		Announce:  mi.Announce,
 	}
-
-	if v, ok := root["announce"]; ok {
-		if s, ok := v.([]byte); ok {
-			meta.Announce = string(s)
+	for _, tier := range mi.UpvertedAnnounceList() {
+		if len(tier) == 0 {
+			continue
 		}
-	}
-	if v, ok := root["announce-list"]; ok {
-		meta.AnnounceList = parseAnnounceList(v)
+		meta.AnnounceList = append(meta.AnnounceList, append([]string(nil), tier...))
 	}
 
 	return meta, nil
 }
 
-func parseInfo(m map[string]any) (Info, error) {
-	var info Info
-
-	if v, ok := m["name"]; ok {
-		if s, ok := v.([]byte); ok {
-			info.Name = string(s)
-		}
-	}
-	if v, ok := m["piece length"]; ok {
-		if n, ok := v.(int64); ok {
-			info.PieceLength = n
-		}
-	}
-	if v, ok := m["pieces"]; ok {
-		if b, ok := v.([]byte); ok {
-			info.Pieces = b
-		}
-	}
-	if v, ok := m["length"]; ok {
-		if n, ok := v.(int64); ok {
-			info.Length = n
-		}
-	}
-	if v, ok := m["files"]; ok {
-		files, err := parseFiles(v)
-		if err != nil {
-			return info, err
-		}
-		info.Files = files
-	}
-
+func validateInfo(info Info) error {
 	if info.PieceLength == 0 || len(info.Pieces) == 0 || info.Name == "" {
-		return info, fmt.Errorf("invalid info dict")
+		return fmt.Errorf("invalid info dict")
 	}
 	if info.Length == 0 && len(info.Files) == 0 {
-		return info, fmt.Errorf("missing length/files")
+		return fmt.Errorf("missing length/files")
 	}
-	return info, nil
-}
-
-func parseFiles(v any) ([]FileEntry, error) {
-	list, ok := v.([]any)
-	if !ok {
-		return nil, fmt.Errorf("invalid files list")
-	}
-	files := make([]FileEntry, 0, len(list))
-	for _, item := range list {
-		m, ok := item.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("invalid file entry")
-		}
-		var fe FileEntry
-		if n, ok := m["length"].(int64); ok {
-			fe.Length = n
-		}
-		if p, ok := m["path"]; ok {
-			pathList, ok := p.([]any)
-			if !ok {
-				return nil, fmt.Errorf("invalid file path")
-			}
-			for _, part := range pathList {
-				b, ok := part.([]byte)
-				if !ok {
-					return nil, fmt.Errorf("invalid path element")
-				}
-				fe.Path = append(fe.Path, string(b))
-			}
-		}
-		if fe.Length <= 0 || len(fe.Path) == 0 {
-			return nil, fmt.Errorf("invalid file entry data")
-		}
-		files = append(files, fe)
-	}
-	return files, nil
-}
-
-func parseAnnounceList(v any) [][]string {
-	var out [][]string
-	list, ok := v.([]any)
-	if !ok {
-		return out
-	}
-	for _, tierAny := range list {
-		tierList, ok := tierAny.([]any)
-		if !ok {
-			continue
-		}
-		var tier []string
-		for _, t := range tierList {
-			if b, ok := t.([]byte); ok {
-				tier = append(tier, string(b))
-			}
-		}
-		if len(tier) > 0 {
-			out = append(out, tier)
-		}
-	}
-	return out
+	return nil
 }

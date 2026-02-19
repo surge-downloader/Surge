@@ -3,12 +3,14 @@ package tracker
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/rand"
 	"net"
-	"net/url"
 	"strings"
 	"time"
+
+	atracker "github.com/anacrolix/torrent/tracker"
+	"github.com/anacrolix/torrent/types"
+	"github.com/anacrolix/torrent/types/infohash"
 )
 
 type FailureKind int
@@ -39,17 +41,55 @@ func Announce(announceURL string, req AnnounceRequest) (*AnnounceResponse, error
 }
 
 func announceOnce(announceURL string, req AnnounceRequest) (*AnnounceResponse, error) {
-	u, err := url.Parse(announceURL)
+	areq := atracker.AnnounceRequest{
+		InfoHash:   infohash.T(req.InfoHash),
+		PeerId:     types.PeerID(req.PeerID),
+		Downloaded: req.Downloaded,
+		Left:       req.Left,
+		Uploaded:   req.Uploaded,
+		Event:      mapEvent(req.Event),
+		NumWant:    int32(req.NumWant),
+		Port:       uint16(req.Port),
+	}
+	if areq.NumWant <= 0 {
+		areq.NumWant = -1
+	}
+	if req.Port < 0 || req.Port > 65535 {
+		areq.Port = 0
+	}
+
+	res, err := atracker.Announce{
+		TrackerUrl: announceURL,
+		Request:    areq,
+		Context:    context.Background(),
+	}.Do()
 	if err != nil {
 		return nil, err
 	}
-	switch u.Scheme {
-	case "http", "https":
-		return AnnounceHTTP(announceURL, req)
-	case "udp":
-		return AnnounceUDP(announceURL, req)
+
+	out := &AnnounceResponse{
+		Interval: int(res.Interval),
+		Peers:    make([]Peer, 0, len(res.Peers)),
+	}
+	for _, p := range res.Peers {
+		out.Peers = append(out.Peers, Peer{
+			IP:   p.IP,
+			Port: p.Port,
+		})
+	}
+	return out, nil
+}
+
+func mapEvent(event string) atracker.AnnounceEvent {
+	switch strings.ToLower(strings.TrimSpace(event)) {
+	case "started":
+		return atracker.Started
+	case "stopped":
+		return atracker.Stopped
+	case "completed":
+		return atracker.Completed
 	default:
-		return nil, fmt.Errorf("unsupported tracker scheme: %s", u.Scheme)
+		return atracker.None
 	}
 }
 
