@@ -174,6 +174,9 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 						if resp != nil {
 							for _, p := range resp.Peers {
 								addr := net.TCPAddr{IP: p.IP, Port: p.Port}
+								if !isPublicRoutablePeer(addr.IP) {
+									continue
+								}
 								if !emitPeer(addr) {
 									continue
 								}
@@ -218,6 +221,9 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 		seen := make(map[string]time.Time)
 		for p := range svc.DiscoverPeers(ctx, s.infoHash) {
 			addr := net.TCPAddr{IP: p.IP, Port: p.Port}
+			if !isPublicRoutablePeer(addr.IP) {
+				continue
+			}
 			key := addr.String()
 			if !shouldEmitPeer(seen, key, peerRetryWindow) {
 				continue
@@ -370,4 +376,30 @@ func shouldEmitPeer(seen map[string]time.Time, key string, retryWindow time.Dura
 	}
 	seen[key] = now
 	return true
+}
+
+func isPublicRoutablePeer(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	ip = ip.To16()
+	if ip == nil {
+		return false
+	}
+	if ip.IsUnspecified() || ip.IsLoopback() || ip.IsMulticast() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return false
+	}
+	if isCarrierGradeNAT(ip) {
+		return false
+	}
+	return true
+}
+
+func isCarrierGradeNAT(ip net.IP) bool {
+	v4 := ip.To4()
+	if v4 == nil {
+		return false
+	}
+	// 100.64.0.0/10
+	return v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127
 }

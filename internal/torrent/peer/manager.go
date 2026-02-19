@@ -707,7 +707,7 @@ func (m *Manager) onClose(key string, closeErr error) {
 }
 
 func (m *Manager) onPEXPeer(ctx context.Context, addr net.TCPAddr) {
-	if addr.Port <= 0 || addr.Port > 65535 || addr.IP == nil || addr.IP.IsUnspecified() {
+	if addr.Port <= 0 || addr.Port > 65535 || !isPublicRoutablePeer(addr.IP) {
 		return
 	}
 	m.markDiscovered(addr)
@@ -836,4 +836,30 @@ func isUnexpectedPeerClose(err error) bool {
 		return false
 	}
 	return true
+}
+
+func isPublicRoutablePeer(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	ip = ip.To16()
+	if ip == nil {
+		return false
+	}
+	if ip.IsUnspecified() || ip.IsLoopback() || ip.IsMulticast() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return false
+	}
+	if isCarrierGradeNAT(ip) {
+		return false
+	}
+	return true
+}
+
+func isCarrierGradeNAT(ip net.IP) bool {
+	v4 := ip.To4()
+	if v4 == nil {
+		return false
+	}
+	// 100.64.0.0/10
+	return v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127
 }
