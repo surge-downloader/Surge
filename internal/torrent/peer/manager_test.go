@@ -110,11 +110,12 @@ func TestCollectHealthEvictionsLockedOnlyWhenSaturated(t *testing.T) {
 	}
 
 	m := &Manager{
-		maxPeers: 4,
+		maxPeers: 5,
 		active: map[string]*Conn{
-			"fast": makeConn(2 * 1024 * 1024),
-			"mid":  makeConn(1024 * 1024),
-			"slow": makeConn(64 * 1024),
+			"fast":  makeConn(2 * 1024 * 1024),
+			"mid":   makeConn(1024 * 1024),
+			"slow":  makeConn(64 * 1024),
+			"slow2": makeConn(48 * 1024),
 		},
 	}
 
@@ -122,8 +123,59 @@ func TestCollectHealthEvictionsLockedOnlyWhenSaturated(t *testing.T) {
 		t.Fatalf("expected no victims when not saturated, got=%v", victims)
 	}
 
-	m.maxPeers = 3
+	m.maxPeers = 4
 	if victims := m.collectHealthEvictionsLocked(); len(victims) == 0 {
 		t.Fatalf("expected victims when saturated")
+	}
+}
+
+func TestCollectHealthEvictionsSkipsWhenAggregateRateIsLow(t *testing.T) {
+	now := time.Now()
+	mature := minEvictionUptime + 2*time.Second
+	makeConn := func(rateBps int64) *Conn {
+		return &Conn{
+			startedAt: now.Add(-mature),
+			received:  rateBps * int64(mature.Seconds()),
+		}
+	}
+
+	m := &Manager{
+		maxPeers: 4,
+		active: map[string]*Conn{
+			"a": makeConn(128 * 1024),
+			"b": makeConn(96 * 1024),
+			"c": makeConn(88 * 1024),
+			"d": makeConn(80 * 1024),
+		},
+	}
+
+	if victims := m.collectHealthEvictionsLocked(); len(victims) != 0 {
+		t.Fatalf("expected no victims under low aggregate throughput, got=%v", victims)
+	}
+}
+
+func TestCollectHealthEvictionsRespectsCooldown(t *testing.T) {
+	now := time.Now()
+	mature := minEvictionUptime + 2*time.Second
+	makeConn := func(rateBps int64) *Conn {
+		return &Conn{
+			startedAt: now.Add(-mature),
+			received:  rateBps * int64(mature.Seconds()),
+		}
+	}
+
+	m := &Manager{
+		maxPeers:       4,
+		lastHealthCull: now,
+		active: map[string]*Conn{
+			"a": makeConn(2 * 1024 * 1024),
+			"b": makeConn(1024 * 1024),
+			"c": makeConn(64 * 1024),
+			"d": makeConn(32 * 1024),
+		},
+	}
+
+	if victims := m.collectHealthEvictionsLocked(); len(victims) != 0 {
+		t.Fatalf("expected no victims during cooldown, got=%v", victims)
 	}
 }

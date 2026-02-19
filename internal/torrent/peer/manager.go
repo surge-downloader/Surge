@@ -25,6 +25,7 @@ const (
 	defaultLowRateCull      = 0.3
 	defaultHealthRedial     = 2 * time.Minute
 	defaultHealthCullMax    = 2
+	defaultHealthMinMature  = 4
 	defaultPeerReadTimeout  = 45 * time.Second
 	defaultKeepAliveSend    = 30 * time.Second
 
@@ -83,6 +84,7 @@ type Manager struct {
 	dialFailures    int
 	inboundAccepted int
 	lastEvictAt     time.Time
+	lastHealthCull  time.Time
 
 	healthEnabled          bool
 	lowRateCullFactor      float64
@@ -487,12 +489,22 @@ func (m *Manager) collectHealthEvictionsLocked() []string {
 		// Do not churn peers while we still have room to grow.
 		return nil
 	}
+	evictionCooldown := withDefaultDuration(m.evictionCooldown, defaultEvictionCooldown)
+	if !m.lastHealthCull.IsZero() && time.Since(m.lastHealthCull) < evictionCooldown {
+		return nil
+	}
 	if len(m.active) < 2 {
 		return nil
 	}
 	samples := make([]health.PeerSample, 0, len(m.active))
+	matureCount := 0
+	var aggregateRate float64
 	for key, c := range m.active {
 		p := c.Performance()
+		if p.Uptime >= withDefaultDuration(m.healthMinUptime, defaultEvictionUptime) {
+			matureCount++
+			aggregateRate += p.RateBps
+		}
 		samples = append(samples, health.PeerSample{
 			Key:     key,
 			RateBps: p.RateBps,
@@ -511,9 +523,22 @@ func (m *Manager) collectHealthEvictionsLocked() []string {
 	if maxCull <= 0 {
 		maxCull = defaultHealthCullMax
 	}
+	if matureCount < defaultHealthMinMature {
+		return nil
+	}
+	minKeepRate := m.evictionKeepRateMinBps
+	if minKeepRate <= 0 {
+		minKeepRate = defaultEvictionMinRate
+	}
+	if aggregateRate < minKeepRate*2 {
+		return nil
+	}
 	keys := health.BelowRelativeMean(samples, minUptime, factor)
 	if len(keys) > maxCull {
 		keys = keys[:maxCull]
+	}
+	if len(keys) > 0 {
+		m.lastHealthCull = time.Now()
 	}
 	return keys
 }
