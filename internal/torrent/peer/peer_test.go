@@ -3,6 +3,7 @@ package peer
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"testing"
 )
@@ -54,10 +55,19 @@ func TestDialHandshakeSelf(t *testing.T) {
 	copy(pid[:], []byte("ABCDEFGHIJKLMNOPQRST"))
 
 	done := make(chan struct{})
+	errCh := make(chan error, 1)
 	go func() {
 		conn, _ := l.Accept()
 		defer func() { _ = conn.Close() }()
-		_, _ = ReadHandshake(conn)
+		hs, err := ReadHandshake(conn)
+		if err != nil {
+			errCh <- err
+			close(done)
+			return
+		}
+		if !hs.SupportsExtensionProtocol() {
+			errCh <- fmt.Errorf("client handshake did not advertise extension protocol")
+		}
 		_ = WriteHandshake(conn, Handshake{InfoHash: ih, PeerID: pid})
 		close(done)
 	}()
@@ -67,8 +77,16 @@ func TestDialHandshakeSelf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial err: %v", err)
 	}
+	if !s.SupportsExtensionProtocol() {
+		t.Fatalf("expected extension protocol support from peer handshake")
+	}
 	_ = s.Close()
 	<-done
+	select {
+	case err := <-errCh:
+		t.Fatalf("server observed handshake error: %v", err)
+	default:
+	}
 }
 
 func TestSimplePipelineIgnoresDuplicateBlocks(t *testing.T) {
