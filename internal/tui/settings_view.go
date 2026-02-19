@@ -64,12 +64,36 @@ func (m RootModel) viewSettings() string {
 	settingsActiveTab := lipgloss.NewStyle().Foreground(ColorNeonPurple)
 	tabBar := components.RenderNumberedTabBar(tabs, m.SettingsActiveTab, settingsActiveTab, TabStyle)
 
+	// === HELP TEXT using Bubbles help ===
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Width(width - 6).
+		Align(lipgloss.Center)
+	helpText := helpStyle.Render(m.help.View(m.keys.Settings))
+
 	// === CONTENT AREA ===
 	currentCategory := categories[m.SettingsActiveTab]
 	settingsMeta := metadata[currentCategory]
+	if len(settingsMeta) == 0 {
+		settingsMeta = nil
+	}
+	if m.SettingsSelectedRow >= len(settingsMeta) {
+		m.SettingsSelectedRow = len(settingsMeta) - 1
+	}
+	if m.SettingsSelectedRow < 0 {
+		m.SettingsSelectedRow = 0
+	}
 
 	// Get current settings values
 	settingsValues := m.getSettingsValues(currentCategory)
+
+	innerHeight := height - 2
+	tabBarHeight := lipgloss.Height(tabBar)
+	helpHeight := lipgloss.Height(helpText)
+	contentAreaHeight := innerHeight - (1 + tabBarHeight + 1 + helpHeight)
+	if contentAreaHeight < 6 {
+		contentAreaHeight = 6
+	}
 
 	// Calculate column widths - give left panel more room
 	leftWidth := 32
@@ -86,8 +110,15 @@ func (m RootModel) viewSettings() string {
 	}
 
 	// === LEFT COLUMN: Settings List (names only) ===
+	listInnerRows := contentAreaHeight - 4 // border + padding overhead
+	if listInnerRows < 1 {
+		listInnerRows = 1
+	}
+	startRow, endRow := settingsVisibleRange(len(settingsMeta), m.SettingsSelectedRow, listInnerRows)
+
 	var listLines []string
-	for i, meta := range settingsMeta {
+	for i := startRow; i < endRow; i++ {
+		meta := settingsMeta[i]
 		line := meta.Label
 
 		// Highlight selected row with better visual treatment
@@ -205,20 +236,8 @@ func (m RootModel) viewSettings() string {
 	// === COMBINE COLUMNS ===
 	content := lipgloss.JoinHorizontal(lipgloss.Top, listBox, divider, rightBox)
 
-	// === HELP TEXT using Bubbles help ===
-	helpStyle := lipgloss.NewStyle().
-		Foreground(ColorGray).
-		Width(width - 6).
-		Align(lipgloss.Center)
-	helpText := helpStyle.Render(m.help.View(m.keys.Settings))
-
 	// Calculate heights for proper spacing
-	tabBarHeight := lipgloss.Height(tabBar)
 	contentHeight := lipgloss.Height(content)
-	helpHeight := lipgloss.Height(helpText)
-
-	// innerHeight = height - 2 (top/bottom borders)
-	innerHeight := height - 2
 	// Used space: 1 (empty line) + tabBarHeight + 1 (empty line) + contentHeight + helpHeight
 	usedHeight := 1 + tabBarHeight + 1 + contentHeight + helpHeight
 	// Padding needed to push help to bottom
@@ -658,6 +677,31 @@ func (m RootModel) getSettingsCount() int {
 	metadata := config.GetSettingsMetadata()
 	currentCategory := categories[m.SettingsActiveTab]
 	return len(metadata[currentCategory])
+}
+
+func settingsVisibleRange(total, selected, window int) (int, int) {
+	if total <= 0 {
+		return 0, 0
+	}
+	if window <= 0 || window >= total {
+		return 0, total
+	}
+	if selected < 0 {
+		selected = 0
+	}
+	if selected >= total {
+		selected = total - 1
+	}
+
+	start := selected - (window / 2)
+	if start < 0 {
+		start = 0
+	}
+	if start+window > total {
+		start = total - window
+	}
+	end := start + window
+	return start, end
 }
 
 // getSettingUnit returns the unit suffix for the currently selected setting
