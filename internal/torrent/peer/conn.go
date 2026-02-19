@@ -28,6 +28,8 @@ type Conn struct {
 	maxInFlight int
 	piece       int
 	pieceBuf    []byte
+	utPexID     byte
+	onPEXPeer   func(net.TCPAddr)
 	onClose     func()
 	startedAt   time.Time
 	lastPieceAt time.Time
@@ -70,7 +72,7 @@ type Storage interface {
 	Bitfield() []byte
 }
 
-func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, store Storage, pipeline Pipeline, maxInFlight int, onClose func()) *Conn {
+func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, store Storage, pipeline Pipeline, maxInFlight int, onPEXPeer func(net.TCPAddr), onClose func()) *Conn {
 	if maxInFlight <= 0 {
 		maxInFlight = minAdaptiveInFlight
 	}
@@ -85,6 +87,7 @@ func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, sto
 		pipeline:    pipeline,
 		maxInFlight: maxInFlight,
 		piece:       -1,
+		onPEXPeer:   onPEXPeer,
 		onClose:     onClose,
 		startedAt:   time.Now(),
 	}
@@ -92,6 +95,9 @@ func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, sto
 
 func (c *Conn) Start(ctx context.Context) {
 	go c.readLoop(ctx)
+	if c.sess != nil && c.sess.SupportsExtensionProtocol() {
+		c.sendExtendedHandshake()
+	}
 	if c.store != nil {
 		if bf := c.store.Bitfield(); len(bf) > 0 {
 			c.write(&Message{ID: MsgBitfield, Payload: bf})
@@ -123,9 +129,14 @@ func (c *Conn) readLoop(ctx context.Context) {
 		if err != nil {
 			return
 		}
-		shouldRequest, uploadReq := c.handle(msg)
+		shouldRequest, uploadReq, pexPeers := c.handle(msg)
 		if uploadReq != nil {
 			go c.sendPiece(*uploadReq)
+		}
+		if len(pexPeers) > 0 && c.onPEXPeer != nil {
+			for _, addr := range pexPeers {
+				c.onPEXPeer(addr)
+			}
 		}
 		if shouldRequest {
 			c.maybeRequest()
@@ -139,9 +150,10 @@ type uploadRequest struct {
 	length uint32
 }
 
-func (c *Conn) handle(msg *Message) (bool, *uploadRequest) {
+func (c *Conn) handle(msg *Message) (bool, *uploadRequest, []net.TCPAddr) {
 	requestNext := false
 	var uploadReq *uploadRequest
+	var pexPeers []net.TCPAddr
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	switch msg.ID {
@@ -223,9 +235,11 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest) {
 			}
 			requestNext = true
 		}
+	case MsgExtended:
+		pexPeers = c.handleExtendedLocked(msg)
 	default:
 	}
-	return requestNext, uploadReq
+	return requestNext, uploadReq, pexPeers
 }
 
 func (c *Conn) maybeRequest() {
@@ -327,6 +341,41 @@ func (c *Conn) sendPiece(req uploadRequest) {
 		return
 	}
 	c.write(MakePiece(req.index, req.begin, data))
+}
+
+func (c *Conn) sendExtendedHandshake() {
+	msg, err := MakeExtendedHandshakeMessage(map[string]byte{
+		utPexExtensionName: utPexLocalMessageID,
+	})
+	if err != nil {
+		return
+	}
+	c.write(msg)
+}
+
+func (c *Conn) handleExtendedLocked(msg *Message) []net.TCPAddr {
+	extID, payload, err := ParseExtendedMessage(msg)
+	if err != nil {
+		return nil
+	}
+	if extID == extendedHandshakeID {
+		hs, err := ParseExtendedHandshake(payload)
+		if err != nil {
+			return nil
+		}
+		if id, ok := hs.Messages[utPexExtensionName]; ok && id != 0 {
+			c.utPexID = id
+		}
+		return nil
+	}
+	if c.utPexID == 0 || extID != c.utPexID {
+		return nil
+	}
+	peers, err := ParseUTPexPeers(payload)
+	if err != nil {
+		return nil
+	}
+	return peers
 }
 
 func (c *Conn) write(msg *Message) {

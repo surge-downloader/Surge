@@ -239,7 +239,9 @@ func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 	m.mu.Unlock()
 
 	var pipe Pipeline
-	conn := NewConn(sess, addr, m.picker, m.layout, m.store, pipe, m.requestPipeline, func() {
+	conn := NewConn(sess, addr, m.picker, m.layout, m.store, pipe, m.requestPipeline, func(pexAddr net.TCPAddr) {
+		m.onPEXPeer(ctx, pexAddr)
+	}, func() {
 		m.onClose(key)
 	})
 	conn.Start(ctx)
@@ -298,8 +300,10 @@ func (m *Manager) acceptInboundConn(ctx context.Context, raw net.Conn) {
 	m.mu.Unlock()
 
 	var pipe Pipeline
-	sess := NewFromConn(raw)
-	conn := NewConn(sess, *addr, m.picker, m.layout, m.store, pipe, m.requestPipeline, func() {
+	sess := NewFromConn(raw, hs.SupportsExtensionProtocol())
+	conn := NewConn(sess, *addr, m.picker, m.layout, m.store, pipe, m.requestPipeline, func(pexAddr net.TCPAddr) {
+		m.onPEXPeer(ctx, pexAddr)
+	}, func() {
 		m.onClose(key)
 	})
 	conn.Start(ctx)
@@ -430,4 +434,12 @@ func (m *Manager) onClose(key string) {
 	}
 	delete(m.active, key)
 	m.mu.Unlock()
+}
+
+func (m *Manager) onPEXPeer(ctx context.Context, addr net.TCPAddr) {
+	if addr.Port <= 0 || addr.Port > 65535 || addr.IP == nil || addr.IP.IsUnspecified() {
+		return
+	}
+	m.markDiscovered(addr.String())
+	m.tryDialAsync(ctx, addr)
 }

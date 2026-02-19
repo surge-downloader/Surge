@@ -79,3 +79,31 @@ func TestHandshakeAdvertisesExtensionProtocol(t *testing.T) {
 		t.Fatalf("expected extension protocol support bit to be set")
 	}
 }
+
+func TestConnHandleUTPexPayload(t *testing.T) {
+	c := &Conn{}
+	hsMsg, err := MakeExtendedHandshakeMessage(map[string]byte{
+		utPexExtensionName: 9,
+	})
+	if err != nil {
+		t.Fatalf("make extended handshake: %v", err)
+	}
+	_, _, peers := c.handle(hsMsg)
+	if len(peers) != 0 {
+		t.Fatalf("expected no peers from handshake, got %d", len(peers))
+	}
+
+	pexMsg, err := MakeUTPexMessage(9, []net.TCPAddr{
+		{IP: net.IPv4(10, 1, 2, 3), Port: 51413},
+	})
+	if err != nil {
+		t.Fatalf("make ut_pex: %v", err)
+	}
+	_, _, peers = c.handle(pexMsg)
+	if len(peers) != 1 {
+		t.Fatalf("expected one pex peer, got %d", len(peers))
+	}
+	if peers[0].String() != "10.1.2.3:51413" {
+		t.Fatalf("unexpected pex peer: %s", peers[0].String())
+	}
+}

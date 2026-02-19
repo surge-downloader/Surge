@@ -15,12 +15,16 @@ const (
 )
 
 type Session struct {
-	conn net.Conn
+	conn                net.Conn
+	supportsExtProtocol bool
 }
 
-func NewFromConn(conn net.Conn) *Session {
+func NewFromConn(conn net.Conn, supportsExtProtocol bool) *Session {
 	tuneTCPConn(conn)
-	return &Session{conn: conn}
+	return &Session{
+		conn:                conn,
+		supportsExtProtocol: supportsExtProtocol,
+	}
 }
 
 func Dial(ctx context.Context, addr net.TCPAddr, infoHash [20]byte, peerID [20]byte) (*Session, error) {
@@ -45,7 +49,10 @@ func Dial(ctx context.Context, addr net.TCPAddr, infoHash [20]byte, peerID [20]b
 		return nil, fmt.Errorf("infohash mismatch")
 	}
 	_ = conn.SetDeadline(time.Time{})
-	return &Session{conn: conn}, nil
+	return &Session{
+		conn:                conn,
+		supportsExtProtocol: hs.SupportsExtensionProtocol(),
+	}, nil
 }
 
 func (s *Session) Close() error {
@@ -53,6 +60,13 @@ func (s *Session) Close() error {
 		return nil
 	}
 	return s.conn.Close()
+}
+
+func (s *Session) SupportsExtensionProtocol() bool {
+	if s == nil {
+		return false
+	}
+	return s.supportsExtProtocol
 }
 
 func tuneTCPConn(conn net.Conn) {
