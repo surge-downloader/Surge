@@ -23,6 +23,27 @@ const (
 	FailureUnreachable
 )
 
+type AnnounceRequest struct {
+	InfoHash   [20]byte
+	PeerID     [20]byte
+	Port       int
+	Uploaded   int64
+	Downloaded int64
+	Left       int64
+	Event      string
+	NumWant    int
+}
+
+type AnnounceResponse struct {
+	Interval int
+	Peers    []Peer
+}
+
+type Peer struct {
+	IP   net.IP
+	Port int
+}
+
 func Announce(announceURL string, req AnnounceRequest) (*AnnounceResponse, error) {
 	var lastErr error
 	const maxAttempts = 2

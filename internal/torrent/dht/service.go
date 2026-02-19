@@ -12,6 +12,11 @@ type Service struct {
 	server *adht.Server
 }
 
+type Peer struct {
+	IP   net.IP
+	Port int
+}
+
 type ServiceConfig struct {
 	ListenAddr string
 	Bootstrap  []string
