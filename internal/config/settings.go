@@ -47,10 +47,26 @@ type NetworkSettings struct {
 
 // TorrentSettings contains per-torrent tuning parameters.
 type TorrentSettings struct {
-	MaxConnectionsPerTorrent int `json:"max_connections_per_torrent"`
-	UploadSlotsPerTorrent    int `json:"upload_slots_per_torrent"`
-	RequestPipelineDepth     int `json:"request_pipeline_depth"`
-	ListenPort               int `json:"listen_port"`
+	MaxConnectionsPerTorrent int           `json:"max_connections_per_torrent"`
+	UploadSlotsPerTorrent    int           `json:"upload_slots_per_torrent"`
+	RequestPipelineDepth     int           `json:"request_pipeline_depth"`
+	ListenPort               int           `json:"listen_port"`
+	HealthEnabled            bool          `json:"health_enabled"`
+	LowRateCullFactor        float64       `json:"low_rate_cull_factor"`
+	HealthMinUptime          time.Duration `json:"health_min_uptime"`
+	HealthCullMaxPerTick     int           `json:"health_cull_max_per_tick"`
+	HealthRedialBlock        time.Duration `json:"health_redial_block"`
+	EvictionCooldown         time.Duration `json:"eviction_cooldown"`
+	EvictionMinUptime        time.Duration `json:"eviction_min_uptime"`
+	IdleEvictionThreshold    time.Duration `json:"idle_eviction_threshold"`
+	EvictionKeepRateMinBps   int64         `json:"eviction_keep_rate_min_bps"`
+	PeerReadTimeout          time.Duration `json:"peer_read_timeout"`
+	PeerKeepaliveSend        time.Duration `json:"peer_keepalive_send"`
+	TrackerIntervalNormal    time.Duration `json:"tracker_interval_normal"`
+	TrackerIntervalLowPeer   time.Duration `json:"tracker_interval_low_peer"`
+	TrackerNumWantNormal     int           `json:"tracker_numwant_normal"`
+	TrackerNumWantLowPeer    int           `json:"tracker_numwant_low_peer"`
+	LSDEnabled               bool          `json:"lsd_enabled"`
 }
 
 // UnmarshalJSON implements custom JSON unmarshalling for Settings.
@@ -190,10 +206,26 @@ func DefaultSettings() *Settings {
 			WorkerBufferSize:       512 * KB,
 		},
 		Torrent: TorrentSettings{
-			MaxConnectionsPerTorrent: 128,
-			UploadSlotsPerTorrent:    16,
-			RequestPipelineDepth:     32,
+			MaxConnectionsPerTorrent: 256,
+			UploadSlotsPerTorrent:    32,
+			RequestPipelineDepth:     64,
 			ListenPort:               6881,
+			HealthEnabled:            true,
+			LowRateCullFactor:        0.3,
+			HealthMinUptime:          20 * time.Second,
+			HealthCullMaxPerTick:     2,
+			HealthRedialBlock:        2 * time.Minute,
+			EvictionCooldown:         5 * time.Second,
+			EvictionMinUptime:        20 * time.Second,
+			IdleEvictionThreshold:    45 * time.Second,
+			EvictionKeepRateMinBps:   512 * KB,
+			PeerReadTimeout:          45 * time.Second,
+			PeerKeepaliveSend:        30 * time.Second,
+			TrackerIntervalNormal:    5 * time.Second,
+			TrackerIntervalLowPeer:   3 * time.Second,
+			TrackerNumWantNormal:     256,
+			TrackerNumWantLowPeer:    300,
+			LSDEnabled:               true,
 		},
 		Performance: PerformanceSettings{
 			MaxTaskRetries:        3,
@@ -272,6 +304,22 @@ type RuntimeConfig struct {
 	TorrentUploadSlots     int
 	TorrentRequestPipeline int
 	TorrentListenPort      int
+	TorrentHealthEnabled   bool
+	TorrentLowRateCull     float64
+	TorrentHealthMinUptime time.Duration
+	TorrentHealthCullMax   int
+	TorrentHealthRedial    time.Duration
+	TorrentEvictionCD      time.Duration
+	TorrentEvictionMinUp   time.Duration
+	TorrentEvictionIdle    time.Duration
+	TorrentEvictionMinBps  int64
+	TorrentPeerReadTO      time.Duration
+	TorrentPeerKeepAlive   time.Duration
+	TorrentTrackerNormal   time.Duration
+	TorrentTrackerLowPeer  time.Duration
+	TorrentTrackerWant     int
+	TorrentTrackerWantLow  int
+	TorrentLSDEnabled      bool
 }
 
 // ToRuntimeConfig creates a RuntimeConfig from user Settings
@@ -292,5 +340,21 @@ func (s *Settings) ToRuntimeConfig() *RuntimeConfig {
 		TorrentUploadSlots:     s.Torrent.UploadSlotsPerTorrent,
 		TorrentRequestPipeline: s.Torrent.RequestPipelineDepth,
 		TorrentListenPort:      s.Torrent.ListenPort,
+		TorrentHealthEnabled:   s.Torrent.HealthEnabled,
+		TorrentLowRateCull:     s.Torrent.LowRateCullFactor,
+		TorrentHealthMinUptime: s.Torrent.HealthMinUptime,
+		TorrentHealthCullMax:   s.Torrent.HealthCullMaxPerTick,
+		TorrentHealthRedial:    s.Torrent.HealthRedialBlock,
+		TorrentEvictionCD:      s.Torrent.EvictionCooldown,
+		TorrentEvictionMinUp:   s.Torrent.EvictionMinUptime,
+		TorrentEvictionIdle:    s.Torrent.IdleEvictionThreshold,
+		TorrentEvictionMinBps:  s.Torrent.EvictionKeepRateMinBps,
+		TorrentPeerReadTO:      s.Torrent.PeerReadTimeout,
+		TorrentPeerKeepAlive:   s.Torrent.PeerKeepaliveSend,
+		TorrentTrackerNormal:   s.Torrent.TrackerIntervalNormal,
+		TorrentTrackerLowPeer:  s.Torrent.TrackerIntervalLowPeer,
+		TorrentTrackerWant:     s.Torrent.TrackerNumWantNormal,
+		TorrentTrackerWantLow:  s.Torrent.TrackerNumWantLowPeer,
+		TorrentLSDEnabled:      s.Torrent.LSDEnabled,
 	}
 }

@@ -80,6 +80,30 @@ func TestDefaultSettings(t *testing.T) {
 			t.Errorf("SpeedEmaAlpha should be between 0 and 1, got: %f", settings.Performance.SpeedEmaAlpha)
 		}
 	})
+
+	t.Run("TorrentSettings", func(t *testing.T) {
+		if settings.Torrent.MaxConnectionsPerTorrent <= 0 {
+			t.Errorf("MaxConnectionsPerTorrent should be positive, got: %d", settings.Torrent.MaxConnectionsPerTorrent)
+		}
+		if settings.Torrent.RequestPipelineDepth <= 0 {
+			t.Errorf("RequestPipelineDepth should be positive, got: %d", settings.Torrent.RequestPipelineDepth)
+		}
+		if settings.Torrent.ListenPort <= 0 || settings.Torrent.ListenPort > 65535 {
+			t.Errorf("ListenPort out of range: %d", settings.Torrent.ListenPort)
+		}
+		if settings.Torrent.LowRateCullFactor <= 0 || settings.Torrent.LowRateCullFactor > 1 {
+			t.Errorf("LowRateCullFactor out of range: %f", settings.Torrent.LowRateCullFactor)
+		}
+		if settings.Torrent.HealthMinUptime <= 0 {
+			t.Errorf("HealthMinUptime should be positive, got: %v", settings.Torrent.HealthMinUptime)
+		}
+		if settings.Torrent.PeerReadTimeout <= 0 {
+			t.Errorf("PeerReadTimeout should be positive, got: %v", settings.Torrent.PeerReadTimeout)
+		}
+		if settings.Torrent.TrackerNumWantNormal <= 0 {
+			t.Errorf("TrackerNumWantNormal should be positive, got: %d", settings.Torrent.TrackerNumWantNormal)
+		}
+	})
 }
 
 func TestDefaultSettings_Consistency(t *testing.T) {
@@ -316,6 +340,54 @@ func TestToRuntimeConfig(t *testing.T) {
 	if runtime.TorrentListenPort != settings.Torrent.ListenPort {
 		t.Error("TorrentListenPort not correctly mapped")
 	}
+	if runtime.TorrentHealthEnabled != settings.Torrent.HealthEnabled {
+		t.Error("TorrentHealthEnabled not correctly mapped")
+	}
+	if runtime.TorrentLowRateCull != settings.Torrent.LowRateCullFactor {
+		t.Error("TorrentLowRateCull not correctly mapped")
+	}
+	if runtime.TorrentHealthMinUptime != settings.Torrent.HealthMinUptime {
+		t.Error("TorrentHealthMinUptime not correctly mapped")
+	}
+	if runtime.TorrentHealthCullMax != settings.Torrent.HealthCullMaxPerTick {
+		t.Error("TorrentHealthCullMax not correctly mapped")
+	}
+	if runtime.TorrentHealthRedial != settings.Torrent.HealthRedialBlock {
+		t.Error("TorrentHealthRedial not correctly mapped")
+	}
+	if runtime.TorrentEvictionCD != settings.Torrent.EvictionCooldown {
+		t.Error("TorrentEvictionCD not correctly mapped")
+	}
+	if runtime.TorrentEvictionMinUp != settings.Torrent.EvictionMinUptime {
+		t.Error("TorrentEvictionMinUp not correctly mapped")
+	}
+	if runtime.TorrentEvictionIdle != settings.Torrent.IdleEvictionThreshold {
+		t.Error("TorrentEvictionIdle not correctly mapped")
+	}
+	if runtime.TorrentEvictionMinBps != settings.Torrent.EvictionKeepRateMinBps {
+		t.Error("TorrentEvictionMinBps not correctly mapped")
+	}
+	if runtime.TorrentPeerReadTO != settings.Torrent.PeerReadTimeout {
+		t.Error("TorrentPeerReadTO not correctly mapped")
+	}
+	if runtime.TorrentPeerKeepAlive != settings.Torrent.PeerKeepaliveSend {
+		t.Error("TorrentPeerKeepAlive not correctly mapped")
+	}
+	if runtime.TorrentTrackerNormal != settings.Torrent.TrackerIntervalNormal {
+		t.Error("TorrentTrackerNormal not correctly mapped")
+	}
+	if runtime.TorrentTrackerLowPeer != settings.Torrent.TrackerIntervalLowPeer {
+		t.Error("TorrentTrackerLowPeer not correctly mapped")
+	}
+	if runtime.TorrentTrackerWant != settings.Torrent.TrackerNumWantNormal {
+		t.Error("TorrentTrackerWant not correctly mapped")
+	}
+	if runtime.TorrentTrackerWantLow != settings.Torrent.TrackerNumWantLowPeer {
+		t.Error("TorrentTrackerWantLow not correctly mapped")
+	}
+	if runtime.TorrentLSDEnabled != settings.Torrent.LSDEnabled {
+		t.Error("TorrentLSDEnabled not correctly mapped")
+	}
 }
 
 func TestGetSettingsMetadata(t *testing.T) {
@@ -419,6 +491,12 @@ func TestSettingsJSON_Serialization(t *testing.T) {
 	}
 	if loaded.Torrent.UploadSlotsPerTorrent != original.Torrent.UploadSlotsPerTorrent {
 		t.Error("Round-trip failed for UploadSlotsPerTorrent")
+	}
+	if loaded.Torrent.HealthEnabled != original.Torrent.HealthEnabled {
+		t.Error("Round-trip failed for HealthEnabled")
+	}
+	if loaded.Torrent.HealthMinUptime != original.Torrent.HealthMinUptime {
+		t.Error("Round-trip failed for HealthMinUptime")
 	}
 }
 

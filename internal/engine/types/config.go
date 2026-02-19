@@ -84,6 +84,22 @@ type RuntimeConfig struct {
 	TorrentUploadSlots     int
 	TorrentRequestPipeline int
 	TorrentListenPort      int
+	TorrentHealthEnabled   bool
+	TorrentLowRateCull     float64
+	TorrentHealthMinUptime time.Duration
+	TorrentHealthCullMax   int
+	TorrentHealthRedial    time.Duration
+	TorrentEvictionCD      time.Duration
+	TorrentEvictionMinUp   time.Duration
+	TorrentEvictionIdle    time.Duration
+	TorrentEvictionMinBps  int64
+	TorrentPeerReadTO      time.Duration
+	TorrentPeerKeepAlive   time.Duration
+	TorrentTrackerNormal   time.Duration
+	TorrentTrackerLowPeer  time.Duration
+	TorrentTrackerWant     int
+	TorrentTrackerWantLow  int
+	TorrentLSDEnabled      bool
 }
 
 // GetUserAgent returns the configured user agent or the default
@@ -120,21 +136,30 @@ func (r *RuntimeConfig) GetWorkerBufferSize() int {
 
 func (r *RuntimeConfig) GetTorrentMaxConnections() int {
 	if r == nil || r.TorrentMaxConnections <= 0 {
-		return 128
+		return 256
+	}
+	if r.TorrentMaxConnections > 1000 {
+		return 1000
 	}
 	return r.TorrentMaxConnections
 }
 
 func (r *RuntimeConfig) GetTorrentUploadSlots() int {
 	if r == nil || r.TorrentUploadSlots < 0 {
-		return 16
+		return 32
+	}
+	if r.TorrentUploadSlots > 200 {
+		return 200
 	}
 	return r.TorrentUploadSlots
 }
 
 func (r *RuntimeConfig) GetTorrentRequestPipeline() int {
 	if r == nil || r.TorrentRequestPipeline <= 0 {
-		return 32
+		return 64
+	}
+	if r.TorrentRequestPipeline > 256 {
+		return 256
 	}
 	return r.TorrentRequestPipeline
 }
@@ -144,6 +169,130 @@ func (r *RuntimeConfig) GetTorrentListenPort() int {
 		return 6881
 	}
 	return r.TorrentListenPort
+}
+
+func (r *RuntimeConfig) GetTorrentHealthEnabled() bool {
+	if r == nil {
+		return true
+	}
+	return r.TorrentHealthEnabled
+}
+
+func (r *RuntimeConfig) GetTorrentLowRateCullFactor() float64 {
+	if r == nil || r.TorrentLowRateCull <= 0 {
+		return 0.3
+	}
+	if r.TorrentLowRateCull > 1 {
+		return 1
+	}
+	return r.TorrentLowRateCull
+}
+
+func (r *RuntimeConfig) GetTorrentHealthMinUptime() time.Duration {
+	if r == nil || r.TorrentHealthMinUptime <= 0 {
+		return 20 * time.Second
+	}
+	return r.TorrentHealthMinUptime
+}
+
+func (r *RuntimeConfig) GetTorrentHealthCullMaxPerTick() int {
+	if r == nil || r.TorrentHealthCullMax <= 0 {
+		return 2
+	}
+	if r.TorrentHealthCullMax > 16 {
+		return 16
+	}
+	return r.TorrentHealthCullMax
+}
+
+func (r *RuntimeConfig) GetTorrentHealthRedialBlock() time.Duration {
+	if r == nil || r.TorrentHealthRedial <= 0 {
+		return 2 * time.Minute
+	}
+	return r.TorrentHealthRedial
+}
+
+func (r *RuntimeConfig) GetTorrentEvictionCooldown() time.Duration {
+	if r == nil || r.TorrentEvictionCD <= 0 {
+		return 5 * time.Second
+	}
+	return r.TorrentEvictionCD
+}
+
+func (r *RuntimeConfig) GetTorrentEvictionMinUptime() time.Duration {
+	if r == nil || r.TorrentEvictionMinUp <= 0 {
+		return 20 * time.Second
+	}
+	return r.TorrentEvictionMinUp
+}
+
+func (r *RuntimeConfig) GetTorrentIdleEvictionThreshold() time.Duration {
+	if r == nil || r.TorrentEvictionIdle <= 0 {
+		return 45 * time.Second
+	}
+	return r.TorrentEvictionIdle
+}
+
+func (r *RuntimeConfig) GetTorrentEvictionKeepRateMinimumBps() int64 {
+	if r == nil || r.TorrentEvictionMinBps <= 0 {
+		return 512 * KB
+	}
+	return r.TorrentEvictionMinBps
+}
+
+func (r *RuntimeConfig) GetTorrentPeerReadTimeout() time.Duration {
+	if r == nil || r.TorrentPeerReadTO <= 0 {
+		return 45 * time.Second
+	}
+	return r.TorrentPeerReadTO
+}
+
+func (r *RuntimeConfig) GetTorrentPeerKeepAliveSendInterval() time.Duration {
+	if r == nil || r.TorrentPeerKeepAlive <= 0 {
+		return 30 * time.Second
+	}
+	return r.TorrentPeerKeepAlive
+}
+
+func (r *RuntimeConfig) GetTorrentTrackerIntervalNormal() time.Duration {
+	if r == nil || r.TorrentTrackerNormal <= 0 {
+		return 5 * time.Second
+	}
+	return r.TorrentTrackerNormal
+}
+
+func (r *RuntimeConfig) GetTorrentTrackerIntervalLowPeer() time.Duration {
+	if r == nil || r.TorrentTrackerLowPeer <= 0 {
+		return 3 * time.Second
+	}
+	return r.TorrentTrackerLowPeer
+}
+
+func (r *RuntimeConfig) GetTorrentTrackerNumWantNormal() int {
+	if r == nil || r.TorrentTrackerWant <= 0 {
+		return 256
+	}
+	if r.TorrentTrackerWant > 1000 {
+		return 1000
+	}
+	return r.TorrentTrackerWant
+}
+
+func (r *RuntimeConfig) GetTorrentTrackerNumWantLowPeer() int {
+	if r == nil || r.TorrentTrackerWantLow <= 0 {
+		return 300
+	}
+	if r.TorrentTrackerWantLow > 1000 {
+		return 1000
+	}
+	return r.TorrentTrackerWantLow
+}
+
+func (r *RuntimeConfig) GetTorrentLSDEnabled() bool {
+	if r == nil {
+		return true
+	}
+	return r.TorrentLSDEnabled
 }
 
 const (
