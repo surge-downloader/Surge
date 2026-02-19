@@ -19,6 +19,8 @@ const (
 	maxDialWorkers          = 64
 	managerDialTimeout      = 3 * time.Second
 	maintainInterval        = 2 * time.Second
+	maintainIntervalBurst   = 500 * time.Millisecond
+	startupBurstDuration    = 45 * time.Second
 	defaultEvictionCooldown = 5 * time.Second
 	defaultEvictionUptime   = 20 * time.Second
 	defaultIdleThreshold    = 45 * time.Second
@@ -44,6 +46,8 @@ const (
 
 	minPendingDialWindow = 8
 	maxPendingDialWindow = 64
+	minPendingBurstDial  = 24
+	maxPendingBurstDial  = 128
 )
 
 type dialRetryState struct {
@@ -94,6 +98,7 @@ type Manager struct {
 	protocolCloses  int
 	lastEvictAt     time.Time
 	lastHealthCull  time.Time
+	burstUntil      time.Time
 
 	healthEnabled          bool
 	lowRateCullFactor      float64
@@ -188,6 +193,7 @@ func NewManager(infoHash [20]byte, peerID [20]byte, picker Picker, layout PieceL
 		evictionKeepRateMinBps: float64(evictionMinRate),
 		peerReadTimeout:        withDefaultDuration(cfg.PeerReadTimeout, defaultPeerReadTimeout),
 		peerKeepaliveSend:      withDefaultDuration(cfg.PeerKeepaliveSend, defaultKeepAliveSend),
+		burstUntil:             time.Now().Add(startupBurstDuration),
 	}
 }
 
@@ -456,13 +462,14 @@ func (m *Manager) CloseAll() {
 }
 
 func (m *Manager) maintain(ctx context.Context) {
-	ticker := time.NewTicker(maintainInterval)
-	defer ticker.Stop()
 	for {
+		wait := m.currentMaintainInterval()
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			now := time.Now()
 			m.mu.Lock()
 			victim := m.pickEvictionCandidateLocked()
@@ -504,6 +511,7 @@ func (m *Manager) fillFromDiscovered(ctx context.Context) {
 		m.mu.Unlock()
 		return
 	}
+	burst := m.inBurstLocked(time.Now())
 	goodAddrs := make([]net.TCPAddr, 0, len(m.discoveredAddrs))
 	otherAddrs := make([]net.TCPAddr, 0, len(m.discoveredAddrs))
 	for key, addr := range m.discoveredAddrs {
@@ -520,6 +528,9 @@ func (m *Manager) fillFromDiscovered(ctx context.Context) {
 	}
 
 	budget := 16
+	if burst {
+		budget = 48
+	}
 	tryList := func(addrs []net.TCPAddr) bool {
 		for _, addr := range addrs {
 			if budget <= 0 || ctx.Err() != nil {
@@ -815,6 +826,16 @@ func (m *Manager) pendingDialLimitLocked() int {
 		return minPendingDialWindow
 	}
 	limit := remaining / 2
+	if m.inBurstLocked(time.Now()) {
+		limit = remaining
+		if limit < minPendingBurstDial {
+			limit = minPendingBurstDial
+		}
+		if limit > maxPendingBurstDial {
+			limit = maxPendingBurstDial
+		}
+		return limit
+	}
 	if limit < minPendingDialWindow {
 		limit = minPendingDialWindow
 	}
@@ -822,6 +843,19 @@ func (m *Manager) pendingDialLimitLocked() int {
 		limit = maxPendingDialWindow
 	}
 	return limit
+}
+
+func (m *Manager) currentMaintainInterval() time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.inBurstLocked(time.Now()) {
+		return maintainIntervalBurst
+	}
+	return maintainInterval
+}
+
+func (m *Manager) inBurstLocked(now time.Time) bool {
+	return !m.burstUntil.IsZero() && now.Before(m.burstUntil)
 }
 
 func isUnexpectedPeerClose(err error) bool {
