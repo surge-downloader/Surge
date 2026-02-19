@@ -11,6 +11,7 @@ import (
 const (
 	minAdaptiveInFlight = 4
 	maxAdaptiveInFlight = 128
+	startupInFlightMin  = 48
 	tuneWindow          = 1 * time.Second
 )
 
@@ -76,6 +77,12 @@ type Storage interface {
 func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, store Storage, pipeline Pipeline, maxInFlight int, onPEXPeer func(net.TCPAddr), onClose func(error)) *Conn {
 	if maxInFlight <= 0 {
 		maxInFlight = minAdaptiveInFlight
+	}
+	if maxInFlight < startupInFlightMin {
+		maxInFlight = startupInFlightMin
+	}
+	if maxInFlight > maxAdaptiveInFlight {
+		maxInFlight = maxAdaptiveInFlight
 	}
 	return &Conn{
 		sess:        sess,
