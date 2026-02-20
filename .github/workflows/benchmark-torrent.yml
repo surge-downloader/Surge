@@ -1,0 +1,114 @@
+name: Torrent Benchmark
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'URL to download for benchmarking'
+        required: true
+        default: 'https://releases.ubuntu.com/24.04/ubuntu-24.04.4-desktop-amd64.iso.torrent'
+      iterations:
+        description: 'Number of iterations'
+        required: true
+        default: '5'
+      baseline:
+        description: 'Compare against baseline (main branch)? [y/n]'
+        required: true
+        default: 'n'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Run Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Current Code
+        uses: actions/checkout@v4
+        with:
+          path: current
+
+      - name: Checkout Main Branch (Baseline)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: baseline
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.4+auto"
+          cache-dependency-path: current/go.sum
+
+      - name: Update APT
+        run: sudo apt-get update
+
+      - name: Install Benchmark Tools (qBittorrent, Aria2, Axel, Speedtest)
+        run: sudo apt-get install -y aria2 axel speedtest-cli qbittorrent-nox
+
+      - name: Build Current
+        run: |
+          cd current
+          go build -o ../surge-current .
+
+      - name: Build Baseline
+        run: |
+          cd baseline
+          go build -o ../surge-baseline .
+
+      - name: Run Benchmark
+        id: benchmark
+        env:
+          # Use 'github.event.inputs' for manual triggers, default for others
+          BENCH_URL: ${{ github.event.inputs.url || 'https://releases.ubuntu.com/24.04/ubuntu-24.04.4-desktop-amd64.iso.torrent' }}
+          # On push/PR, we usually want 1 iteration to save time, 5 for manual
+          BENCH_ITERATIONS: ${{ github.event.inputs.iterations || '10' }}
+          # Default to 'y' for PRs to see regressions, 'n' for simple pushes
+          BASELINE_COMPARE: ${{ github.event.inputs.baseline || 'y' }}
+
+        run: |
+          cd current
+          
+          # 1. Build the command arguments dynamically
+          ARGS=""
+          
+          # Add URL (Positional argument in your script)
+          ARGS="$ARGS $BENCH_URL"
+          
+          # Add Iterations
+          ARGS="$ARGS -n $BENCH_ITERATIONS"
+          
+          # Add Baseline ONLY if requested
+          if [[ "$BASELINE_COMPARE" == "y" ]]; then
+            echo "Comparing against baseline..."
+            ARGS="$ARGS --surge-baseline ../surge-baseline"
+          fi
+
+          # 2. Run the command using the constructed ARGS
+          # We pass the current build as the executable
+          python3 benchmark.py \
+            $ARGS \
+            --surge \
+            --qbittorrent \
+            | tee benchmark_output.txt
+
+          # 3. Save output to GITHUB_ENV for the next step (multiline safe)
+          echo "BENCHMARK_RESULTS<<EOF" >> $GITHUB_ENV
+          cat benchmark_output.txt >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+          # 4. Write to Job Summary (Markdown)
+          echo "## 🚀 Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** $BENCH_URL" >> $GITHUB_STEP_SUMMARY
+          echo "**Iterations:** $BENCH_ITERATIONS" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat benchmark_output.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
