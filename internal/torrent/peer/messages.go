@@ -40,6 +40,26 @@ func ReadMessage(r io.Reader) (*Message, error) {
 	return &Message{ID: buf[0], Payload: buf[1:]}, nil
 }
 
+func ReadMessageBuffered(r io.Reader, pool *[]byte) (*Message, error) {
+	var lenBuf [4]byte
+	if _, err := io.ReadFull(r, lenBuf[:]); err != nil {
+		return nil, err
+	}
+	length := binary.BigEndian.Uint32(lenBuf[:])
+	if length == 0 {
+		return &Message{ID: 255}, nil
+	}
+	if uint32(cap(*pool)) < length {
+		*pool = make([]byte, length)
+	} else {
+		*pool = (*pool)[:length]
+	}
+	if _, err := io.ReadFull(r, *pool); err != nil {
+		return nil, err
+	}
+	return &Message{ID: (*pool)[0], Payload: (*pool)[1:length]}, nil
+}
+
 func WriteMessage(w io.Writer, msg *Message) error {
 	if msg == nil {
 		return fmt.Errorf("nil msg")
@@ -57,6 +77,31 @@ func WriteMessage(w io.Writer, msg *Message) error {
 		copy(buf[5:], msg.Payload)
 	}
 	_, err := w.Write(buf)
+	return err
+}
+
+func WriteMessageBuffered(w io.Writer, msg *Message, pool *[]byte) error {
+	if msg == nil {
+		return fmt.Errorf("nil msg")
+	}
+	if msg.ID == 255 {
+		_, err := w.Write([]byte{0, 0, 0, 0})
+		return err
+	}
+
+	length := uint32(1 + len(msg.Payload))
+	reqSz := 4 + int(length)
+	if cap(*pool) < reqSz {
+		*pool = make([]byte, reqSz)
+	} else {
+		*pool = (*pool)[:reqSz]
+	}
+	binary.BigEndian.PutUint32((*pool)[:4], length)
+	(*pool)[4] = msg.ID
+	if len(msg.Payload) > 0 {
+		copy((*pool)[5:], msg.Payload)
+	}
+	_, err := w.Write(*pool)
 	return err
 }
 

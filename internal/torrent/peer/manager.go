@@ -99,6 +99,7 @@ type Manager struct {
 	lastEvictAt     time.Time
 	lastHealthCull  time.Time
 	burstUntil      time.Time
+	broadcastBuf    []*Conn
 
 	healthEnabled          bool
 	lowRateCullFactor      float64
@@ -687,15 +688,16 @@ func (m *Manager) Count() int {
 }
 
 func (m *Manager) BroadcastHave(pieceIndex int) {
+	msg := MakeHave(uint32(pieceIndex))
 	m.mu.Lock()
-	conns := make([]*Conn, 0, len(m.active))
+	m.broadcastBuf = m.broadcastBuf[:0]
 	for _, c := range m.active {
-		conns = append(conns, c)
+		m.broadcastBuf = append(m.broadcastBuf, c)
 	}
 	m.mu.Unlock()
 
-	for _, c := range conns {
-		c.SendHave(pieceIndex)
+	for _, c := range m.broadcastBuf {
+		c.SendMessage(msg)
 	}
 }
 

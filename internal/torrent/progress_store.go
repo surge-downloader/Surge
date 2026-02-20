@@ -79,9 +79,9 @@ func (s *ProgressStore) markPieceVerified(pieceIndex int64) (bool, error) {
 	}
 	s.verified[pieceIndex] = true
 	if len(s.bitfield) > 0 {
-		byteIndex := int(pieceIndex / 8)
+		byteIndex := int(pieceIndex >> 3)
 		if byteIndex >= 0 && byteIndex < len(s.bitfield) {
-			bit := uint(7 - (pieceIndex % 8))
+			bit := uint(7 - (pieceIndex & 7))
 			s.bitfield[byteIndex] |= 1 << bit
 		}
 	}

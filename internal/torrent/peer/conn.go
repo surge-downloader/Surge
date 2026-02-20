@@ -39,6 +39,8 @@ type Conn struct {
 	received    int64
 	lastTuneAt  time.Time
 	lastTuneRx  int64
+	readBuf     []byte
+	writeBuf    []byte
 }
 
 type Perf struct {
@@ -99,6 +101,8 @@ func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, sto
 		onPEXPeer:   onPEXPeer,
 		onClose:     onClose,
 		startedAt:   time.Now(),
+		readBuf:     make([]byte, 16384),
+		writeBuf:    make([]byte, 32768),
 	}
 }
 
@@ -160,7 +164,7 @@ func (c *Conn) readLoop(ctx context.Context) {
 			readTimeout = c.sess.ReadTimeout()
 		}
 		_ = c.sess.conn.SetReadDeadline(time.Now().Add(readTimeout))
-		msg, err := ReadMessage(c.sess.conn)
+		msg, err := ReadMessageBuffered(c.sess.conn, &c.readBuf)
 		if err != nil {
 			var ne net.Error
 			if errors.As(err, &ne) && ne.Timeout() {
@@ -375,6 +379,13 @@ func (c *Conn) SendHave(pieceIndex int) {
 		return
 	}
 	c.write(MakeHave(uint32(pieceIndex)))
+}
+
+func (c *Conn) SendMessage(msg *Message) {
+	if msg == nil {
+		return
+	}
+	c.write(msg)
 }
 
 func (c *Conn) sendPiece(req uploadRequest) {
