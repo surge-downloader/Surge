@@ -282,8 +282,6 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest, []net.TCPAddr) {
 				idx := ap.index
 				c.removeActivePieceLocked(idx)
 
-				requestNext = true
-
 				go func(idx int, b []byte) {
 					ok, err := c.pl.VerifyPieceData(int64(idx), b)
 					if err != nil || !ok {
