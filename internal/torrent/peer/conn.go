@@ -101,8 +101,8 @@ func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, sto
 		onPEXPeer:   onPEXPeer,
 		onClose:     onClose,
 		startedAt:   time.Now(),
-		readBuf:     make([]byte, 16384),
-		writeBuf:    make([]byte, 32768),
+		readBuf:     make([]byte, 65536), // 64KB handles framing + 16KB typical MsgPiece
+		writeBuf:    make([]byte, 65536),
 	}
 }
 

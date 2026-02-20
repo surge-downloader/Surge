@@ -1,6 +1,9 @@
 package torrent
 
-import "sync"
+import (
+	"math/rand/v2"
+	"sync"
+)
 
 type PiecePicker struct {
 	totalPieces  int
@@ -23,6 +26,13 @@ func NewPiecePicker(totalPieces int) *PiecePicker {
 	for i := 0; i < totalPieces; i++ {
 		p.queue = append(p.queue, i)
 	}
+
+	// Shuffle queue so peers request random pieces instead of sequentially [0...N]
+	// during equal availability priority weighting (which occurs aggressively on torrent boot).
+	rand.Shuffle(len(p.queue), func(i, j int) {
+		p.queue[i], p.queue[j] = p.queue[j], p.queue[i]
+	})
+
 	return p
 }
 
