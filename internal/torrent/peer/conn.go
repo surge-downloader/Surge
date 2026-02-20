@@ -11,7 +11,7 @@ import (
 const (
 	minAdaptiveInFlight = 16
 	maxAdaptiveInFlight = 2048
-	startupInFlightMin  = 128
+	startupInFlightMin  = 256
 	tuneWindow          = 1 * time.Second
 )
 
@@ -356,7 +356,21 @@ func (c *Conn) advancePiece() bool {
 	if c.picker == nil || c.pl == nil {
 		return false
 	}
-	if len(c.active) > 3 {
+
+	maxActive := 32
+	if c.maxInFlight > 0 {
+		pieceSize := c.pl.PieceSize(0)
+		if pieceSize > 0 {
+			needed := (c.maxInFlight * 16384) / int(pieceSize)
+			if needed+2 > maxActive {
+				maxActive = needed + 2
+			}
+		}
+	}
+	if maxActive > 128 {
+		maxActive = 128
+	}
+	if len(c.active) >= maxActive {
 		return false
 	}
 
@@ -523,16 +537,18 @@ func (c *Conn) observeBlockLocked(n int64) {
 
 	target := c.maxInFlight
 	switch {
-	case rate > 48*1024*1024:
+	case rate > 32*1024*1024:
+		target += 128
+	case rate > 16*1024*1024:
+		target += 64
+	case rate > 8*1024*1024:
 		target += 32
-	case rate > 24*1024*1024:
-		target += 16
-	case rate > 12*1024*1024:
-		target += 8
 	case rate > 4*1024*1024:
-		target += 4
+		target += 16
+	case rate > 1024*1024:
+		target += 8
 	case rate < 256*1024:
-		target -= 4
+		target -= 8
 	case rate < 1024*1024:
 		target -= 2
 	}
