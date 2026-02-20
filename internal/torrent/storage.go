@@ -1,6 +1,7 @@
 package torrent
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"fmt"
 	"io"
@@ -430,17 +431,7 @@ func (fl *FileLayout) VerifyPieceData(pieceIndex int64, data []byte) (bool, erro
 	}
 	sum := sha1.Sum(data)
 	expected := fl.Info.Pieces[hashIndex : hashIndex+20]
-	return bytesEqual(sum[:], expected), nil
-}
 
-func bytesEqual(a []byte, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	// Performance: Uses heavily optimized stdlib assembly routines instead of naive Go loop
+	return bytes.Equal(sum[:], expected), nil
 }
