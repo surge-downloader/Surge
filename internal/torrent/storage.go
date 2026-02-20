@@ -12,6 +12,8 @@ import (
 	"sync"
 )
 
+const maxOpenFiles = 100
+
 type FileSpan struct {
 	Index  int
 	Offset int64
@@ -28,6 +30,7 @@ type FileLayout struct {
 
 	fileMu    sync.Mutex
 	openFiles map[string]*os.File
+	fileQueue []string
 }
 
 func NewFileLayout(baseDir string, info Info) (*FileLayout, error) {
@@ -314,7 +317,17 @@ func (fl *FileLayout) getFile(path string) (*os.File, error) {
 	defer fl.fileMu.Unlock()
 
 	if f, ok := fl.openFiles[path]; ok {
+		fl.markUsedLocked(path)
 		return f, nil
+	}
+
+	if len(fl.openFiles) >= maxOpenFiles {
+		oldest := fl.fileQueue[0]
+		fl.fileQueue = fl.fileQueue[1:]
+		if oldF, ok := fl.openFiles[oldest]; ok {
+			_ = oldF.Close()
+			delete(fl.openFiles, oldest)
+		}
 	}
 
 	f, err := os.OpenFile(path, os.O_RDWR, 0o644)
@@ -322,7 +335,18 @@ func (fl *FileLayout) getFile(path string) (*os.File, error) {
 		return nil, err
 	}
 	fl.openFiles[path] = f
+	fl.fileQueue = append(fl.fileQueue, path)
 	return f, nil
+}
+
+func (fl *FileLayout) markUsedLocked(path string) {
+	for i, p := range fl.fileQueue {
+		if p == path {
+			fl.fileQueue = append(fl.fileQueue[:i], fl.fileQueue[i+1:]...)
+			fl.fileQueue = append(fl.fileQueue, path)
+			return
+		}
+	}
 }
 
 func (fl *FileLayout) writeAtFile(path string, offset int64, data []byte) error {
@@ -398,6 +422,7 @@ func (fl *FileLayout) Close() error {
 	fl.fileMu.Lock()
 	files := fl.openFiles
 	fl.openFiles = make(map[string]*os.File)
+	fl.fileQueue = nil
 	fl.fileMu.Unlock()
 
 	var firstErr error

@@ -10,12 +10,21 @@ type Pipeline interface {
 
 const defaultBlockSize = 16 * 1024
 
+type blockState uint8
+
+const (
+	statePending  blockState = 0
+	stateInFlight blockState = 1
+	stateReceived blockState = 2
+)
+
 type simplePipeline struct {
 	pieceSize   int64
+	numBlocks   int
+	states      []blockState
 	blockOffset int64
 	received    int64
-	inFlight    map[int64]int64
-	receivedAt  map[int64]struct{}
+	inFlight    int
 	maxInFlight int
 	completed   bool
 }
@@ -24,10 +33,11 @@ func newSimplePipeline(pieceSize int64, maxInFlight int) *simplePipeline {
 	if maxInFlight <= 0 {
 		maxInFlight = 1
 	}
+	numBlocks := int((pieceSize + defaultBlockSize - 1) / defaultBlockSize)
 	return &simplePipeline{
 		pieceSize:   pieceSize,
-		inFlight:    make(map[int64]int64),
-		receivedAt:  make(map[int64]struct{}),
+		numBlocks:   numBlocks,
+		states:      make([]blockState, numBlocks),
 		maxInFlight: maxInFlight,
 	}
 }
@@ -36,7 +46,7 @@ func (p *simplePipeline) NextRequest() (begin int64, length int64, ok bool) {
 	if p.completed {
 		return 0, 0, false
 	}
-	if len(p.inFlight) >= p.maxInFlight {
+	if p.inFlight >= p.maxInFlight {
 		return 0, 0, false
 	}
 	if p.blockOffset >= p.pieceSize {
@@ -47,24 +57,36 @@ func (p *simplePipeline) NextRequest() (begin int64, length int64, ok bool) {
 	if begin+length > p.pieceSize {
 		length = p.pieceSize - begin
 	}
+
+	blockIndex := int(begin / defaultBlockSize)
+	if p.states[blockIndex] == statePending {
+		p.states[blockIndex] = stateInFlight
+		p.inFlight++
+	}
 	p.blockOffset += length
-	p.inFlight[begin] = length
 	return begin, length, true
 }
 
 func (p *simplePipeline) OnBlock(begin int64, length int64) {
-	expected, ok := p.inFlight[begin]
-	if !ok {
+	blockIndex := int(begin / defaultBlockSize)
+	if blockIndex < 0 || blockIndex >= p.numBlocks {
 		return
 	}
-	delete(p.inFlight, begin)
 
-	if _, seen := p.receivedAt[begin]; seen {
+	if p.states[blockIndex] == stateReceived {
 		return
 	}
-	p.receivedAt[begin] = struct{}{}
+	if p.states[blockIndex] == stateInFlight {
+		p.inFlight--
+	}
+	p.states[blockIndex] = stateReceived
 
-	if expected > 0 && length > expected {
+	expected := int64(defaultBlockSize)
+	if begin+expected > p.pieceSize {
+		expected = p.pieceSize - begin
+	}
+
+	if length > expected {
 		length = expected
 	}
 	if length < 0 {

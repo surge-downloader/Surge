@@ -101,6 +101,8 @@ func (p *PiecePicker) nextLocked(peerBitfield []byte) (int, bool) {
 	bestPos := -1
 	bestAvailability := int(^uint(0) >> 1)
 
+	validFound := 0
+
 	for i, idx := range p.queue {
 		if idx < 0 || idx >= p.totalPieces {
 			continue
@@ -122,6 +124,12 @@ func (p *PiecePicker) nextLocked(peerBitfield []byte) (int, bool) {
 			if availability == 1 {
 				break
 			}
+		}
+		validFound++
+		// Performance: Approximate Rarest-First. Bound the scan to O(1)
+		// instead of O(N) by selecting the best among the first 128 valid pieces.
+		if validFound >= 128 {
+			break
 		}
 	}
 

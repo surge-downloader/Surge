@@ -1,7 +1,6 @@
 package torrent
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -45,7 +44,8 @@ func discoverLocalPeers(ctx context.Context, infoHash [20]byte, listenPort int) 
 		if listenPort <= 0 || listenPort > 65535 {
 			listenPort = 6881
 		}
-		announce := makeLSDAnnounce(infoHash, listenPort)
+		encodedHash := percentEncodeInfoHash(infoHash)
+		announce := makeLSDAnnounce(encodedHash, listenPort)
 		sendAnnounce := func() {
 			_, _ = send.WriteToUDP(announce, multicast)
 		}
@@ -80,7 +80,7 @@ func discoverLocalPeers(ctx context.Context, infoHash [20]byte, listenPort int) 
 				}
 				return
 			}
-			addr, ok := parseLSDAnnounce(buf[:n], from, infoHash)
+			addr, ok := parseLSDAnnounce(buf[:n], from, encodedHash)
 			if !ok {
 				continue
 			}
@@ -95,7 +95,7 @@ func discoverLocalPeers(ctx context.Context, infoHash [20]byte, listenPort int) 
 	return out
 }
 
-func makeLSDAnnounce(infoHash [20]byte, listenPort int) []byte {
+func makeLSDAnnounce(encodedHash string, listenPort int) []byte {
 	if listenPort <= 0 || listenPort > 65535 {
 		listenPort = 6881
 	}
@@ -104,45 +104,55 @@ func makeLSDAnnounce(infoHash [20]byte, listenPort int) []byte {
 		lsdMulticastAddr,
 		lsdPort,
 		listenPort,
-		percentEncodeInfoHash(infoHash),
+		encodedHash,
 	)
 	return []byte(msg)
 }
 
-func parseLSDAnnounce(payload []byte, from *net.UDPAddr, expected [20]byte) (net.TCPAddr, bool) {
+func parseLSDAnnounce(payload []byte, from *net.UDPAddr, expectedEncoded string) (net.TCPAddr, bool) {
 	if from == nil || from.IP == nil || from.IP.IsUnspecified() {
 		return net.TCPAddr{}, false
 	}
-	lines := bytes.Split(payload, []byte{'\n'})
+	payloadStr := string(payload)
+	lines := strings.Split(payloadStr, "\n")
 	if len(lines) == 0 {
 		return net.TCPAddr{}, false
 	}
-	start := strings.TrimSpace(string(lines[0]))
+	start := strings.TrimSpace(lines[0])
 	if !strings.HasPrefix(strings.ToUpper(start), "BT-SEARCH") {
 		return net.TCPAddr{}, false
 	}
 
-	headers := make(map[string]string)
-	for _, raw := range lines[1:] {
-		line := strings.TrimSpace(string(raw))
+	var parsedInfoHash string
+	var port int
+
+	for _, line := range lines[1:] {
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) != 2 {
+		idx := strings.IndexByte(line, ':')
+		if idx < 0 {
 			continue
 		}
-		key := strings.ToLower(strings.TrimSpace(parts[0]))
-		val := strings.TrimSpace(parts[1])
-		headers[key] = val
+		key := strings.TrimSpace(line[:idx])
+		val := strings.TrimSpace(line[idx+1:])
+
+		if strings.EqualFold(key, "infohash") {
+			parsedInfoHash = val
+		} else if strings.EqualFold(key, "port") {
+			var err error
+			port, err = strconv.Atoi(val)
+			if err != nil || port <= 0 || port > 65535 {
+				return net.TCPAddr{}, false
+			}
+		}
 	}
 
-	if strings.ToUpper(headers["infohash"]) != strings.ToUpper(percentEncodeInfoHash(expected)) {
+	if !strings.EqualFold(parsedInfoHash, expectedEncoded) {
 		return net.TCPAddr{}, false
 	}
-
-	port, err := strconv.Atoi(headers["port"])
-	if err != nil || port <= 0 || port > 65535 {
+	if port <= 0 {
 		return net.TCPAddr{}, false
 	}
 
