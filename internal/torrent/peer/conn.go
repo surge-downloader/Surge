@@ -16,9 +16,10 @@ const (
 )
 
 type activePiece struct {
-	index int
-	sp    SimplePipeline
-	buf   []byte
+	index      int
+	sp         SimplePipeline
+	buf        []byte
+	endgameDup bool // true if this piece was picked in endgame duplicate mode
 }
 
 type Conn struct {
@@ -65,6 +66,11 @@ type BitfieldAwarePicker interface {
 	NextFromBitfield(bitfield []byte) (int, bool)
 	ObserveBitfield(bitfield []byte)
 	ObserveHave(piece int)
+}
+
+type EndgamePicker interface {
+	IsEndgame() bool
+	NextFromBitfieldEndgame(bitfield []byte) (int, bool)
 }
 
 type PieceLayout interface {
@@ -280,18 +286,24 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest, []net.TCPAddr) {
 				buf := ap.buf
 				ap.buf = nil // prevent reuse
 				idx := ap.index
+				isEndgameDup := ap.endgameDup
 				c.removeActivePieceLocked(idx)
 
-				go func(idx int, b []byte) {
+				go func(idx int, b []byte, dupPiece bool) {
+					// In endgame mode, another peer may have already completed
+					// this piece. Check before doing expensive verification.
+					if dupPiece && c.store.HasPiece(int64(idx)) {
+						return
+					}
 					ok, err := c.pl.VerifyPieceData(int64(idx), b)
 					if err != nil || !ok {
-						if c.picker != nil {
+						if c.picker != nil && !dupPiece {
 							c.picker.Requeue(idx)
 						}
 						return
 					}
 					if err := c.store.WriteAtPiece(int64(idx), 0, b); err != nil {
-						if c.picker != nil {
+						if c.picker != nil && !dupPiece {
 							c.picker.Requeue(idx)
 						}
 						return
@@ -302,11 +314,11 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest, []net.TCPAddr) {
 							c.picker.Done(idx)
 						}
 					} else {
-						if c.picker != nil {
+						if c.picker != nil && !dupPiece {
 							c.picker.Requeue(idx)
 						}
 					}
-				}(idx, buf)
+				}(idx, buf, isEndgameDup)
 			}
 			requestNext = true
 		}
@@ -373,15 +385,35 @@ func (c *Conn) advancePiece() bool {
 	}
 
 	var (
-		piece int
-		ok    bool
+		piece      int
+		ok         bool
+		endgameDup bool
 	)
 
 	if len(c.bitfield) > 0 {
-		if bp, has := c.picker.(BitfieldAwarePicker); has {
-			piece, ok = bp.NextFromBitfield(c.bitfield)
-		} else {
-			piece, ok = c.picker.Next()
+		// Try endgame mode first — if the picker supports it and we're in endgame,
+		// allow duplicate piece requests to race against slow peers.
+		if ep, has := c.picker.(EndgamePicker); has && ep.IsEndgame() {
+			piece, ok = ep.NextFromBitfieldEndgame(c.bitfield)
+			if ok {
+				// Check if we already have this piece active — skip if so.
+				for _, ap := range c.active {
+					if ap.index == piece {
+						ok = false
+						break
+					}
+				}
+				if ok {
+					endgameDup = true
+				}
+			}
+		}
+		if !ok {
+			if bp, has := c.picker.(BitfieldAwarePicker); has {
+				piece, ok = bp.NextFromBitfield(c.bitfield)
+			} else {
+				piece, ok = c.picker.Next()
+			}
 		}
 		if !ok {
 			return false
@@ -396,7 +428,7 @@ func (c *Conn) advancePiece() bool {
 	if size <= 0 {
 		return false
 	}
-	ap := &activePiece{index: piece}
+	ap := &activePiece{index: piece, endgameDup: endgameDup}
 	ap.sp.init(size, c.maxInFlight)
 	ap.sp.SetMaxInFlight(maxInt)
 	if size <= int64(maxInt) {

@@ -6,22 +6,31 @@ import (
 )
 
 type PiecePicker struct {
-	totalPieces  int
-	mu           sync.Mutex
-	queue        []int
-	state        []uint8
-	availability []uint16
+	totalPieces      int
+	endgameThreshold int
+	mu               sync.Mutex
+	queue            []int
+	state            []uint8
+	availability     []uint16
 }
 
 func NewPiecePicker(totalPieces int) *PiecePicker {
 	if totalPieces < 0 {
 		totalPieces = 0
 	}
+	threshold := totalPieces / 20 // 5% of total
+	if threshold > 20 {
+		threshold = 20
+	}
+	if threshold < 2 {
+		threshold = 2
+	}
 	p := &PiecePicker{
-		totalPieces:  totalPieces,
-		queue:        make([]int, 0, totalPieces),
-		state:        make([]uint8, totalPieces),
-		availability: make([]uint16, totalPieces),
+		totalPieces:      totalPieces,
+		endgameThreshold: threshold,
+		queue:            make([]int, 0, totalPieces),
+		state:            make([]uint8, totalPieces),
+		availability:     make([]uint16, totalPieces),
 	}
 	for i := 0; i < totalPieces; i++ {
 		p.queue = append(p.queue, i)
@@ -105,6 +114,71 @@ func (p *PiecePicker) incrementAvailabilityLocked(piece int) {
 	if p.availability[piece] < ^uint16(0) {
 		p.availability[piece]++
 	}
+}
+
+// Remaining returns the number of pieces not yet completed (pending + in-flight).
+func (p *PiecePicker) Remaining() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.remainingLocked()
+}
+
+func (p *PiecePicker) remainingLocked() int {
+	done := 0
+	for _, s := range p.state {
+		if s == 2 {
+			done++
+		}
+	}
+	return p.totalPieces - done
+}
+
+// IsEndgame returns true when the remaining piece count (pending + in-flight)
+// is below the endgame threshold. In endgame mode, multiple peers can request
+// the same in-flight piece to avoid tail latency from slow peers.
+func (p *PiecePicker) IsEndgame() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.remainingLocked() <= p.endgameThreshold
+}
+
+// NextFromBitfieldEndgame works like NextFromBitfield but also considers
+// in-flight pieces (state=1). This allows multiple peers to race on the
+// same piece during the endgame phase.
+func (p *PiecePicker) NextFromBitfieldEndgame(bitfield []byte) (int, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// First try to pick a pending piece normally.
+	if piece, ok := p.nextLocked(bitfield); ok {
+		return piece, true
+	}
+
+	// No pending pieces left — pick an in-flight piece that this peer has.
+	bestIdx := -1
+	bestAvailability := int(^uint(0) >> 1)
+	for i := 0; i < p.totalPieces; i++ {
+		if p.state[i] != 1 {
+			continue
+		}
+		if len(bitfield) > 0 && !bitfieldHas(bitfield, i) {
+			continue
+		}
+		avail := int(p.availability[i])
+		if avail == 0 {
+			avail = 1
+		}
+		if bestIdx == -1 || avail < bestAvailability {
+			bestIdx = i
+			bestAvailability = avail
+		}
+	}
+	if bestIdx == -1 {
+		return 0, false
+	}
+	// Do NOT change state — the piece stays in-flight (state=1).
+	// Multiple peers will work on it concurrently.
+	return bestIdx, true
 }
 
 func (p *PiecePicker) nextLocked(peerBitfield []byte) (int, bool) {
