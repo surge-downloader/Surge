@@ -149,10 +149,10 @@ func bitfieldHas(bitfield []byte, piece int) bool {
 	if piece < 0 {
 		return false
 	}
-	byteIndex := piece / 8
+	byteIndex := piece >> 3
 	if byteIndex >= len(bitfield) {
 		return false
 	}
-	mask := byte(1 << (7 - (piece % 8)))
+	mask := byte(1 << (7 - (piece & 7)))
 	return bitfield[byteIndex]&mask != 0
 }

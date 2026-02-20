@@ -30,7 +30,7 @@ func TestParseLSDAnnounceValid(t *testing.T) {
 
 	msg := makeLSDAnnounce(encoded, 6881)
 	from := &net.UDPAddr{IP: net.IPv4(10, 0, 0, 2), Port: 49000}
-	addr, ok := parseLSDAnnounce(msg, from, encoded)
+	addr, ok := parseLSDAnnounce(msg, from, []byte(encoded))
 	if !ok {
 		t.Fatal("expected valid lsd packet")
 	}
@@ -48,8 +48,8 @@ func TestParseLSDAnnounceRejectsWrongInfoHash(t *testing.T) {
 	encodedOther := percentEncodeInfoHash(other)
 
 	msg := makeLSDAnnounce(encodedOther, 6881)
-	from := &net.UDPAddr{IP: net.IPv4(10, 0, 0, 3), Port: 49000}
-	if _, ok := parseLSDAnnounce(msg, from, encodedExpected); ok {
+	from := &net.UDPAddr{IP: net.UDPAddr{IP: net.IPv4(10, 0, 0, 3), Port: 49000}.IP, Port: 49000}
+	if _, ok := parseLSDAnnounce(msg, from, []byte(encodedExpected)); ok {
 		t.Fatal("expected parser to reject mismatched infohash")
 	}
 }

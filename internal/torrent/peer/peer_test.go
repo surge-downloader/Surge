@@ -90,7 +90,7 @@ func TestDialHandshakeSelf(t *testing.T) {
 }
 
 func TestSimplePipelineIgnoresDuplicateBlocks(t *testing.T) {
-	p := newSimplePipeline(2*defaultBlockSize, 4)
+	p := NewSimplePipeline(2*defaultBlockSize, 4)
 
 	b0, l0, ok := p.NextRequest()
 	if !ok {
@@ -114,7 +114,7 @@ func TestSimplePipelineIgnoresDuplicateBlocks(t *testing.T) {
 }
 
 func TestSimplePipelineIgnoresUnexpectedBlock(t *testing.T) {
-	p := newSimplePipeline(defaultBlockSize, 1)
+	p := NewSimplePipeline(defaultBlockSize, 1)
 
 	_, _, ok := p.NextRequest()
 	if !ok {

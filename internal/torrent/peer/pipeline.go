@@ -18,7 +18,7 @@ const (
 	stateReceived blockState = 2
 )
 
-type simplePipeline struct {
+type SimplePipeline struct {
 	pieceSize   int64
 	numBlocks   int
 	states      []blockState
@@ -29,20 +29,38 @@ type simplePipeline struct {
 	completed   bool
 }
 
-func newSimplePipeline(pieceSize int64, maxInFlight int) *simplePipeline {
+func NewSimplePipeline(pieceSize int64, maxInFlight int) *SimplePipeline {
+	p := &SimplePipeline{
+		maxInFlight: maxInFlight,
+	}
+	p.init(pieceSize, maxInFlight)
+	return p
+}
+
+func (p *SimplePipeline) init(pieceSize int64, maxInFlight int) {
 	if maxInFlight <= 0 {
 		maxInFlight = 1
 	}
 	numBlocks := int((pieceSize + defaultBlockSize - 1) / defaultBlockSize)
-	return &simplePipeline{
-		pieceSize:   pieceSize,
-		numBlocks:   numBlocks,
-		states:      make([]blockState, numBlocks),
-		maxInFlight: maxInFlight,
+	p.pieceSize = pieceSize
+	p.numBlocks = numBlocks
+	p.blockOffset = 0
+	p.received = 0
+	p.inFlight = 0
+	p.completed = false
+	p.maxInFlight = maxInFlight
+
+	if cap(p.states) < numBlocks {
+		p.states = make([]blockState, numBlocks)
+	} else {
+		p.states = p.states[:numBlocks]
+		for i := range p.states {
+			p.states[i] = statePending
+		}
 	}
 }
 
-func (p *simplePipeline) NextRequest() (begin int64, length int64, ok bool) {
+func (p *SimplePipeline) NextRequest() (begin int64, length int64, ok bool) {
 	if p.completed {
 		return 0, 0, false
 	}
@@ -67,7 +85,7 @@ func (p *simplePipeline) NextRequest() (begin int64, length int64, ok bool) {
 	return begin, length, true
 }
 
-func (p *simplePipeline) OnBlock(begin int64, length int64) {
+func (p *SimplePipeline) OnBlock(begin int64, length int64) {
 	blockIndex := int(begin / defaultBlockSize)
 	if blockIndex < 0 || blockIndex >= p.numBlocks {
 		return
@@ -99,11 +117,11 @@ func (p *simplePipeline) OnBlock(begin int64, length int64) {
 	}
 }
 
-func (p *simplePipeline) Completed() bool {
+func (p *SimplePipeline) Completed() bool {
 	return p.completed
 }
 
-func (p *simplePipeline) SetMaxInFlight(n int) {
+func (p *SimplePipeline) SetMaxInFlight(n int) {
 	if n <= 0 {
 		n = 1
 	}

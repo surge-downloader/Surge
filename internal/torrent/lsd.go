@@ -1,6 +1,7 @@
 package torrent
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -13,7 +14,6 @@ const (
 	lsdMulticastAddr = "239.192.152.143"
 	lsdPort          = 6771
 	lsdAnnounceEvery = 30 * time.Second
-	lsdReadTimeout   = 1 * time.Second
 )
 
 func discoverLocalPeers(ctx context.Context, infoHash [20]byte, listenPort int) <-chan net.TCPAddr {
@@ -64,23 +64,18 @@ func discoverLocalPeers(ctx context.Context, infoHash [20]byte, listenPort int) 
 			}
 		}()
 
+		go func() {
+			<-ctx.Done()
+			_ = recv.Close()
+		}()
+
 		buf := make([]byte, 2048)
 		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			_ = recv.SetReadDeadline(time.Now().Add(lsdReadTimeout))
 			n, from, err := recv.ReadFromUDP(buf)
 			if err != nil {
-				if ne, ok := err.(net.Error); ok && ne.Timeout() {
-					continue
-				}
 				return
 			}
-			addr, ok := parseLSDAnnounce(buf[:n], from, encodedHash)
+			addr, ok := parseLSDAnnounce(buf[:n], from, []byte(encodedHash))
 			if !ok {
 				continue
 			}
@@ -109,47 +104,46 @@ func makeLSDAnnounce(encodedHash string, listenPort int) []byte {
 	return []byte(msg)
 }
 
-func parseLSDAnnounce(payload []byte, from *net.UDPAddr, expectedEncoded string) (net.TCPAddr, bool) {
+func parseLSDAnnounce(payload []byte, from *net.UDPAddr, expectedEncoded []byte) (net.TCPAddr, bool) {
 	if from == nil || from.IP == nil || from.IP.IsUnspecified() {
 		return net.TCPAddr{}, false
 	}
-	payloadStr := string(payload)
-	lines := strings.Split(payloadStr, "\n")
+	lines := bytes.Split(payload, []byte{'\n'})
 	if len(lines) == 0 {
 		return net.TCPAddr{}, false
 	}
-	start := strings.TrimSpace(lines[0])
-	if !strings.HasPrefix(strings.ToUpper(start), "BT-SEARCH") {
+	start := bytes.TrimSpace(lines[0])
+	if !bytes.HasPrefix(bytes.ToUpper(start), []byte("BT-SEARCH")) {
 		return net.TCPAddr{}, false
 	}
 
-	var parsedInfoHash string
+	var parsedInfoHash []byte
 	var port int
 
 	for _, line := range lines[1:] {
-		line = strings.TrimSpace(line)
-		if line == "" {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
 			continue
 		}
-		idx := strings.IndexByte(line, ':')
+		idx := bytes.IndexByte(line, ':')
 		if idx < 0 {
 			continue
 		}
-		key := strings.TrimSpace(line[:idx])
-		val := strings.TrimSpace(line[idx+1:])
+		key := bytes.TrimSpace(line[:idx])
+		val := bytes.TrimSpace(line[idx+1:])
 
-		if strings.EqualFold(key, "infohash") {
+		if bytes.EqualFold(key, []byte("infohash")) {
 			parsedInfoHash = val
-		} else if strings.EqualFold(key, "port") {
+		} else if bytes.EqualFold(key, []byte("port")) {
 			var err error
-			port, err = strconv.Atoi(val)
+			port, err = strconv.Atoi(string(val))
 			if err != nil || port <= 0 || port > 65535 {
 				return net.TCPAddr{}, false
 			}
 		}
 	}
 
-	if !strings.EqualFold(parsedInfoHash, expectedEncoded) {
+	if !bytes.EqualFold(parsedInfoHash, expectedEncoded) {
 		return net.TCPAddr{}, false
 	}
 	if port <= 0 {

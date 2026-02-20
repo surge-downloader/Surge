@@ -29,6 +29,7 @@ type FileLayout struct {
 	ensureErr  error
 
 	fileMu    sync.Mutex
+	closed    bool
 	openFiles map[string]*os.File
 	fileQueue []string
 }
@@ -316,6 +317,10 @@ func (fl *FileLayout) getFile(path string) (*os.File, error) {
 	fl.fileMu.Lock()
 	defer fl.fileMu.Unlock()
 
+	if fl.closed {
+		return nil, os.ErrClosed
+	}
+
 	if f, ok := fl.openFiles[path]; ok {
 		fl.markUsedLocked(path)
 		return f, nil
@@ -420,6 +425,7 @@ func (fl *FileLayout) readAtFile(path string, offset int64, out []byte) error {
 
 func (fl *FileLayout) Close() error {
 	fl.fileMu.Lock()
+	fl.closed = true
 	files := fl.openFiles
 	fl.openFiles = make(map[string]*os.File)
 	fl.fileQueue = nil

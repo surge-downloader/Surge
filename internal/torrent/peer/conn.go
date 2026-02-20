@@ -27,6 +27,7 @@ type Conn struct {
 	pl          PieceLayout
 	store       Storage
 	pipeline    Pipeline
+	sp          SimplePipeline
 	maxInFlight int
 	piece       int
 	pieceBuf    []byte
@@ -335,7 +336,8 @@ func (c *Conn) advancePiece() bool {
 		return false
 	}
 	c.piece = piece
-	c.pipeline = newSimplePipeline(size, c.maxInFlight)
+	c.sp.init(size, c.maxInFlight)
+	c.pipeline = &c.sp
 	if size > int64(maxInt) {
 		c.pieceBuf = nil
 		return false
@@ -564,7 +566,8 @@ func (c *Conn) resetCurrentPieceLocked() {
 	if size <= 0 {
 		return
 	}
-	c.pipeline = newSimplePipeline(size, c.maxInFlight)
+	c.sp.init(size, c.maxInFlight)
+	c.pipeline = &c.sp
 	if size > int64(maxInt) {
 		c.pieceBuf = nil
 		return
