@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	minAdaptiveInFlight = 4
-	maxAdaptiveInFlight = 128
-	startupInFlightMin  = 48
+	minAdaptiveInFlight = 16
+	maxAdaptiveInFlight = 2048
+	startupInFlightMin  = 128
 	tuneWindow          = 1 * time.Second
 )
 
@@ -248,30 +248,38 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest, []net.TCPAddr) {
 					break
 				}
 
-				ok, err := c.pl.VerifyPieceData(int64(index), c.pieceBuf)
-				if err != nil || !ok {
-					c.resetCurrentPieceLocked()
-					requestNext = true
-					break
-				}
+				buf := c.pieceBuf
+				c.pieceBuf = nil
+				idx := int(index)
 
-				if err := c.store.WriteAtPiece(int64(index), 0, c.pieceBuf); err != nil {
-					c.resetCurrentPieceLocked()
-					requestNext = true
-					break
-				}
+				c.advancePiece()
+				requestNext = true
 
-				ok, err = c.store.VerifyPieceData(int64(index), c.pieceBuf)
-				if err == nil && ok {
-					if c.picker != nil {
-						c.picker.Done(int(index))
+				go func(idx int, b []byte) {
+					ok, err := c.pl.VerifyPieceData(int64(idx), b)
+					if err != nil || !ok {
+						if c.picker != nil {
+							c.picker.Requeue(idx)
+						}
+						return
 					}
-					c.pieceBuf = nil
-					c.advancePiece()
-				} else if c.pl != nil {
-					// Re-request the piece if verification fails
-					c.resetCurrentPieceLocked()
-				}
+					if err := c.store.WriteAtPiece(int64(idx), 0, b); err != nil {
+						if c.picker != nil {
+							c.picker.Requeue(idx)
+						}
+						return
+					}
+					ok, err = c.store.VerifyPieceData(int64(idx), b)
+					if err == nil && ok {
+						if c.picker != nil {
+							c.picker.Done(idx)
+						}
+					} else {
+						if c.picker != nil {
+							c.picker.Requeue(idx)
+						}
+					}
+				}(idx, buf)
 			}
 			requestNext = true
 		}
@@ -469,13 +477,13 @@ func (c *Conn) observeBlockLocked(n int64) {
 	target := c.maxInFlight
 	switch {
 	case rate > 48*1024*1024:
-		target += 8
+		target += 32
 	case rate > 24*1024*1024:
-		target += 6
+		target += 16
 	case rate > 12*1024*1024:
-		target += 4
+		target += 8
 	case rate > 4*1024*1024:
-		target += 2
+		target += 4
 	case rate < 256*1024:
 		target -= 4
 	case rate < 1024*1024:
