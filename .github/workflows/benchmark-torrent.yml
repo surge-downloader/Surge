@@ -12,7 +12,7 @@ on:
       url:
         description: 'URL to download for benchmarking'
         required: true
-        default: 'https://releases.ubuntu.com/24.04/ubuntu-24.04.4-desktop-amd64.iso.torrent'
+        default: 'https://webtorrent.io/torrents/big-buck-bunny.torrent'
       iterations:
         description: 'Number of iterations'
         required: true
@@ -68,9 +68,9 @@ jobs:
         id: benchmark
         env:
           # Use 'github.event.inputs' for manual triggers, default for others
-          BENCH_URL: ${{ github.event.inputs.url || 'https://releases.ubuntu.com/24.04/ubuntu-24.04.4-desktop-amd64.iso.torrent' }}
+          BENCH_URL: ${{ github.event.inputs.url || 'https://webtorrent.io/torrents/big-buck-bunny.torrent' }}
           # On push/PR, we usually want 1 iteration to save time, 5 for manual
-          BENCH_ITERATIONS: ${{ github.event.inputs.iterations || '10' }}
+          BENCH_ITERATIONS: ${{ github.event.inputs.iterations || '5' }}
           # Default to 'y' for PRs to see regressions, 'n' for simple pushes
           BASELINE_COMPARE: ${{ github.event.inputs.baseline || 'y' }}
 
