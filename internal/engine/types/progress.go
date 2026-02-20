@@ -376,6 +376,25 @@ func (ps *ProgressState) getChunkState(index int) ChunkStatus {
 	return ChunkStatus(val)
 }
 
+// UpdateChunkProgress safely increments visual array buffers for torrent downloads
+// without double-counting bytes into global mechanisms natively managed elsewhere.
+func (ps *ProgressState) UpdateChunkProgress(index int, increment int64) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	if len(ps.ChunkProgress) != ps.BitmapWidth {
+		ps.ChunkProgress = make([]int64, ps.BitmapWidth)
+	}
+	if index < 0 || index >= ps.BitmapWidth {
+		return
+	}
+
+	ps.ChunkProgress[index] += increment
+	if ps.ChunkProgress[index] >= ps.ActualChunkSize {
+		ps.ChunkProgress[index] = ps.ActualChunkSize
+	}
+}
+
 // UpdateChunkStatus updates the bitmap based on byte range
 func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkStatus) {
 	ps.mu.Lock()

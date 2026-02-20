@@ -22,6 +22,11 @@ func NewProgressStore(layout *FileLayout, state *types.ProgressState) *ProgressS
 	if totalPieces > 0 {
 		bitfield = make([]byte, (totalPieces+7)/8)
 	}
+
+	if state != nil {
+		state.InitBitmap(layout.TotalLength, layout.Info.PieceLength)
+	}
+
 	return &ProgressStore{
 		layout:   layout,
 		state:    state,
@@ -39,6 +44,10 @@ func (s *ProgressStore) WriteAtPiece(pieceIndex int64, pieceOffset int64, data [
 	}
 	inc := int64(len(data))
 	if inc > 0 {
+		s.state.UpdateChunkProgress(int(pieceIndex), inc)
+		if s.state.GetChunkState(int(pieceIndex)) == types.ChunkPending {
+			s.state.SetChunkState(int(pieceIndex), types.ChunkDownloading)
+		}
 		s.state.VerifiedProgress.Add(inc)
 		s.state.Downloaded.Add(inc)
 	}
@@ -90,6 +99,12 @@ func (s *ProgressStore) markPieceVerified(pieceIndex int64) (bool, error) {
 
 	if notify != nil {
 		notify(int(pieceIndex))
+	}
+	if s.state != nil {
+		s.state.SetChunkState(int(pieceIndex), types.ChunkCompleted)
+		if pieceSize > 0 {
+			s.state.UpdateChunkProgress(int(pieceIndex), pieceSize)
+		}
 	}
 	return true, nil
 }
