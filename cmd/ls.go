@@ -93,7 +93,7 @@ func printDownloads(jsonOutput bool, baseURL string, token string, strictRemote 
 	}
 
 	// Fall back to database only when not explicitly targeting a remote host.
-	if len(downloads) == 0 && !(strictRemote && baseURL != "") {
+	if len(downloads) == 0 && (!strictRemote || baseURL == "") {
 		dbDownloads, err := state.ListAllDownloads()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error listing downloads: %v\n", err)

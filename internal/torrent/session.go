@@ -313,12 +313,6 @@ func (s *Session) SetLowPeerMode(low bool) {
 	s.mu.Unlock()
 }
 
-func (s *Session) isLowPeerMode() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.lowPeerMode
-}
-
 func (s *Session) currentTrackerInterval() time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()

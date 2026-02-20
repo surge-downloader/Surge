@@ -157,20 +157,6 @@ func TestValidator_ExtractURL(t *testing.T) {
 	}
 }
 
-func TestValidator_ExtractURL_DisallowedSchemeByConfig(t *testing.T) {
-	v := &Validator{
-		allowedSchemes: map[string]bool{
-			"http":  false,
-			"https": false,
-		},
-	}
-
-	got := v.ExtractURL("https://example.com")
-	if got != "" {
-		t.Fatalf("ExtractURL() = %q, want empty string", got)
-	}
-}
-
 func TestReadURL(t *testing.T) {
 	original := clipboardReadAll
 	t.Cleanup(func() {

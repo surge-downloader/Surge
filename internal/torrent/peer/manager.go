@@ -866,10 +866,7 @@ func isUnexpectedPeerClose(err error) bool {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	if strings.Contains(msg, "use of closed network connection") {
-		return false
-	}
-	return true
+	return !strings.Contains(msg, "use of closed network connection")
 }
 
 func isPublicRoutablePeer(ip net.IP) bool {
