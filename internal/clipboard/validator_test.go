@@ -1,6 +1,7 @@
 package clipboard
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -139,6 +140,11 @@ func TestValidator_ExtractURL(t *testing.T) {
 			input:    "https://" + strings.Repeat("a", 2048-8), // 8 + 2040 = 2048
 			expected: "https://" + strings.Repeat("a", 2040),
 		},
+		{
+			name:     "Malformed URL parse error",
+			input:    "https://example.com/%zz",
+			expected: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -149,4 +155,45 @@ func TestValidator_ExtractURL(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidator_ExtractURL_DisallowedSchemeByConfig(t *testing.T) {
+	v := &Validator{
+		allowedSchemes: map[string]bool{
+			"http":  false,
+			"https": false,
+		},
+	}
+
+	got := v.ExtractURL("https://example.com")
+	if got != "" {
+		t.Fatalf("ExtractURL() = %q, want empty string", got)
+	}
+}
+
+func TestReadURL(t *testing.T) {
+	original := clipboardReadAll
+	t.Cleanup(func() {
+		clipboardReadAll = original
+	})
+
+	t.Run("clipboard read error", func(t *testing.T) {
+		clipboardReadAll = func() (string, error) {
+			return "", errors.New("clipboard unavailable")
+		}
+
+		if got := ReadURL(); got != "" {
+			t.Fatalf("ReadURL() = %q, want empty string", got)
+		}
+	})
+
+	t.Run("clipboard text is valid URL", func(t *testing.T) {
+		clipboardReadAll = func() (string, error) {
+			return "  https://example.com/file.zip  ", nil
+		}
+
+		if got := ReadURL(); got != "https://example.com/file.zip" {
+			t.Fatalf("ReadURL() = %q, want %q", got, "https://example.com/file.zip")
+		}
+	})
 }

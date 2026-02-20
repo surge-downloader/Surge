@@ -1,6 +1,7 @@
 <div align="center">
 
 # Surge
+
 **Blazing fast TUI download manager built in Go for power users**
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/surge-downloader/surge)
@@ -10,8 +11,7 @@
 [![BuyMeACoffee](https://raw.githubusercontent.com/pachadotdev/buymeacoffee-badges/main/bmc-violet.svg)](https://www.buymeacoffee.com/surge.downloader)
 [![Stars](https://img.shields.io/github/stars/surge-downloader/surge?style=social)](https://github.com/surge-downloader/surge/stargazers)
 
-
-[Installation](#installation) • [Usage](#usage) • [Benchmarks](#benchmarks) • [Extension](#browser-extension)
+[Installation](#installation) • [Usage](#usage) • [Benchmarks](#benchmarks) • [Extension](#browser-extension) • [Settings](docs/SETTINGS.md) • [CLI Reference](docs/USAGE.md)
 
 </div>
 
@@ -51,7 +51,7 @@ If Surge saves you time, consider supporting the development! Donations go direc
 
 [**☕ Buy us a coffee**](https://www.buymeacoffee.com/surge.downloader)
 
-*Totally optional—your stars, issues, and contributions already mean the world to us! :)*
+_Totally optional—your stars, issues, and contributions already mean the world to us! :)_
 
 ---
 
@@ -59,14 +59,14 @@ If Surge saves you time, consider supporting the development! Donations go direc
 
 Surge is available on multiple platforms. Choose the method that works best for you.
 
-| Platform / Method | Command / Instructions | Notes |
-| :--- | :--- | :--- |
-| **Prebuilt Binary** | [Download from Releases](https://github.com/surge-downloader/surge/releases/latest) | Easiest method. Just download and run. |
-| **Arch Linux (AUR)** | `yay -S surge` | Managed via AUR. |
-| **macOS / Linux (Homebrew)** | `brew install surge-downloader/tap/surge` | Recommended for Mac/Linux users. |
-| **Windows (Winget)** | `winget install surge-downloader.surge` | Recommended for Windows users. |
-| **Dockerfile** | [See instructions](#4-server-mode-with-docker-compose) | Run Surge in server mode with Docker Compose
-| **Go Install** | `go install github.com/surge-downloader/surge@latest` | Requires Go 1.21+. |
+| Platform / Method            | Command / Instructions                                                              | Notes                                        |
+| :--------------------------- | :---------------------------------------------------------------------------------- | :------------------------------------------- |
+| **Prebuilt Binary**          | [Download from Releases](https://github.com/surge-downloader/surge/releases/latest) | Easiest method. Just download and run.       |
+| **Arch Linux (AUR)**         | `yay -S surge`                                                                      | Managed via AUR.                             |
+| **macOS / Linux (Homebrew)** | `brew install surge-downloader/tap/surge`                                           | Recommended for Mac/Linux users.             |
+| **Windows (Winget)**         | `winget install surge-downloader.surge`                                             | Recommended for Windows users.               |
+| **Dockerfile**               | [See instructions](#4-server-mode-with-docker-compose)                              | Run Surge in server mode with Docker Compose |
+| **Go Install**               | `go install github.com/surge-downloader/surge@latest`                               | Requires Go 1.21+.                           |
 
 ---
 
@@ -74,7 +74,7 @@ Surge is available on multiple platforms. Choose the method that works best for 
 
 Surge has two main modes: **TUI (Interactive)** and **Server (Headless)**.
 
-For a comprehensive list of all commands, flags, and configuration options, please refer to the **[Detailed Settings & Configuration Guide](docs/SETTINGS.md)**.
+For a full reference, see the **[Settings & Configuration Guide](docs/SETTINGS.md)** and the **[CLI Usage Guide](docs/USAGE.md)**.
 
 ### 1. Interactive TUI Mode
 
@@ -148,30 +148,30 @@ Environment variable fallbacks:
 
 Download the compose file and start the container:
 
-   ```bash
-   wget https://raw.githubusercontent.com/surge-downloader/surge/refs/heads/main/docker/compose.yml
-   docker compose up -d
-   ```
+```bash
+wget https://raw.githubusercontent.com/surge-downloader/surge/refs/heads/main/docker/compose.yml
+docker compose up -d
+```
 
 Get the API token:
 
-   ```bash
-   docker compose exec surge surge token
-   ```
-   
-   Save this token - you'll need it to authenticate API requests and connect remotely.
+```bash
+docker compose exec surge surge token
+```
+
+Save this token - you'll need it to authenticate API requests and connect remotely.
 
 Check downloads/API availability:
 
-   ```bash
-   docker compose exec surge surge ls
-   ```
+```bash
+docker compose exec surge surge ls
+```
 
 View logs:
 
-   ```bash
-   docker compose logs -f surge
-   ```
+```bash
+docker compose logs -f surge
+```
 
 ---
 
