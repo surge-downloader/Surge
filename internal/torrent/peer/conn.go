@@ -15,6 +15,12 @@ const (
 	tuneWindow          = 1 * time.Second
 )
 
+type activePiece struct {
+	index int
+	sp    SimplePipeline
+	buf   []byte
+}
+
 type Conn struct {
 	sess        *Session
 	addr        net.TCPAddr
@@ -26,11 +32,9 @@ type Conn struct {
 	picker      Picker
 	pl          PieceLayout
 	store       Storage
-	pipeline    Pipeline
-	sp          SimplePipeline
+	active      []*activePiece
+	inFlight    int
 	maxInFlight int
-	piece       int
-	pieceBuf    []byte
 	utPexID     byte
 	onPEXPeer   func(net.TCPAddr)
 	onClose     func(error)
@@ -77,7 +81,7 @@ type Storage interface {
 	Bitfield() []byte
 }
 
-func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, store Storage, pipeline Pipeline, maxInFlight int, onPEXPeer func(net.TCPAddr), onClose func(error)) *Conn {
+func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, store Storage, maxInFlight int, onPEXPeer func(net.TCPAddr), onClose func(error)) *Conn {
 	if maxInFlight <= 0 {
 		maxInFlight = minAdaptiveInFlight
 	}
@@ -95,9 +99,7 @@ func NewConn(sess *Session, addr net.TCPAddr, picker Picker, pl PieceLayout, sto
 		picker:      picker,
 		pl:          pl,
 		store:       store,
-		pipeline:    pipeline,
 		maxInFlight: maxInFlight,
-		piece:       -1,
 		onPEXPeer:   onPEXPeer,
 		onClose:     onClose,
 		startedAt:   time.Now(),
@@ -144,9 +146,14 @@ func (c *Conn) readLoop(ctx context.Context) {
 	var closeErr error
 	defer func() {
 		c.mu.Lock()
-		if c.picker != nil && c.piece >= 0 && c.pipeline != nil && !c.pipeline.Completed() {
-			c.picker.Requeue(c.piece)
+		if c.picker != nil {
+			for _, ap := range c.active {
+				if !ap.sp.Completed() {
+					c.picker.Requeue(ap.index)
+				}
+			}
 		}
+		c.active = nil
 		c.mu.Unlock()
 		_ = c.sess.Close()
 		if c.onClose != nil {
@@ -239,24 +246,42 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest, []net.TCPAddr) {
 		uploadReq = &uploadRequest{index: index, begin: begin, length: length}
 	case MsgPiece:
 		index, begin, block, err := ParsePiece(msg)
-		if err == nil && c.store != nil && c.pipeline != nil {
-			if !c.bufferPieceBlockLocked(int64(index), int64(begin), block) {
+		if err == nil && c.store != nil {
+			var ap *activePiece
+			for _, p := range c.active {
+				if p.index == int(index) {
+					ap = p
+					break
+				}
+			}
+			if ap == nil {
+				break
+			}
+			if !c.bufferPieceBlockLocked(ap, int64(begin), block) {
 				break
 			}
 			c.observeBlockLocked(int64(len(block)))
-			c.pipeline.OnBlock(int64(begin), int64(len(block)))
-			if c.pipeline.Completed() {
-				if len(c.pieceBuf) == 0 {
-					c.resetCurrentPieceLocked()
+			ap.sp.OnBlock(int64(begin), int64(len(block)))
+			c.inFlight--
+			if c.inFlight < 0 {
+				c.inFlight = 0
+			}
+
+			if ap.sp.Completed() {
+				if len(ap.buf) == 0 {
+					if c.picker != nil {
+						c.picker.Requeue(ap.index)
+					}
+					c.removeActivePieceLocked(ap.index)
 					requestNext = true
 					break
 				}
 
-				buf := c.pieceBuf
-				c.pieceBuf = nil
-				idx := int(index)
+				buf := ap.buf
+				ap.buf = nil // prevent reuse
+				idx := ap.index
+				c.removeActivePieceLocked(idx)
 
-				c.advancePiece()
 				requestNext = true
 
 				go func(idx int, b []byte) {
@@ -301,23 +326,37 @@ func (c *Conn) maybeRequest() {
 	if c.choked {
 		return
 	}
-	if c.pipeline == nil {
-		if !c.advancePiece() {
-			return
+
+	for c.inFlight < c.maxInFlight {
+		didRequest := false
+		for _, ap := range c.active {
+			begin, length, ok := ap.sp.NextRequest()
+			if ok {
+				msg := MakeRequest(uint32(ap.index), uint32(begin), uint32(length))
+				c.write(msg)
+				c.inFlight++
+				didRequest = true
+				if c.inFlight >= c.maxInFlight {
+					break
+				}
+			}
 		}
-	}
-	for {
-		begin, length, ok := c.pipeline.NextRequest()
-		if !ok {
-			return
+		if c.inFlight >= c.maxInFlight {
+			break
 		}
-		msg := MakeRequest(uint32(c.piece), uint32(begin), uint32(length))
-		c.write(msg)
+		if !didRequest {
+			if !c.advancePiece() {
+				break
+			}
+		}
 	}
 }
 
 func (c *Conn) advancePiece() bool {
 	if c.picker == nil || c.pl == nil {
+		return false
+	}
+	if len(c.active) > 3 {
 		return false
 	}
 
@@ -327,9 +366,7 @@ func (c *Conn) advancePiece() bool {
 	)
 
 	if len(c.bitfield) > 0 {
-		if bp, has := c.picker.(interface {
-			NextFromBitfield(bitfield []byte) (int, bool)
-		}); has {
+		if bp, has := c.picker.(BitfieldAwarePicker); has {
 			piece, ok = bp.NextFromBitfield(c.bitfield)
 		} else {
 			piece, ok = c.picker.Next()
@@ -347,14 +384,13 @@ func (c *Conn) advancePiece() bool {
 	if size <= 0 {
 		return false
 	}
-	c.piece = piece
-	c.sp.init(size, c.maxInFlight)
-	c.pipeline = &c.sp
-	if size > int64(maxInt) {
-		c.pieceBuf = nil
-		return false
+	ap := &activePiece{index: piece}
+	ap.sp.init(size, c.maxInFlight)
+	ap.sp.SetMaxInFlight(maxInt)
+	if size <= int64(maxInt) {
+		ap.buf = make([]byte, int(size))
 	}
-	c.pieceBuf = make([]byte, int(size))
+	c.active = append(c.active, ap)
 	return true
 }
 
@@ -507,9 +543,6 @@ func (c *Conn) observeBlockLocked(n int64) {
 		target = maxAdaptiveInFlight
 	}
 	c.maxInFlight = target
-	if c.pipeline != nil {
-		c.pipeline.SetMaxInFlight(target)
-	}
 
 	c.lastTuneAt = now
 	c.lastTuneRx = c.received
@@ -559,39 +592,30 @@ func (c *Conn) markHaveLocked(piece int) {
 	c.bitfield[byteIndex] |= mask
 }
 
-func (c *Conn) bufferPieceBlockLocked(index int64, begin int64, block []byte) bool {
-	if c.piece < 0 || int64(c.piece) != index {
-		return false
-	}
+func (c *Conn) bufferPieceBlockLocked(ap *activePiece, begin int64, block []byte) bool {
 	if begin < 0 || len(block) == 0 {
 		return false
 	}
-	if len(c.pieceBuf) == 0 {
+	if len(ap.buf) == 0 {
 		return false
 	}
 	end := begin + int64(len(block))
-	if end > int64(len(c.pieceBuf)) {
+	if end > int64(len(ap.buf)) {
 		return false
 	}
-	copy(c.pieceBuf[int(begin):int(end)], block)
+	copy(ap.buf[int(begin):int(end)], block)
 	return true
 }
 
-func (c *Conn) resetCurrentPieceLocked() {
-	if c.pl == nil || c.piece < 0 {
-		return
+func (c *Conn) removeActivePieceLocked(idx int) {
+	for i, ap := range c.active {
+		if ap.index == idx {
+			c.active[i] = c.active[len(c.active)-1]
+			c.active[len(c.active)-1] = nil
+			c.active = c.active[:len(c.active)-1]
+			return
+		}
 	}
-	size := c.pl.PieceSize(int64(c.piece))
-	if size <= 0 {
-		return
-	}
-	c.sp.init(size, c.maxInFlight)
-	c.pipeline = &c.sp
-	if size > int64(maxInt) {
-		c.pieceBuf = nil
-		return
-	}
-	c.pieceBuf = make([]byte, int(size))
 }
 
 const maxInt = int(^uint(0) >> 1)

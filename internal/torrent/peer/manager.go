@@ -358,8 +358,7 @@ func (m *Manager) tryDial(ctx context.Context, addr net.TCPAddr) {
 	m.noteDialSuccessLocked(key)
 	m.mu.Unlock()
 
-	var pipe Pipeline
-	conn := NewConn(sess, addr, m.picker, m.layout, m.store, pipe, m.requestPipeline, func(pexAddr net.TCPAddr) {
+	conn := NewConn(sess, addr, m.picker, m.layout, m.store, m.requestPipeline, func(pexAddr net.TCPAddr) {
 		m.onPEXPeer(ctx, pexAddr)
 	}, func(closeErr error) {
 		m.onClose(key, closeErr)
@@ -420,9 +419,8 @@ func (m *Manager) acceptInboundConn(ctx context.Context, raw net.Conn) {
 	m.noteDialSuccessLocked(key)
 	m.mu.Unlock()
 
-	var pipe Pipeline
 	sess := NewFromConnWithConfig(raw, hs.SupportsExtensionProtocol(), m.peerReadTimeout, m.peerKeepaliveSend)
-	conn := NewConn(sess, *addr, m.picker, m.layout, m.store, pipe, m.requestPipeline, func(pexAddr net.TCPAddr) {
+	conn := NewConn(sess, *addr, m.picker, m.layout, m.store, m.requestPipeline, func(pexAddr net.TCPAddr) {
 		m.onPEXPeer(ctx, pexAddr)
 	}, func(closeErr error) {
 		m.onClose(key, closeErr)
