@@ -133,32 +133,37 @@ func (p *PiecePicker) remainingLocked() int {
 	return p.totalPieces - done
 }
 
-// IsEndgame returns true when the remaining piece count (pending + in-flight)
+// IsEndgame returns true when the unassigned piece count (pending)
 // is below the endgame threshold. In endgame mode, multiple peers can request
 // the same in-flight piece to avoid tail latency from slow peers.
 func (p *PiecePicker) IsEndgame() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.remainingLocked() <= p.endgameThreshold
+	return len(p.queue) <= p.endgameThreshold
 }
 
-// NextFromBitfieldEndgame works like NextFromBitfield but also considers
-// in-flight pieces (state=1). This allows multiple peers to race on the
-// same piece during the endgame phase.
-func (p *PiecePicker) NextFromBitfieldEndgame(bitfield []byte) (int, bool) {
+func (p *PiecePicker) NextFromBitfieldEndgame(bitfield []byte, skip []int) (int, bool, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	// First try to pick a pending piece normally.
 	if piece, ok := p.nextLocked(bitfield); ok {
-		return piece, true
+		return piece, false, true
 	}
 
-	// No pending pieces left — pick an in-flight piece that this peer has.
-	bestIdx := -1
+	skipMap := make(map[int]bool)
+	for _, s := range skip {
+		skipMap[s] = true
+	}
+
+	var candidates []int
 	bestAvailability := int(^uint(0) >> 1)
+
 	for i := 0; i < p.totalPieces; i++ {
 		if p.state[i] != 1 {
+			continue
+		}
+		if skipMap[i] {
 			continue
 		}
 		if len(bitfield) > 0 && !bitfieldHas(bitfield, i) {
@@ -168,17 +173,20 @@ func (p *PiecePicker) NextFromBitfieldEndgame(bitfield []byte) (int, bool) {
 		if avail == 0 {
 			avail = 1
 		}
-		if bestIdx == -1 || avail < bestAvailability {
-			bestIdx = i
+		if avail < bestAvailability {
 			bestAvailability = avail
+			candidates = candidates[:0]
+			candidates = append(candidates, i)
+		} else if avail == bestAvailability {
+			candidates = append(candidates, i)
 		}
 	}
-	if bestIdx == -1 {
-		return 0, false
+	if len(candidates) == 0 {
+		return 0, false, false
 	}
-	// Do NOT change state — the piece stays in-flight (state=1).
-	// Multiple peers will work on it concurrently.
-	return bestIdx, true
+
+	idx := candidates[rand.IntN(len(candidates))]
+	return idx, true, true
 }
 
 func (p *PiecePicker) nextLocked(peerBitfield []byte) (int, bool) {

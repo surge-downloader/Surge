@@ -70,7 +70,7 @@ type BitfieldAwarePicker interface {
 
 type EndgamePicker interface {
 	IsEndgame() bool
-	NextFromBitfieldEndgame(bitfield []byte) (int, bool)
+	NextFromBitfieldEndgame(bitfield []byte, skip []int) (int, bool, bool)
 }
 
 type PieceLayout interface {
@@ -403,42 +403,50 @@ func (c *Conn) advancePiece() bool {
 	var (
 		piece      int
 		ok         bool
+		isDup      bool
 		endgameDup bool
 	)
 
-	if len(c.bitfield) > 0 {
-		// Try endgame mode first — if the picker supports it and we're in endgame,
-		// allow duplicate piece requests to race against slow peers.
-		if ep, has := c.picker.(EndgamePicker); has && ep.IsEndgame() {
-			piece, ok = ep.NextFromBitfieldEndgame(c.bitfield)
-			if ok {
-				// Check if we already have this piece active — skip if so.
-				for _, ap := range c.active {
-					if ap.index == piece {
-						ok = false
-						break
-					}
-				}
-				if ok {
-					endgameDup = true
-				}
-			}
+	var activeIds []int
+	dupCount := 0
+	for _, ap := range c.active {
+		activeIds = append(activeIds, ap.index)
+		if ap.endgameDup {
+			dupCount++
 		}
-		if !ok {
+	}
+
+	if len(c.bitfield) == 0 {
+		return false
+	}
+
+	// Try endgame mode first — if the picker supports it and we're in endgame,
+	// allow duplicate piece requests to race against slow peers.
+	if ep, has := c.picker.(EndgamePicker); has && ep.IsEndgame() {
+		if dupCount < 2 {
+			piece, isDup, ok = ep.NextFromBitfieldEndgame(c.bitfield, activeIds)
+			if ok {
+				endgameDup = isDup
+			}
+		} else {
+			// If we already have enough duplicates, try picking a normal pending piece if any
 			if bp, has := c.picker.(BitfieldAwarePicker); has {
 				piece, ok = bp.NextFromBitfield(c.bitfield)
 			} else {
 				piece, ok = c.picker.Next()
 			}
 		}
-		if !ok {
-			return false
+	}
+	if !ok {
+		if bp, has := c.picker.(BitfieldAwarePicker); has {
+			piece, ok = bp.NextFromBitfield(c.bitfield)
+		} else {
+			// Fallback if picker doesn't support bitfields (unlikely).
+			piece, ok = c.picker.Next()
 		}
-	} else {
-		piece, ok = c.picker.Next()
-		if !ok {
-			return false
-		}
+	}
+	if !ok {
+		return false
 	}
 	size := c.pl.PieceSize(int64(piece))
 	if size <= 0 {

@@ -134,7 +134,7 @@ func TestPiecePickerEndgameDuplicates(t *testing.T) {
 	}
 
 	// Now that piece is in-flight, endgame should let us get it again.
-	piece2, ok := p.NextFromBitfieldEndgame(bf)
+	piece2, _, ok := p.NextFromBitfieldEndgame(bf, nil)
 	if !ok {
 		t.Fatalf("expected endgame to return a piece")
 	}
@@ -142,7 +142,7 @@ func TestPiecePickerEndgameDuplicates(t *testing.T) {
 	if piece2 != piece1 {
 		// The other pending piece was picked first — that's fine.
 		// Pick again to get the duplicate.
-		piece3, ok := p.NextFromBitfieldEndgame(bf)
+		piece3, _, ok := p.NextFromBitfieldEndgame(bf, nil)
 		if !ok {
 			t.Fatalf("expected duplicate endgame piece")
 		}
@@ -171,7 +171,7 @@ func TestPiecePickerDoneInEndgame(t *testing.T) {
 	piece2, _ := p.NextFromBitfield(bf)
 
 	// Endgame pick should return one of the in-flight pieces as a duplicate.
-	dupPiece, ok := p.NextFromBitfieldEndgame(bf)
+	dupPiece, _, ok := p.NextFromBitfieldEndgame(bf, nil)
 	if !ok {
 		t.Fatalf("expected endgame piece")
 	}
