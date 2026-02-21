@@ -301,20 +301,16 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest, []net.TCPAddr) {
 					if dupPiece && c.store.HasPiece(int64(idx)) {
 						return
 					}
-					ok, err := c.pl.VerifyPieceData(int64(idx), b)
-					if err != nil || !ok {
-						if c.picker != nil && !dupPiece {
-							c.picker.Requeue(idx)
-						}
-						return
-					}
+					// Write data to disk first, then verify once via the store.
+					// The store's VerifyPieceData delegates to FileLayout.VerifyPieceData
+					// internally and also triggers BroadcastHave on success.
 					if err := c.store.WriteAtPiece(int64(idx), 0, b); err != nil {
 						if c.picker != nil && !dupPiece {
 							c.picker.Requeue(idx)
 						}
 						return
 					}
-					ok, err = c.store.VerifyPieceData(int64(idx), b)
+					ok, err := c.store.VerifyPieceData(int64(idx), b)
 					if err == nil && ok {
 						if c.picker != nil {
 							c.picker.Done(idx)

@@ -49,6 +49,7 @@ func NewRunner(meta *TorrentMeta, baseDir string, cfg SessionConfig, state *type
 	if progressStore != nil {
 		progressStore.SetOnVerified(func(pieceIndex int) {
 			mgr.BroadcastHave(pieceIndex)
+			sess.AddDownloaded(layout.PieceSize(int64(pieceIndex)))
 		})
 
 		// On resume, verify we communicate already completed pieces to the picker.

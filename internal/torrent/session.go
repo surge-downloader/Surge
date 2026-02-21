@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/surge-downloader/surge/internal/torrent/dht"
@@ -67,6 +68,7 @@ type Session struct {
 	mu          sync.Mutex
 	listenPort  int
 	lowPeerMode bool
+	downloaded  atomic.Int64
 }
 
 var fallbackTrackers = []string{
@@ -165,7 +167,7 @@ func (s *Session) DiscoverPeers(ctx context.Context) <-chan net.TCPAddr {
 						InfoHash: s.infoHash,
 						PeerID:   s.peerID,
 						Port:     s.announcePort(),
-						Left:     s.cfg.TotalLength,
+						Left:     s.announceLeft(),
 						Event:    startedEvent(started),
 						NumWant:  s.trackerNumWant(),
 					})
@@ -311,6 +313,20 @@ func (s *Session) SetLowPeerMode(low bool) {
 	s.mu.Lock()
 	s.lowPeerMode = low
 	s.mu.Unlock()
+}
+
+func (s *Session) AddDownloaded(n int64) {
+	if n > 0 {
+		s.downloaded.Add(n)
+	}
+}
+
+func (s *Session) announceLeft() int64 {
+	left := s.cfg.TotalLength - s.downloaded.Load()
+	if left < 0 {
+		left = 0
+	}
+	return left
 }
 
 func (s *Session) currentTrackerInterval() time.Duration {
