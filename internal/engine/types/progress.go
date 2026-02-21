@@ -35,14 +35,27 @@ type ProgressState struct {
 	ChunkProgress   []int64 // Bytes downloaded per chunk (runtime only, not persisted)
 	ActualChunkSize int64   // Size of each actual chunk in bytes
 	BitmapWidth     int     // Number of chunks tracked
+	TorrentPeers    TorrentPeerCounters
 
-	mu sync.Mutex // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed, Mirrors
+	mu sync.Mutex // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed, Mirrors, TorrentPeers
 }
 
 type MirrorStatus struct {
 	URL    string
 	Active bool
 	Error  bool
+}
+
+type TorrentPeerCounters struct {
+	Discovered      int
+	Pending         int
+	Active          int
+	DialAttempts    int
+	DialSuccess     int
+	DialFailures    int
+	InboundAccepted int
+	HealthEvictions int
+	ProtocolCloses  int
 }
 
 func (ps *ProgressState) SetDestPath(path string) {
@@ -231,6 +244,18 @@ func (ps *ProgressState) GetMirrors() []MirrorStatus {
 	return mirrors
 }
 
+func (ps *ProgressState) SetTorrentPeerCounters(c TorrentPeerCounters) {
+	ps.mu.Lock()
+	ps.TorrentPeers = c
+	ps.mu.Unlock()
+}
+
+func (ps *ProgressState) GetTorrentPeerCounters() TorrentPeerCounters {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	return ps.TorrentPeers
+}
+
 // ChunkStatus represents the status of a visualization chunk
 type ChunkStatus int
 
@@ -349,6 +374,51 @@ func (ps *ProgressState) getChunkState(index int) ChunkStatus {
 
 	val := (ps.ChunkBitmap[byteIndex] >> bitOffset) & 3
 	return ChunkStatus(val)
+}
+
+// UpdateChunkProgress safely increments visual array buffers for torrent downloads
+// without double-counting bytes into global mechanisms natively managed elsewhere.
+func (ps *ProgressState) UpdateChunkProgress(index int, increment int64) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	if len(ps.ChunkProgress) != ps.BitmapWidth {
+		ps.ChunkProgress = make([]int64, ps.BitmapWidth)
+	}
+	if index < 0 || index >= ps.BitmapWidth {
+		return
+	}
+
+	ps.ChunkProgress[index] += increment
+	if ps.ChunkProgress[index] >= ps.ActualChunkSize {
+		ps.ChunkProgress[index] = ps.ActualChunkSize
+	}
+}
+
+// SetChunkProgressDirect safely increments visual array buffers directly for torrent resume reconstruction,
+// bypassing global byte counters that should only increment on new incoming bytes.
+func (ps *ProgressState) SetChunkProgressDirect(index int, increment int64) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	if len(ps.ChunkProgress) != ps.BitmapWidth {
+		ps.ChunkProgress = make([]int64, ps.BitmapWidth)
+	}
+	if index < 0 || index >= ps.BitmapWidth {
+		return
+	}
+
+	ps.ChunkProgress[index] += increment
+	if ps.ChunkProgress[index] >= ps.ActualChunkSize {
+		ps.ChunkProgress[index] = ps.ActualChunkSize
+		ps.setChunkState(index, ChunkCompleted)
+	} else if ps.ChunkProgress[index] > 0 {
+		if ps.getChunkState(index) != ChunkCompleted {
+			ps.setChunkState(index, ChunkDownloading)
+		}
+	} else {
+		ps.setChunkState(index, ChunkPending)
+	}
 }
 
 // UpdateChunkStatus updates the bitmap based on byte range

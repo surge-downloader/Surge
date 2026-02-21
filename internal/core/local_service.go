@@ -13,6 +13,7 @@ import (
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/source"
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
@@ -173,9 +174,9 @@ func (s *LocalDownloadService) reportProgressLoop() {
 
 			// Calculate Progress
 			downloaded, total, totalElapsed, sessionElapsed, connections, sessionStart := cfg.State.GetProgress()
+			sessionDownloaded := downloaded - sessionStart
 
 			// Calculate Speed with EMA
-			sessionDownloaded := downloaded - sessionStart
 			var instantSpeed float64
 			if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
 				instantSpeed = float64(sessionDownloaded) / sessionElapsed.Seconds()
@@ -191,6 +192,7 @@ func (s *LocalDownloadService) reportProgressLoop() {
 			lastSpeeds[cfg.ID] = currentSpeed
 
 			// Create Message
+			peers := cfg.State.GetTorrentPeerCounters()
 			msg := events.ProgressMsg{
 				DownloadID:        cfg.ID,
 				Downloaded:        downloaded,
@@ -198,6 +200,14 @@ func (s *LocalDownloadService) reportProgressLoop() {
 				Speed:             currentSpeed,
 				Elapsed:           totalElapsed,
 				ActiveConnections: int(connections),
+				PeerDiscovered:    peers.Discovered,
+				PeerPending:       peers.Pending,
+				PeerDialAttempts:  peers.DialAttempts,
+				PeerDialSuccess:   peers.DialSuccess,
+				PeerDialFailures:  peers.DialFailures,
+				PeerInbound:       peers.InboundAccepted,
+				PeerHealthCull:    peers.HealthEvictions,
+				PeerProtocolClose: peers.ProtocolCloses,
 			}
 
 			// Add Chunk Bitmap for visualization (if initialized)
@@ -329,12 +339,13 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 				ID:       cfg.ID,
 				URL:      cfg.URL,
 				Filename: cfg.Filename,
-				Status:   "downloading",
+				Status:   "queued",
 			}
 
 			if cfg.State != nil {
 				// Calculate progress and speed (thread-safe)
 				downloaded, totalSize, _, sessionElapsed, connections, sessionStart := cfg.State.GetProgress()
+				sessionDownloaded := downloaded - sessionStart
 
 				status.TotalSize = totalSize
 				status.Downloaded = downloaded
@@ -348,6 +359,15 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 
 				// Get active connections count
 				status.Connections = int(connections)
+				peerStats := cfg.State.GetTorrentPeerCounters()
+				status.PeerDiscovered = peerStats.Discovered
+				status.PeerPending = peerStats.Pending
+				status.PeerDialAttempts = peerStats.DialAttempts
+				status.PeerDialSuccess = peerStats.DialSuccess
+				status.PeerDialFailures = peerStats.DialFailures
+				status.PeerInbound = peerStats.InboundAccepted
+				status.PeerHealthCull = peerStats.HealthEvictions
+				status.PeerProtoClose = peerStats.ProtocolCloses
 
 				// Update status based on state
 				if cfg.State.IsPausing() {
@@ -356,11 +376,14 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 					status.Status = "paused"
 				} else if cfg.State.Done.Load() {
 					status.Status = "completed"
+				} else if connections > 0 && sessionDownloaded <= 0 {
+					status.Status = "connecting"
+				} else if sessionDownloaded > 0 {
+					status.Status = "downloading"
 				}
 
 				// Calculate speed from progress only while actively downloading.
 				if status.Status == "downloading" {
-					sessionDownloaded := downloaded - sessionStart
 					if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
 						status.Speed = float64(sessionDownloaded) / sessionElapsed.Seconds() / (1024 * 1024)
 
@@ -424,6 +447,9 @@ func (s *LocalDownloadService) List() ([]types.DownloadStatus, error) {
 func (s *LocalDownloadService) Add(url string, path string, filename string, mirrors []string, headers map[string]string) (string, error) {
 	if s.Pool == nil {
 		return "", fmt.Errorf("worker pool not initialized")
+	}
+	if !source.IsSupported(url) {
+		return "", fmt.Errorf("unsupported URL")
 	}
 
 	s.settingsMu.RLock()

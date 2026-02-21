@@ -20,6 +20,7 @@ import (
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/state"
+	"github.com/surge-downloader/surge/internal/source"
 	"github.com/surge-downloader/surge/internal/tui"
 	"github.com/surge-downloader/surge/internal/utils"
 
@@ -832,6 +833,10 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	mirrorsForAdd := req.Mirrors
 	if len(mirrorsForAdd) == 0 && strings.Contains(req.URL, ",") {
 		urlForAdd, mirrorsForAdd = ParseURLArg(req.URL)
+	}
+	if !source.IsSupported(urlForAdd) {
+		http.Error(w, "Unsupported URL", http.StatusBadRequest)
+		return
 	}
 
 	if GlobalPool.HasDownload(urlForAdd) {

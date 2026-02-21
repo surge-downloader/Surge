@@ -219,6 +219,28 @@ def cmd_wget(binary: str, out: Path, url: str) -> List[str]:
 def cmd_curl(binary: str, out: Path, url: str) -> List[str]:
     return [binary, "-s", "-L", "-o", str(out), url]
 
+def cmd_qbittorrent(binary: str, out: Path, url: str) -> List[str]:
+    wrapper = Path(out.parent) / "qbit_wrapper.py"
+    wrapper_code = f"""import subprocess, time, sys, urllib.request, json
+p = subprocess.Popen(['qbittorrent-nox', '--webui-port=8080'])
+time.sleep(3)
+try:
+    req = urllib.request.Request('http://localhost:8080/api/v2/torrents/add', data=f"urls={{sys.argv[1]}}".encode('utf-8'))
+    urllib.request.urlopen(req)
+    while True:
+        try:
+            r = urllib.request.urlopen('http://localhost:8080/api/v2/torrents/info')
+            t = json.loads(r.read())
+            if len(t) > 0 and t[0].get('progress') == 1:
+                break
+        except Exception: pass
+        time.sleep(1)
+finally:
+    p.terminate()
+"""
+    wrapper.write_text(wrapper_code)
+    return ["python3", str(wrapper), url]
+
 
 # =============================================================================
 # REPORTING
@@ -285,7 +307,7 @@ def main():
     parser.add_argument("--speedtest", action="store_true", help="Run network speedtest-cli")
     
     # Tool flags
-    for tool in ["surge", "aria2", "wget", "curl", "axel"]:
+    for tool in ["surge", "aria2", "wget", "curl", "axel", "qbittorrent"]:
         parser.add_argument(f"--{tool}", action="store_true", help=f"Run {tool} benchmark")
 
     args = parser.parse_args()
@@ -320,7 +342,8 @@ def main():
         ("aria2", "aria2c", cmd_aria2),
         ("axel", "axel", cmd_axel),
         ("wget", "wget", cmd_wget),
-        ("curl", "curl", cmd_curl)
+        ("curl", "curl", cmd_curl),
+        ("qbittorrent", "qbittorrent-nox", cmd_qbittorrent)
     ]
 
     # Mirror Suite Logic

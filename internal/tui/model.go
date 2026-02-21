@@ -45,15 +45,23 @@ const (
 )
 
 type DownloadModel struct {
-	ID            string
-	URL           string
-	Filename      string
-	FilenameLower string
-	Destination   string // Full path to the destination file
-	Total         int64
-	Downloaded    int64
-	Speed         float64
-	Connections   int
+	ID               string
+	URL              string
+	Filename         string
+	FilenameLower    string
+	Destination      string // Full path to the destination file
+	Total            int64
+	Downloaded       int64
+	Speed            float64
+	Connections      int
+	PeerDiscovered   int
+	PeerPending      int
+	PeerDialAttempts int
+	PeerDialSuccess  int
+	PeerDialFailures int
+	PeerInbound      int
+	PeerHealthCull   int
+	PeerProtoClose   int
 
 	StartTime time.Time
 	Elapsed   time.Duration
@@ -108,6 +116,7 @@ type RootModel struct {
 
 	// Graph Data
 	SpeedHistory           []float64 // Stores the last ~60 ticks of speed data
+	speedBuffer            []float64 // Buffer for smoothing speed updates
 	lastSpeedHistoryUpdate time.Time // Last time SpeedHistory was updated (for 0.5s sampling)
 
 	// Notification log system
@@ -164,7 +173,6 @@ func NewDownloadModel(id string, url string, filename string, total int64) *Down
 		Filename:      filename,
 		FilenameLower: strings.ToLower(filename),
 		Total:         total,
-		StartTime:     time.Now(),
 		progress:      progress.New(progress.WithSpringOptions(0.5, 0.1)),
 		state:         state,
 	}
@@ -245,6 +253,7 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 					dm.progress.SetPercent(1.0)
 				case "pausing":
 					dm.pausing = true
+					dm.StartTime = time.Now()
 				case "paused":
 					if settings.General.AutoResume {
 						dm.resuming = true
@@ -256,11 +265,22 @@ func InitialRootModel(serverPort int, currentVersion string, service core.Downlo
 					// Always resume queued items
 					dm.resuming = true
 					dm.paused = true // Will update when resume event received
+				case "downloading", "connecting":
+					dm.StartTime = time.Now()
 				}
 
 				if s.TotalSize > 0 {
 					dm.progress.SetPercent(s.Progress / 100.0)
 				}
+				dm.Connections = s.Connections
+				dm.PeerDiscovered = s.PeerDiscovered
+				dm.PeerPending = s.PeerPending
+				dm.PeerDialAttempts = s.PeerDialAttempts
+				dm.PeerDialSuccess = s.PeerDialSuccess
+				dm.PeerDialFailures = s.PeerDialFailures
+				dm.PeerInbound = s.PeerInbound
+				dm.PeerHealthCull = s.PeerHealthCull
+				dm.PeerProtoClose = s.PeerProtoClose
 				if s.AvgSpeed > 0 {
 					dm.Speed = s.AvgSpeed
 				} else if s.Speed > 0 {
@@ -387,11 +407,11 @@ func (m RootModel) getFilteredDownloads() []*DownloadModel {
 		// Apply tab filter first
 		switch m.activeTab {
 		case TabQueued:
-			if d.done || d.Speed > 0 {
+			if d.done || isActiveDownload(d) {
 				continue
 			}
 		case TabActive:
-			if d.done || (d.Speed == 0 && d.Connections == 0) {
+			if d.done || !isActiveDownload(d) {
 				continue
 			}
 		case TabDone:
@@ -410,6 +430,19 @@ func (m RootModel) getFilteredDownloads() []*DownloadModel {
 		filtered = append(filtered, d)
 	}
 	return filtered
+}
+
+func isActiveDownload(d *DownloadModel) bool {
+	if d == nil || d.done || d.paused {
+		return false
+	}
+	if d.pausing {
+		return true
+	}
+	if d.Speed > 0 || d.Connections > 0 {
+		return true
+	}
+	return !d.StartTime.IsZero()
 }
 
 // newFilepicker creates a fresh filepicker instance with consistent settings.

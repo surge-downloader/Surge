@@ -1,22 +1,19 @@
 package clipboard
 
 import (
-	"net/url"
 	"strings"
 
 	"github.com/atotto/clipboard"
+	"github.com/surge-downloader/surge/internal/source"
 )
 
 var clipboardReadAll = clipboard.ReadAll
 
 type Validator struct {
-	allowedSchemes map[string]bool
 }
 
 func NewValidator() *Validator {
-	return &Validator{
-		allowedSchemes: map[string]bool{"http": true, "https": true},
-	}
+	return &Validator{}
 }
 
 func (v *Validator) ExtractURL(text string) string {
@@ -27,17 +24,11 @@ func (v *Validator) ExtractURL(text string) string {
 		return ""
 	}
 
-	// Must start with http:// or https://
-	if !strings.HasPrefix(text, "http://") && !strings.HasPrefix(text, "https://") {
+	if !source.IsSupported(text) {
 		return ""
 	}
 
-	parsed, err := url.Parse(text)
-	if err != nil || parsed.Host == "" || !v.allowedSchemes[parsed.Scheme] {
-		return ""
-	}
-
-	return parsed.String()
+	return source.Normalize(text)
 }
 
 func ReadURL() string {

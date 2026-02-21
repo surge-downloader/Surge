@@ -11,15 +11,6 @@ func TestNewValidator(t *testing.T) {
 	if v == nil {
 		t.Fatal("NewValidator() returned nil")
 	}
-	if v.allowedSchemes == nil {
-		t.Fatal("NewValidator() did not initialize allowedSchemes")
-	}
-	if !v.allowedSchemes["http"] {
-		t.Error("NewValidator() did not allow http")
-	}
-	if !v.allowedSchemes["https"] {
-		t.Error("NewValidator() did not allow https")
-	}
 }
 
 func TestValidator_ExtractURL(t *testing.T) {
@@ -60,6 +51,16 @@ func TestValidator_ExtractURL(t *testing.T) {
 			name:     "URL with port",
 			input:    "http://localhost:8080",
 			expected: "http://localhost:8080",
+		},
+		{
+			name:     "Torrent URL",
+			input:    "https://example.com/file.torrent",
+			expected: "https://example.com/file.torrent",
+		},
+		{
+			name:     "Magnet unsupported",
+			input:    "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
+			expected: "",
 		},
 
 		// Trimming
@@ -153,20 +154,6 @@ func TestValidator_ExtractURL(t *testing.T) {
 				t.Errorf("ExtractURL(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
-	}
-}
-
-func TestValidator_ExtractURL_DisallowedSchemeByConfig(t *testing.T) {
-	v := &Validator{
-		allowedSchemes: map[string]bool{
-			"http":  false,
-			"https": false,
-		},
-	}
-
-	got := v.ExtractURL("https://example.com")
-	if got != "" {
-		t.Fatalf("ExtractURL() = %q, want empty string", got)
 	}
 }
 

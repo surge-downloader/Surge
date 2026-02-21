@@ -11,6 +11,7 @@ import (
 type Settings struct {
 	General     GeneralSettings     `json:"general"`
 	Network     NetworkSettings     `json:"network"`
+	Torrent     TorrentSettings     `json:"torrent"`
 	Performance PerformanceSettings `json:"performance"`
 }
 
@@ -42,6 +43,30 @@ type NetworkSettings struct {
 	SequentialDownload     bool   `json:"sequential_download"`
 	MinChunkSize           int64  `json:"min_chunk_size"`
 	WorkerBufferSize       int    `json:"worker_buffer_size"`
+}
+
+// TorrentSettings contains per-torrent tuning parameters.
+type TorrentSettings struct {
+	MaxConnectionsPerTorrent int           `json:"max_connections_per_torrent"`
+	UploadSlotsPerTorrent    int           `json:"upload_slots_per_torrent"`
+	RequestPipelineDepth     int           `json:"request_pipeline_depth"`
+	ListenPort               int           `json:"listen_port"`
+	HealthEnabled            bool          `json:"health_enabled"`
+	LowRateCullFactor        float64       `json:"low_rate_cull_factor"`
+	HealthMinUptime          time.Duration `json:"health_min_uptime"`
+	HealthCullMaxPerTick     int           `json:"health_cull_max_per_tick"`
+	HealthRedialBlock        time.Duration `json:"health_redial_block"`
+	EvictionCooldown         time.Duration `json:"eviction_cooldown"`
+	EvictionMinUptime        time.Duration `json:"eviction_min_uptime"`
+	IdleEvictionThreshold    time.Duration `json:"idle_eviction_threshold"`
+	EvictionKeepRateMinBps   int64         `json:"eviction_keep_rate_min_bps"`
+	PeerReadTimeout          time.Duration `json:"peer_read_timeout"`
+	PeerKeepaliveSend        time.Duration `json:"peer_keepalive_send"`
+	TrackerIntervalNormal    time.Duration `json:"tracker_interval_normal"`
+	TrackerIntervalLowPeer   time.Duration `json:"tracker_interval_low_peer"`
+	TrackerNumWantNormal     int           `json:"tracker_numwant_normal"`
+	TrackerNumWantLowPeer    int           `json:"tracker_numwant_low_peer"`
+	LSDEnabled               bool          `json:"lsd_enabled"`
 }
 
 // UnmarshalJSON implements custom JSON unmarshalling for Settings.
@@ -114,6 +139,28 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 			{Key: "min_chunk_size", Label: "Min Chunk Size", Description: "Minimum download chunk size in MB (e.g., 2).", Type: "int64"},
 			{Key: "worker_buffer_size", Label: "Worker Buffer Size", Description: "I/O buffer size per worker in KB (e.g., 512).", Type: "int"},
 		},
+		"Torrent": {
+			{Key: "max_connections_per_torrent", Label: "Max Connections/Torrent", Description: "Maximum peer connections per torrent (1-1000).", Type: "int"},
+			{Key: "upload_slots_per_torrent", Label: "Upload Slots/Torrent", Description: "Maximum upload slots per torrent (0-200).", Type: "int"},
+			{Key: "request_pipeline_depth", Label: "Request Pipeline Depth", Description: "Max in-flight block requests per peer (1-256). Higher values improve high-latency throughput.", Type: "int"},
+			{Key: "listen_port", Label: "Listen Port", Description: "Inbound TCP port for torrent peers (1-65535). Requires firewall/NAT forwarding for best results.", Type: "int"},
+			{Key: "health_enabled", Label: "Health Culling", Description: "Cull consistently slow peers when swarm is saturated.", Type: "bool"},
+			{Key: "low_rate_cull_factor", Label: "Cull Factor", Description: "Cull peers below this fraction of mature-peer mean rate (0.0-1.0).", Type: "float64"},
+			{Key: "health_min_uptime", Label: "Health Min Uptime", Description: "Peer uptime required before health scoring (e.g., 20s).", Type: "duration"},
+			{Key: "health_cull_max_per_tick", Label: "Max Health Culls/Tick", Description: "Maximum peers health-culled per maintenance tick (1-16).", Type: "int"},
+			{Key: "health_redial_block", Label: "Health Redial Block", Description: "Cooldown before retrying health-culled peers (e.g., 2m).", Type: "duration"},
+			{Key: "eviction_cooldown", Label: "Eviction Cooldown", Description: "Minimum spacing between eviction attempts (e.g., 5s).", Type: "duration"},
+			{Key: "eviction_min_uptime", Label: "Eviction Min Uptime", Description: "Minimum peer uptime before considering eviction (e.g., 20s).", Type: "duration"},
+			{Key: "idle_eviction_threshold", Label: "Idle Eviction Threshold", Description: "Evict peers idle longer than this threshold (e.g., 45s).", Type: "duration"},
+			{Key: "eviction_keep_rate_min_bps", Label: "Eviction Keep Rate Min", Description: "Do not evict peers above this rate (bytes/sec).", Type: "int64"},
+			{Key: "peer_read_timeout", Label: "Peer Read Timeout", Description: "Socket read timeout before considering peer silent (e.g., 45s).", Type: "duration"},
+			{Key: "peer_keepalive_send", Label: "Peer Keepalive Send", Description: "How often to send keepalive to quiet peers (e.g., 30s).", Type: "duration"},
+			{Key: "tracker_interval_normal", Label: "Tracker Interval Normal", Description: "Announce interval when peer count is healthy (e.g., 5s).", Type: "duration"},
+			{Key: "tracker_interval_low_peer", Label: "Tracker Interval Low Peer", Description: "Announce interval while peer-starved (e.g., 3s).", Type: "duration"},
+			{Key: "tracker_numwant_normal", Label: "Tracker NumWant Normal", Description: "Requested peer count per announce in normal mode (50-1000).", Type: "int"},
+			{Key: "tracker_numwant_low_peer", Label: "Tracker NumWant Low", Description: "Requested peer count per announce in low-peer mode (50-1000).", Type: "int"},
+			{Key: "lsd_enabled", Label: "Local Peer Discovery", Description: "Enable BEP14 multicast discovery on local networks.", Type: "bool"},
+		},
 		"Performance": {
 			{Key: "max_task_retries", Label: "Max Task Retries", Description: "Number of times to retry a failed chunk before giving up.", Type: "int"},
 			{Key: "slow_worker_threshold", Label: "Slow Worker Threshold", Description: "Restart workers slower than this fraction of mean speed (0.0-1.0).", Type: "float64"},
@@ -126,7 +173,7 @@ func GetSettingsMetadata() map[string][]SettingMeta {
 
 // CategoryOrder returns the order of categories for UI tabs.
 func CategoryOrder() []string {
-	return []string{"General", "Network", "Performance"}
+	return []string{"General", "Network", "Performance", "Torrent"}
 }
 
 const (
@@ -173,6 +220,28 @@ func DefaultSettings() *Settings {
 			SequentialDownload:     false,
 			MinChunkSize:           2 * MB,
 			WorkerBufferSize:       512 * KB,
+		},
+		Torrent: TorrentSettings{
+			MaxConnectionsPerTorrent: 256,
+			UploadSlotsPerTorrent:    32,
+			RequestPipelineDepth:     64,
+			ListenPort:               6881,
+			HealthEnabled:            true,
+			LowRateCullFactor:        0.3,
+			HealthMinUptime:          20 * time.Second,
+			HealthCullMaxPerTick:     2,
+			HealthRedialBlock:        2 * time.Minute,
+			EvictionCooldown:         5 * time.Second,
+			EvictionMinUptime:        20 * time.Second,
+			IdleEvictionThreshold:    45 * time.Second,
+			EvictionKeepRateMinBps:   512 * KB,
+			PeerReadTimeout:          45 * time.Second,
+			PeerKeepaliveSend:        30 * time.Second,
+			TrackerIntervalNormal:    5 * time.Second,
+			TrackerIntervalLowPeer:   3 * time.Second,
+			TrackerNumWantNormal:     256,
+			TrackerNumWantLowPeer:    300,
+			LSDEnabled:               true,
 		},
 		Performance: PerformanceSettings{
 			MaxTaskRetries:        3,
@@ -236,32 +305,72 @@ func SaveSettings(s *Settings) error {
 // ToRuntimeConfig converts Settings to a downloader RuntimeConfig
 // This is used to pass user settings to the download engine
 type RuntimeConfig struct {
-	MaxConnectionsPerHost int
-	UserAgent             string
-	ProxyURL              string
-	SequentialDownload    bool
-	MinChunkSize          int64
-	WorkerBufferSize      int
-	MaxTaskRetries        int
-	SlowWorkerThreshold   float64
-	SlowWorkerGracePeriod time.Duration
-	StallTimeout          time.Duration
-	SpeedEmaAlpha         float64
+	MaxConnectionsPerHost  int
+	UserAgent              string
+	ProxyURL               string
+	SequentialDownload     bool
+	MinChunkSize           int64
+	WorkerBufferSize       int
+	MaxTaskRetries         int
+	SlowWorkerThreshold    float64
+	SlowWorkerGracePeriod  time.Duration
+	StallTimeout           time.Duration
+	SpeedEmaAlpha          float64
+	TorrentMaxConnections  int
+	TorrentUploadSlots     int
+	TorrentRequestPipeline int
+	TorrentListenPort      int
+	TorrentHealthEnabled   bool
+	TorrentLowRateCull     float64
+	TorrentHealthMinUptime time.Duration
+	TorrentHealthCullMax   int
+	TorrentHealthRedial    time.Duration
+	TorrentEvictionCD      time.Duration
+	TorrentEvictionMinUp   time.Duration
+	TorrentEvictionIdle    time.Duration
+	TorrentEvictionMinBps  int64
+	TorrentPeerReadTO      time.Duration
+	TorrentPeerKeepAlive   time.Duration
+	TorrentTrackerNormal   time.Duration
+	TorrentTrackerLowPeer  time.Duration
+	TorrentTrackerWant     int
+	TorrentTrackerWantLow  int
+	TorrentLSDEnabled      bool
 }
 
 // ToRuntimeConfig creates a RuntimeConfig from user Settings
 func (s *Settings) ToRuntimeConfig() *RuntimeConfig {
 	return &RuntimeConfig{
-		MaxConnectionsPerHost: s.Network.MaxConnectionsPerHost,
-		UserAgent:             s.Network.UserAgent,
-		ProxyURL:              s.Network.ProxyURL,
-		SequentialDownload:    s.Network.SequentialDownload,
-		MinChunkSize:          s.Network.MinChunkSize,
-		WorkerBufferSize:      s.Network.WorkerBufferSize,
-		MaxTaskRetries:        s.Performance.MaxTaskRetries,
-		SlowWorkerThreshold:   s.Performance.SlowWorkerThreshold,
-		SlowWorkerGracePeriod: s.Performance.SlowWorkerGracePeriod,
-		StallTimeout:          s.Performance.StallTimeout,
-		SpeedEmaAlpha:         s.Performance.SpeedEmaAlpha,
+		MaxConnectionsPerHost:  s.Network.MaxConnectionsPerHost,
+		UserAgent:              s.Network.UserAgent,
+		ProxyURL:               s.Network.ProxyURL,
+		SequentialDownload:     s.Network.SequentialDownload,
+		MinChunkSize:           s.Network.MinChunkSize,
+		WorkerBufferSize:       s.Network.WorkerBufferSize,
+		MaxTaskRetries:         s.Performance.MaxTaskRetries,
+		SlowWorkerThreshold:    s.Performance.SlowWorkerThreshold,
+		SlowWorkerGracePeriod:  s.Performance.SlowWorkerGracePeriod,
+		StallTimeout:           s.Performance.StallTimeout,
+		SpeedEmaAlpha:          s.Performance.SpeedEmaAlpha,
+		TorrentMaxConnections:  s.Torrent.MaxConnectionsPerTorrent,
+		TorrentUploadSlots:     s.Torrent.UploadSlotsPerTorrent,
+		TorrentRequestPipeline: s.Torrent.RequestPipelineDepth,
+		TorrentListenPort:      s.Torrent.ListenPort,
+		TorrentHealthEnabled:   s.Torrent.HealthEnabled,
+		TorrentLowRateCull:     s.Torrent.LowRateCullFactor,
+		TorrentHealthMinUptime: s.Torrent.HealthMinUptime,
+		TorrentHealthCullMax:   s.Torrent.HealthCullMaxPerTick,
+		TorrentHealthRedial:    s.Torrent.HealthRedialBlock,
+		TorrentEvictionCD:      s.Torrent.EvictionCooldown,
+		TorrentEvictionMinUp:   s.Torrent.EvictionMinUptime,
+		TorrentEvictionIdle:    s.Torrent.IdleEvictionThreshold,
+		TorrentEvictionMinBps:  s.Torrent.EvictionKeepRateMinBps,
+		TorrentPeerReadTO:      s.Torrent.PeerReadTimeout,
+		TorrentPeerKeepAlive:   s.Torrent.PeerKeepaliveSend,
+		TorrentTrackerNormal:   s.Torrent.TrackerIntervalNormal,
+		TorrentTrackerLowPeer:  s.Torrent.TrackerIntervalLowPeer,
+		TorrentTrackerWant:     s.Torrent.TrackerNumWantNormal,
+		TorrentTrackerWantLow:  s.Torrent.TrackerNumWantLowPeer,
+		TorrentLSDEnabled:      s.Torrent.LSDEnabled,
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/source"
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
@@ -63,10 +64,16 @@ func (p *WorkerPool) Add(cfg types.DownloadConfig) {
 
 // HasDownload checks if a download with the given URL already exists
 func (p *WorkerPool) HasDownload(url string) bool {
+	_, key := source.CanonicalKey(url)
 	p.mu.RLock()
 	// Check active downloads
 	for _, ad := range p.downloads {
-		if ad.config.URL == url {
+		_, existingKey := source.CanonicalKey(ad.config.URL)
+		if key != "" && existingKey == key {
+			p.mu.RUnlock()
+			return true
+		}
+		if key == "" && ad.config.URL == url {
 			p.mu.RUnlock()
 			return true
 		}
@@ -75,9 +82,15 @@ func (p *WorkerPool) HasDownload(url string) bool {
 
 	// Check persistent store (completed/queued/paused)
 	// We do this outside the lock to avoid holding it during DB query
-	exists, err := state.CheckDownloadExists(url)
+	exists, err := state.CheckDownloadExistsBySourceKey(key)
 	if err == nil && exists {
 		return true
+	}
+	// Backward compatibility for legacy rows without source_key.
+	if key != "" {
+		if legacy, legacyErr := state.CheckDownloadExists(url); legacyErr == nil && legacy {
+			return true
+		}
 	}
 
 	return false
@@ -288,7 +301,7 @@ func (p *WorkerPool) worker() {
 		// 1. If Pause() was called: State.IsPaused() is true. We keep the task in p.downloads (so it can be resumed).
 		// 2. If finished/error: We remove from p.downloads.
 
-		isPaused := ad.config.State != nil && ad.config.State.IsPaused()
+		isPaused := ad.config.State != nil && (ad.config.State.IsPaused() || ad.config.State.IsPausing())
 
 		// Clear "Pausing" transition state now that worker has exited
 		if ad.config.State != nil {
@@ -370,7 +383,8 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 	}
 
 	// Calculate progress and speed (thread-safe)
-	downloaded, totalSize, _, sessionElapsed, _, sessionStart := state.GetProgress()
+	downloaded, totalSize, _, sessionElapsed, connections, sessionStart := state.GetProgress()
+	sessionDownloaded := downloaded - sessionStart
 
 	status := &types.DownloadStatus{
 		ID:         id,
@@ -386,12 +400,24 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 		status.DestPath = ad.config.DestPath
 	}
 
+	peerStats := state.GetTorrentPeerCounters()
+	status.PeerDiscovered = peerStats.Discovered
+	status.PeerPending = peerStats.Pending
+	status.PeerDialAttempts = peerStats.DialAttempts
+	status.PeerDialSuccess = peerStats.DialSuccess
+	status.PeerDialFailures = peerStats.DialFailures
+	status.PeerInbound = peerStats.InboundAccepted
+	status.PeerHealthCull = peerStats.HealthEvictions
+	status.PeerProtoClose = peerStats.ProtocolCloses
+
 	if ad.config.State.IsPausing() {
 		status.Status = "pausing"
 	} else if ad.config.State.IsPaused() {
 		status.Status = "paused"
 	} else if state.Done.Load() {
 		status.Status = "completed"
+	} else if sessionDownloaded <= 0 && connections <= 0 {
+		status.Status = "queued"
 	}
 
 	if err := state.GetError(); err != nil {
@@ -406,7 +432,6 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 
 	// Calculate speed (MB/s) only for active downloads.
 	if status.Status == "downloading" {
-		sessionDownloaded := downloaded - sessionStart
 		if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
 			bytesPerSec := float64(sessionDownloaded) / sessionElapsed.Seconds()
 			status.Speed = bytesPerSec / (1024 * 1024)

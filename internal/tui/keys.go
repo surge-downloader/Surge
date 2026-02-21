@@ -328,15 +328,15 @@ var Keys = KeyMap{
 		),
 		Tab2: key.NewBinding(
 			key.WithKeys("2"),
-			key.WithHelp("2", "connections"),
+			key.WithHelp("2", "network"),
 		),
 		Tab3: key.NewBinding(
 			key.WithKeys("3"),
-			key.WithHelp("3", "chunks"),
+			key.WithHelp("3", "performance"),
 		),
 		Tab4: key.NewBinding(
 			key.WithKeys("4"),
-			key.WithHelp("4", "performance"),
+			key.WithHelp("4", "torrent"),
 		),
 		NextTab: key.NewBinding(
 			key.WithKeys("right"),

@@ -34,7 +34,7 @@ func (i DownloadItem) Description() string {
 	} else if d.resuming {
 		styledStatus = lipgloss.NewStyle().Foreground(colors.StateDownloading).Render("▶ Resuming...")
 	} else {
-		styledStatus = components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded).Render()
+		styledStatus = components.DetermineStatus(d.done, d.paused, d.err != nil, isActiveDownload(d)).Render()
 	}
 
 	// Build progress info
@@ -244,7 +244,7 @@ func (m *RootModel) UpdateListItems() {
 					var newTab int
 					if d.done {
 						newTab = TabDone
-					} else if d.Speed > 0 {
+					} else if isActiveDownload(d) {
 						newTab = TabActive
 					} else {
 						newTab = TabQueued

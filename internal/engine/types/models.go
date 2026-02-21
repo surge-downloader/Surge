@@ -11,6 +11,8 @@ type DownloadState struct {
 	ID         string   `json:"id"`       // Unique ID of the download
 	URLHash    string   `json:"url_hash"` // Hash of URL only (for master list compatibility)
 	URL        string   `json:"url"`
+	SourceType string   `json:"source_type,omitempty"`
+	SourceKey  string   `json:"source_key,omitempty"`
 	DestPath   string   `json:"dest_path"`
 	TotalSize  int64    `json:"total_size"`
 	Downloaded int64    `json:"downloaded"`
@@ -34,6 +36,8 @@ type DownloadEntry struct {
 	ID          string   `json:"id"`       // Unique ID of the download
 	URLHash     string   `json:"url_hash"` // Hash of URL only (backward compatibility)
 	URL         string   `json:"url"`
+	SourceType  string   `json:"source_type,omitempty"`
+	SourceKey   string   `json:"source_key,omitempty"`
 	DestPath    string   `json:"dest_path"`
 	Filename    string   `json:"filename"`
 	Status      string   `json:"status"`       // "paused", "completed", "error"
@@ -52,19 +56,27 @@ type MasterList struct {
 
 // DownloadStatus represents the transient status of an active download
 type DownloadStatus struct {
-	ID          string  `json:"id"`
-	URL         string  `json:"url"`
-	Filename    string  `json:"filename"`
-	DestPath    string  `json:"dest_path,omitempty"` // Full absolute path to file
-	TotalSize   int64   `json:"total_size"`
-	Downloaded  int64   `json:"downloaded"`
-	Progress    float64 `json:"progress"` // Percentage 0-100
-	Speed       float64 `json:"speed"`    // MB/s
-	Status      string  `json:"status"`   // "queued", "paused", "downloading", "completed", "error"
-	Error       string  `json:"error,omitempty"`
-	ETA         int64   `json:"eta"`         // Estimated seconds remaining
-	Connections int     `json:"connections"` // Active connections
-	AddedAt     int64   `json:"added_at"`    // Unix timestamp when added
-	TimeTaken   int64   `json:"time_taken"`  // Duration in milliseconds (completed only)
-	AvgSpeed    float64 `json:"avg_speed"`   // Average speed in bytes/sec (completed only)
+	ID               string  `json:"id"`
+	URL              string  `json:"url"`
+	Filename         string  `json:"filename"`
+	DestPath         string  `json:"dest_path,omitempty"` // Full absolute path to file
+	TotalSize        int64   `json:"total_size"`
+	Downloaded       int64   `json:"downloaded"`
+	Progress         float64 `json:"progress"` // Percentage 0-100
+	Speed            float64 `json:"speed"`    // MB/s
+	Status           string  `json:"status"`   // "queued", "paused", "downloading", "completed", "error"
+	Error            string  `json:"error,omitempty"`
+	ETA              int64   `json:"eta"`         // Estimated seconds remaining
+	Connections      int     `json:"connections"` // Active connections
+	PeerDiscovered   int     `json:"peer_discovered"`
+	PeerPending      int     `json:"peer_pending"`
+	PeerDialAttempts int     `json:"peer_dial_attempts"`
+	PeerDialSuccess  int     `json:"peer_dial_success"`
+	PeerDialFailures int     `json:"peer_dial_failures"`
+	PeerInbound      int     `json:"peer_inbound"`
+	PeerHealthCull   int     `json:"peer_health_cull"`
+	PeerProtoClose   int     `json:"peer_proto_close"`
+	AddedAt          int64   `json:"added_at"`   // Unix timestamp when added
+	TimeTaken        int64   `json:"time_taken"` // Duration in milliseconds (completed only)
+	AvgSpeed         float64 `json:"avg_speed"`  // Average speed in bytes/sec (completed only)
 }

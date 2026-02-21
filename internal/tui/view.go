@@ -811,8 +811,15 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 	} else if d.resuming {
 		speedStr = "Resuming..."
 		etaStr = "..."
-	} else if d.paused || d.Speed == 0 {
+	} else if d.paused {
 		speedStr = "Paused"
+		etaStr = "∞"
+	} else if d.Speed == 0 {
+		if d.Connections > 0 {
+			speedStr = "0 B/s"
+		} else {
+			speedStr = "Connecting"
+		}
 		etaStr = "∞"
 	} else {
 		speedStr = fmt.Sprintf("%.2f MB/s", d.Speed/Megabyte)
@@ -846,13 +853,17 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Size:"), StatsValueStyle.Render(sizeStr)),
 		lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Speed:"), StatsValueStyle.Render(speedStr)),
 	}
-	isActive := !d.done && !d.paused && !d.pausing && d.Speed > 0
+	isActive := isActiveDownload(d)
 	if isActive {
 		connStr := "0"
 		if d.Connections > 0 {
 			connStr = fmt.Sprintf("%d", d.Connections)
 		}
 		leftColItems = append(leftColItems, lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Conns:"), StatsValueStyle.Render(connStr)))
+		if d.PeerDiscovered > 0 || d.PeerPending > 0 || d.PeerDialAttempts > 0 || d.PeerDialSuccess > 0 || d.PeerDialFailures > 0 || d.PeerInbound > 0 || d.PeerHealthCull > 0 || d.PeerProtoClose > 0 {
+			peerStr := fmt.Sprintf("D:%d P:%d Try:%d Ok:%d Fail:%d In:%d HC:%d PC:%d", d.PeerDiscovered, d.PeerPending, d.PeerDialAttempts, d.PeerDialSuccess, d.PeerDialFailures, d.PeerInbound, d.PeerHealthCull, d.PeerProtoClose)
+			leftColItems = append(leftColItems, lipgloss.JoinHorizontal(lipgloss.Left, StatsLabelStyle.Width(7).Render("Peers:"), StatsValueStyle.Render(peerStr)))
+		}
 	}
 	leftCol := lipgloss.JoinVertical(lipgloss.Left, leftColItems...)
 	rightCol := lipgloss.JoinVertical(lipgloss.Left,
@@ -929,7 +940,7 @@ func getDownloadStatus(d *DownloadModel) string {
 	if d.resuming {
 		return lipgloss.NewStyle().Foreground(colors.StateDownloading).Render("▶ Resuming...")
 	}
-	status := components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded)
+	status := components.DetermineStatus(d.done, d.paused, d.err != nil, isActiveDownload(d))
 	return status.Render()
 }
 
@@ -950,7 +961,7 @@ func (m RootModel) ComputeViewStats() ViewStats {
 	for _, d := range m.downloads {
 		if d.done {
 			stats.DownloadedCount++
-		} else if d.Speed > 0 {
+		} else if isActiveDownload(d) {
 			stats.ActiveCount++
 		} else {
 			stats.QueuedCount++

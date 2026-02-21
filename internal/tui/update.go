@@ -15,6 +15,7 @@ import (
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/source"
 	"github.com/surge-downloader/surge/internal/utils"
 	"github.com/surge-downloader/surge/internal/version"
 
@@ -141,14 +142,14 @@ func (m RootModel) checkForDuplicate(url string) *DownloadModel {
 	if !m.Settings.General.WarnOnDuplicate {
 		return nil
 	}
-	normalizedInputURL := strings.TrimRight(url, "/")
+	_, inputKey := source.CanonicalKey(url)
 	for _, d := range m.downloads {
 		// Ignore completed downloads
 		if d.done {
 			continue
 		}
-		normalizedExistingURL := strings.TrimRight(d.URL, "/")
-		if normalizedExistingURL == normalizedInputURL {
+		_, existingKey := source.CanonicalKey(d.URL)
+		if inputKey != "" && existingKey == inputKey {
 			return d
 		}
 	}
@@ -292,6 +293,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !found {
 			newDownload := NewDownloadModel(msg.DownloadID, msg.URL, msg.Filename, msg.Total)
 			newDownload.Destination = msg.DestPath
+			newDownload.StartTime = time.Now()
 			if msg.State != nil {
 				newDownload.state = msg.State
 			}
@@ -299,19 +301,32 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.UpdateListItems()
-		m.addLogEntry(LogStyleStarted.Render("⬇ Started: " + msg.Filename))
+		if !found {
+			m.addLogEntry(LogStyleStarted.Render("⬇ Started: " + msg.Filename))
+		}
 		return m, tea.Batch(cmds...)
 
 	case events.ProgressMsg:
-		m.processProgressMsg(msg)
-		return m, nil
+		if updated, progressCmds := m.applyProgressUpdate(msg); updated {
+			cmds = append(cmds, progressCmds...)
+			m.updateSpeedHistory()
+			m.UpdateListItems()
+		}
+		return m, tea.Batch(cmds...)
 
 	case events.BatchProgressMsg:
-		for _, msg := range msg {
-			m.processProgressMsg(msg)
+		updated := false
+		for _, progress := range msg {
+			if didUpdate, progressCmds := m.applyProgressUpdate(progress); didUpdate {
+				updated = true
+				cmds = append(cmds, progressCmds...)
+			}
 		}
-		// Only update UI once per batch
-		return m, nil
+		if updated {
+			m.updateSpeedHistory()
+			m.UpdateListItems()
+		}
+		return m, tea.Batch(cmds...)
 
 	case events.DownloadCompleteMsg:
 		for _, d := range m.downloads {
@@ -585,6 +600,21 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, tea.Quit
 			}
+			// Quit
+			if key.Matches(msg, m.keys.Dashboard.Quit) {
+				// Graceful shutdown
+				if m.Service != nil {
+					_ = m.Service.Shutdown()
+				}
+				return m, tea.Quit
+			}
+			if key.Matches(msg, m.keys.Dashboard.ForceQuit) {
+				// Force quit (same as shutdown for now, or just exit)
+				if m.Service != nil {
+					_ = m.Service.Shutdown()
+				}
+				return m, tea.Quit
+			}
 
 			// Add download
 			if key.Matches(msg, m.keys.Dashboard.Add) {
@@ -838,6 +868,11 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				if url == "" {
 					// Should ideally check valid URL format here too
+					m.focusedInput = 0
+					m.inputs[0].Focus()
+					return m, nil
+				}
+				if !source.IsSupported(url) {
 					m.focusedInput = 0
 					m.inputs[0].Focus()
 					return m, nil
@@ -1247,7 +1282,46 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.SettingsSelectedRow = 0
 				return m, nil
 			}
+			if key.Matches(msg, m.keys.Settings.Tab1) {
+				if categoryCount > 0 {
+					m.SettingsActiveTab = 0
+				}
+				m.SettingsSelectedRow = 0
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.Settings.Tab2) {
+				if categoryCount > 1 {
+					m.SettingsActiveTab = 1
+				}
+				m.SettingsSelectedRow = 0
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.Settings.Tab3) {
+				if categoryCount > 2 {
+					m.SettingsActiveTab = 2
+				}
+				m.SettingsSelectedRow = 0
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.Settings.Tab4) {
+				if categoryCount > 3 {
+					m.SettingsActiveTab = 3
+				}
+				m.SettingsSelectedRow = 0
+				return m, nil
+			}
 
+			// Tab Navigation
+			if key.Matches(msg, m.keys.Settings.NextTab) {
+				m.SettingsActiveTab = (m.SettingsActiveTab + 1) % categoryCount
+				m.SettingsSelectedRow = 0
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.Settings.PrevTab) {
+				m.SettingsActiveTab = (m.SettingsActiveTab - 1 + categoryCount) % categoryCount
+				m.SettingsSelectedRow = 0
+				return m, nil
+			}
 			// Tab Navigation
 			if key.Matches(msg, m.keys.Settings.NextTab) {
 				m.SettingsActiveTab = (m.SettingsActiveTab + 1) % categoryCount
@@ -1461,4 +1535,75 @@ func (m *RootModel) generateUniqueFilename(dir, filename string) string {
 
 	// Fallback: just return original (shouldn't happen)
 	return filename
+}
+
+func (m *RootModel) applyProgressUpdate(msg events.ProgressMsg) (bool, []tea.Cmd) {
+	for _, d := range m.downloads {
+		if d.ID != msg.DownloadID {
+			continue
+		}
+		if d.done || d.paused {
+			return false, nil
+		}
+
+		d.Downloaded = msg.Downloaded
+		d.Total = msg.Total
+		d.Speed = msg.Speed
+		d.Elapsed = msg.Elapsed
+		d.Connections = msg.ActiveConnections
+		d.PeerDiscovered = msg.PeerDiscovered
+		d.PeerPending = msg.PeerPending
+		d.PeerDialAttempts = msg.PeerDialAttempts
+		d.PeerDialSuccess = msg.PeerDialSuccess
+		d.PeerDialFailures = msg.PeerDialFailures
+		d.PeerInbound = msg.PeerInbound
+		d.PeerHealthCull = msg.PeerHealthCull
+		d.PeerProtoClose = msg.PeerProtocolClose
+
+		// Update Chunk State if provided
+		if msg.BitmapWidth > 0 && len(msg.ChunkBitmap) > 0 {
+			if d.state != nil && msg.Total > 0 {
+				d.state.SetTotalSize(msg.Total)
+			}
+			// We only get bitmap, no progress array (to save bandwidth)
+			// State needs to be updated carefully
+			if d.state != nil {
+				d.state.RestoreBitmap(msg.ChunkBitmap, msg.ActualChunkSize)
+			}
+			if d.state != nil && len(msg.ChunkProgress) > 0 {
+				d.state.SetChunkProgress(msg.ChunkProgress)
+			}
+		}
+
+		var cmds []tea.Cmd
+		if d.Total > 0 {
+			percentage := float64(d.Downloaded) / float64(d.Total)
+			cmds = append(cmds, d.progress.SetPercent(percentage))
+		}
+
+		return true, cmds
+	}
+	return false, nil
+}
+
+func (m *RootModel) updateSpeedHistory() {
+	totalSpeed := m.calcTotalSpeed()
+	m.speedBuffer = append(m.speedBuffer, totalSpeed)
+	if len(m.speedBuffer) > 10 {
+		m.speedBuffer = m.speedBuffer[1:]
+	}
+
+	if time.Since(m.lastSpeedHistoryUpdate) >= GraphUpdateInterval {
+		var avgSpeed float64
+		if len(m.speedBuffer) > 0 {
+			for _, s := range m.speedBuffer {
+				avgSpeed += s
+			}
+			avgSpeed /= float64(len(m.speedBuffer))
+		}
+		if len(m.SpeedHistory) > 0 {
+			m.SpeedHistory = append(m.SpeedHistory[1:], avgSpeed)
+		}
+		m.lastSpeedHistoryUpdate = time.Now()
+	}
 }

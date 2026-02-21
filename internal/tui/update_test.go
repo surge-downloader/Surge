@@ -178,6 +178,21 @@ func TestUpdate_ResumeResultErrorKeepsFlags(t *testing.T) {
 	}
 }
 
+func TestIsActiveDownload_QueuedModelNotActive(t *testing.T) {
+	d := NewDownloadModel("id-queued", "https://example.com/file", "Queued", 0)
+	if isActiveDownload(d) {
+		t.Fatal("queued model should not be considered active")
+	}
+}
+
+func TestIsActiveDownload_StartedModelActive(t *testing.T) {
+	d := NewDownloadModel("id-active", "https://example.com/file", "file", 100)
+	d.StartTime = time.Now()
+	if !isActiveDownload(d) {
+		t.Fatal("started model should be considered active")
+	}
+}
+
 func TestUpdate_DownloadStartedKeepsResuming(t *testing.T) {
 	dm := NewDownloadModel("id-1", "http://example.com/file", "file", 0)
 	dm.paused = true
@@ -212,6 +227,43 @@ func TestUpdate_DownloadStartedKeepsResuming(t *testing.T) {
 	}
 	if d.paused || d.pausing || !d.resuming {
 		t.Fatalf("Expected paused/pausing cleared and resuming preserved on DownloadStartedMsg, got paused=%v pausing=%v resuming=%v", d.paused, d.pausing, d.resuming)
+	}
+}
+
+func TestUpdate_DownloadStartedNewRowSetsStartTime(t *testing.T) {
+	m := RootModel{
+		downloads:   []*DownloadModel{},
+		list:        NewDownloadList(80, 20),
+		logViewport: viewport.New(40, 5),
+	}
+
+	msg := events.DownloadStartedMsg{
+		DownloadID: "id-new",
+		URL:        "http://example.com/file",
+		Filename:   "file",
+		Total:      100,
+		DestPath:   "/tmp/file",
+		State:      types.NewProgressState("id-new", 100),
+	}
+
+	updated, _ := m.Update(msg)
+	m2 := updated.(RootModel)
+
+	var d *DownloadModel
+	for _, dl := range m2.downloads {
+		if dl.ID == "id-new" {
+			d = dl
+			break
+		}
+	}
+	if d == nil {
+		t.Fatal("Expected new download to be created")
+	}
+	if d.StartTime.IsZero() {
+		t.Fatal("Expected StartTime to be set for newly started download")
+	}
+	if !isActiveDownload(d) {
+		t.Fatal("Expected newly started download to be classified as active")
 	}
 }
 
@@ -313,13 +365,13 @@ func TestUpdate_DownloadComplete_UsesAverageSpeed(t *testing.T) {
 	}
 }
 
-func TestUpdate_SettingsIgnoresMissingFourthTab(t *testing.T) {
+func TestUpdate_SettingsIgnoresMissingFifthTab(t *testing.T) {
 	m := RootModel{
 		state:    SettingsState,
 		Settings: config.DefaultSettings(),
 	}
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
 	m2 := updated.(RootModel)
 
 	if m2.SettingsActiveTab >= len(config.CategoryOrder()) {
