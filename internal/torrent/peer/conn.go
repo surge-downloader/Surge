@@ -216,6 +216,12 @@ func (c *Conn) handle(msg *Message) (bool, *uploadRequest, []net.TCPAddr) {
 	switch msg.ID {
 	case MsgChoke:
 		c.choked = true
+		for _, ap := range c.active {
+			c.inFlight -= ap.sp.ResetInFlight()
+			if c.inFlight < 0 {
+				c.inFlight = 0
+			}
+		}
 	case MsgUnchoke:
 		c.choked = false
 		requestNext = true
@@ -336,6 +342,16 @@ func (c *Conn) maybeRequest() {
 	if c.choked {
 		return
 	}
+
+	var nextActive []*activePiece
+	for _, ap := range c.active {
+		if c.store != nil && c.store.HasPiece(int64(ap.index)) {
+			// This piece has already been completed by someone else.
+			continue
+		}
+		nextActive = append(nextActive, ap)
+	}
+	c.active = nextActive
 
 	for c.inFlight < c.maxInFlight {
 		didRequest := false

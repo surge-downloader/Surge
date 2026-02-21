@@ -22,7 +22,6 @@ type SimplePipeline struct {
 	pieceSize   int64
 	numBlocks   int
 	states      []blockState
-	blockOffset int64
 	received    int64
 	inFlight    int
 	maxInFlight int
@@ -44,7 +43,6 @@ func (p *SimplePipeline) init(pieceSize int64, maxInFlight int) {
 	numBlocks := int((pieceSize + defaultBlockSize - 1) / defaultBlockSize)
 	p.pieceSize = pieceSize
 	p.numBlocks = numBlocks
-	p.blockOffset = 0
 	p.received = 0
 	p.inFlight = 0
 	p.completed = false
@@ -61,28 +59,35 @@ func (p *SimplePipeline) init(pieceSize int64, maxInFlight int) {
 }
 
 func (p *SimplePipeline) NextRequest() (begin int64, length int64, ok bool) {
-	if p.completed {
+	if p.completed || p.inFlight >= p.maxInFlight {
 		return 0, 0, false
 	}
-	if p.inFlight >= p.maxInFlight {
-		return 0, 0, false
-	}
-	if p.blockOffset >= p.pieceSize {
-		return 0, 0, false
-	}
-	begin = p.blockOffset
-	length = defaultBlockSize
-	if begin+length > p.pieceSize {
-		length = p.pieceSize - begin
-	}
+	for i, s := range p.states {
+		if s == statePending {
+			p.states[i] = stateInFlight
+			p.inFlight++
 
-	blockIndex := int(begin / defaultBlockSize)
-	if p.states[blockIndex] == statePending {
-		p.states[blockIndex] = stateInFlight
-		p.inFlight++
+			begin = int64(i) * defaultBlockSize
+			length = defaultBlockSize
+			if begin+length > p.pieceSize {
+				length = p.pieceSize - begin
+			}
+			return begin, length, true
+		}
 	}
-	p.blockOffset += length
-	return begin, length, true
+	return 0, 0, false
+}
+
+func (p *SimplePipeline) ResetInFlight() int {
+	resetCount := 0
+	for i, s := range p.states {
+		if s == stateInFlight {
+			p.states[i] = statePending
+			resetCount++
+		}
+	}
+	p.inFlight -= resetCount
+	return resetCount
 }
 
 func (p *SimplePipeline) OnBlock(begin int64, length int64) {
