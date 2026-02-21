@@ -27,12 +27,41 @@ func NewProgressStore(layout *FileLayout, state *types.ProgressState) *ProgressS
 		state.InitBitmap(layout.TotalLength, layout.Info.PieceLength)
 	}
 
-	return &ProgressStore{
+	store := &ProgressStore{
 		layout:   layout,
 		state:    state,
 		verified: make(map[int64]bool),
 		bitfield: bitfield,
 	}
+
+	// Fast resume: parse resumed bitmap to restore internal bitfield and visual chunk progress
+	if state != nil {
+		bitmap, _, _, chunkSize, _ := state.GetBitmap()
+		if len(bitmap) > 0 && chunkSize > 0 {
+			numChunks := int((layout.TotalLength + chunkSize - 1) / chunkSize)
+			for i := 0; i < numChunks; i++ {
+				// We reconstruct chunk progress from the saved 2-bit state if it's completed
+				if state.GetChunkState(i) == types.ChunkCompleted {
+					pieceSize := store.layout.PieceSize(int64(i))
+					if pieceSize > 0 {
+						// Mark piece verified locally in the store
+						store.verified[int64(i)] = true
+						if len(store.bitfield) > 0 {
+							byteIndex := int(i >> 3)
+							if byteIndex >= 0 && byteIndex < len(store.bitfield) {
+								bit := uint(7 - (i & 7))
+								store.bitfield[byteIndex] |= 1 << bit
+							}
+						}
+						// Fast-forward chunk visualization without messing up global byte counters
+						state.SetChunkProgressDirect(i, pieceSize)
+					}
+				}
+			}
+		}
+	}
+
+	return store
 }
 
 func (s *ProgressStore) WriteAtPiece(pieceIndex int64, pieceOffset int64, data []byte) error {

@@ -395,6 +395,32 @@ func (ps *ProgressState) UpdateChunkProgress(index int, increment int64) {
 	}
 }
 
+// SetChunkProgressDirect safely increments visual array buffers directly for torrent resume reconstruction,
+// bypassing global byte counters that should only increment on new incoming bytes.
+func (ps *ProgressState) SetChunkProgressDirect(index int, increment int64) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	if len(ps.ChunkProgress) != ps.BitmapWidth {
+		ps.ChunkProgress = make([]int64, ps.BitmapWidth)
+	}
+	if index < 0 || index >= ps.BitmapWidth {
+		return
+	}
+
+	ps.ChunkProgress[index] += increment
+	if ps.ChunkProgress[index] >= ps.ActualChunkSize {
+		ps.ChunkProgress[index] = ps.ActualChunkSize
+		ps.setChunkState(index, ChunkCompleted)
+	} else if ps.ChunkProgress[index] > 0 {
+		if ps.getChunkState(index) != ChunkCompleted {
+			ps.setChunkState(index, ChunkDownloading)
+		}
+	} else {
+		ps.setChunkState(index, ChunkPending)
+	}
+}
+
 // UpdateChunkStatus updates the bitmap based on byte range
 func (ps *ProgressState) UpdateChunkStatus(offset, length int64, status ChunkStatus) {
 	ps.mu.Lock()

@@ -131,6 +131,34 @@ func TorrentDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 		return err
 	}
 
+	// Restore resume state
+	var savedState *types.DownloadState
+	if cfg.IsResume && cfg.DestPath != "" {
+		if cfg.SavedState != nil {
+			savedState = cfg.SavedState
+		} else {
+			savedState, _ = state.LoadState(cfg.URL, cfg.DestPath)
+		}
+	}
+	isResume := cfg.IsResume && savedState != nil && savedState.DestPath != ""
+
+	if isResume && cfg.State != nil {
+		cfg.State.Downloaded.Store(savedState.Downloaded)
+		cfg.State.VerifiedProgress.Store(savedState.Downloaded)
+		cfg.State.SetSavedElapsed(time.Duration(savedState.Elapsed))
+		cfg.State.SyncSessionStart()
+
+		if len(savedState.ChunkBitmap) > 0 && savedState.ActualChunkSize > 0 {
+			cfg.State.RestoreBitmap(savedState.ChunkBitmap, savedState.ActualChunkSize)
+			utils.Debug("Restored chunk map: size %d", savedState.ActualChunkSize)
+		}
+		utils.Debug("Resuming torrent from saved state: %d bytes downloaded", savedState.Downloaded)
+	} else if cfg.State != nil {
+		// Fresh download: ensure state counter starts at 0
+		cfg.State.Downloaded.Store(0)
+		cfg.State.SyncSessionStart()
+	}
+
 	start := time.Now()
 	runner.Start(downloadCtx)
 
@@ -200,16 +228,25 @@ func persistTorrentPauseState(cfg *types.DownloadConfig, destPath, name string, 
 	if savedElapsed := cfg.State.GetSavedElapsed(); savedElapsed > 0 {
 		elapsed += savedElapsed
 	}
+	var chunkBitmap []byte
+	var actualChunkSize int64
+	if bitmap, _, _, chunkSize, _ := cfg.State.GetBitmap(); len(bitmap) > 0 {
+		chunkBitmap = bitmap
+		actualChunkSize = chunkSize
+	}
+
 	paused := &types.DownloadState{
-		ID:         cfg.ID,
-		URL:        cfg.URL,
-		DestPath:   destPath,
-		Filename:   name,
-		TotalSize:  total,
-		Downloaded: cfg.State.VerifiedProgress.Load(),
-		PausedAt:   time.Now().Unix(),
-		Elapsed:    elapsed.Nanoseconds(),
-		Mirrors:    cfg.Mirrors,
+		ID:              cfg.ID,
+		URL:             cfg.URL,
+		DestPath:        destPath,
+		Filename:        name,
+		TotalSize:       total,
+		Downloaded:      cfg.State.VerifiedProgress.Load(),
+		PausedAt:        time.Now().Unix(),
+		Elapsed:         elapsed.Nanoseconds(),
+		Mirrors:         cfg.Mirrors,
+		ChunkBitmap:     chunkBitmap,
+		ActualChunkSize: actualChunkSize,
 	}
 	if err := state.SaveState(cfg.URL, destPath, paused); err != nil {
 		utils.Debug("Torrent: failed to persist pause state: %v", err)

@@ -50,6 +50,14 @@ func NewRunner(meta *TorrentMeta, baseDir string, cfg SessionConfig, state *type
 		progressStore.SetOnVerified(func(pieceIndex int) {
 			mgr.BroadcastHave(pieceIndex)
 		})
+
+		// On resume, verify we communicate already completed pieces to the picker.
+		// Without this, the piece picker thinks everything is incomplete and double-requests.
+		for i := 0; i < totalPieces; i++ {
+			if progressStore.HasPiece(int64(i)) {
+				picker.Done(i)
+			}
+		}
 	}
 
 	return &Runner{
